@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!apps/web/lib/
 lib64/
 parts/
 sdist/
@@ -216,3 +217,32 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# FDRE environments and secrets
+.env.*
+!.env.example
+
+# Node/Next.js
+node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/dist/
+apps/web/coverage/
+
+# Generated or downloaded financial data
+data/raw/*
+!data/raw/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Database dumps and generated indexes
+*.sqlite
+*.db
+*.dump
+*.sql.gz
+*.parquet
+*.arrow
+*.faiss
+*.index

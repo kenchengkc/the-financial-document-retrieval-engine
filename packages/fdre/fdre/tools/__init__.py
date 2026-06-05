@@ -1,0 +1,1 @@
+"""Safe financial tool modules."""

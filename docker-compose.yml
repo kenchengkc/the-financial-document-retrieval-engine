@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fdre}
+      POSTGRES_USER: ${POSTGRES_USER:-fdre}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fdre}
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-fdre} -d $${POSTGRES_DB:-fdre}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fdre}:${POSTGRES_PASSWORD:-fdre}@postgres:5432/${POSTGRES_DB:-fdre}
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-FDRE local docker contact@example.com}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
