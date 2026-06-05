@@ -4,7 +4,7 @@ from sqlalchemy.orm import DeclarativeBase
 from apps.api.app.config import get_settings
 
 
-class Base(DeclarativeBase):  # type: ignore[misc]
+class Base(DeclarativeBase):  # type: ignore[misc, unused-ignore]
     """Base class for SQLAlchemy models added in later phases."""
 
 
