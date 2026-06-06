@@ -53,14 +53,14 @@ class MockAnswerGenerator:
         question: str,
         evidence: list[RetrievalCandidate],
     ) -> GeneratedAnswer:
-        del question
         substantive = [
             candidate
             for candidate in evidence
             if candidate.metadata.get("element_type") not in {"section_header", "title"}
             and len(candidate.text.split()) >= 5
         ]
-        selected = (substantive or evidence)[:2]
+        selection_limit = 2 if REQUIRES_FINANCIAL_FACTS_PATTERN.search(question) else 1
+        selected = (substantive or evidence)[:selection_limit]
         claims = [
             AnswerClaim(
                 claim_text=_first_sentence(candidate.text),
