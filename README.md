@@ -68,7 +68,7 @@ flowchart LR
 
 ## Current Phase
 
-Phase 0 through Phase 2 are implemented:
+Phase 0 through Phase 5 are implemented:
 
 - Durable coding-agent guidance in `AGENTS.md`
 - Python project configuration in `pyproject.toml`
@@ -81,8 +81,14 @@ Phase 0 through Phase 2 are implemented:
 - Data directories with ignored raw/cache/processed outputs
 - SQLAlchemy 2.0 models for documents, evidence, runs, citations, facts, and evals
 - Alembic initial migration with PostgreSQL and SQLite test coverage
+- SEC submissions ingestion for AAPL, MSFT, NVDA, AMZN, and GOOGL
+- Cached and rate-limited SEC HTTP access using a required contact user agent
+- Idempotent company and filing metadata upserts for 10-K and 10-Q filings
+- Deterministic raw filing storage with SHA-256 duplicate detection
+- Layout-aware SEC HTML parsing into ordered text, section header, title, and table elements
+- Markdown table preservation and canonical filing section detection
 
-Later phases will add SEC ingestion, parsing, chunking, indexing, retrieval, answer generation, LangGraph orchestration, structured financial facts ingestion, observability, and the evidence viewer frontend.
+Later phases will add chunking, indexing, retrieval, answer generation, LangGraph orchestration, structured financial facts ingestion, observability, and the evidence viewer frontend.
 
 ## Data Model
 
@@ -119,7 +125,21 @@ Create a local environment file:
 cp .env.example .env
 ```
 
-Update `SEC_USER_AGENT` in `.env` with your own contact value before making live SEC requests in later phases.
+Update `SEC_USER_AGENT` in `.env` with your own contact value before making live SEC requests.
+
+Ingest the latest two 10-K and 10-Q filing records per sample company:
+
+```bash
+python -m scripts.ingest_sec_sample
+```
+
+Download those filings and replace their parsed document elements:
+
+```bash
+python -m scripts.download_filings --download --parse
+```
+
+Narrow either command with `--tickers`, `--forms`, and `--limit`. SEC responses are cached under `data/cache/sec`; raw filing HTML is stored under `data/raw/sec`.
 
 Run the API:
 
@@ -196,4 +216,4 @@ Use:
 
 ## Roadmap
 
-The next phase is Phase 3: SEC ingestion for the initial AAPL, MSFT, NVDA, AMZN, and GOOGL sample set.
+The next phase is Phase 6: element-aware text and table chunking.

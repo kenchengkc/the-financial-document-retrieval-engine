@@ -6,17 +6,20 @@ from pathlib import Path
 import httpx
 import respx
 from scripts.download_filings import process_documents
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
-from apps.api.app.models import Company, Document
+from apps.api.app.models import Company, Document, DocumentElement
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader
+from fdre.parsing.html_filing_parser import HtmlFilingParser
+
+FIXTURE_PATH = Path(__file__).resolve().parents[3] / "data/sample/sec_filing.html"
 
 
 @respx.mock
-def test_download_updates_document_path_and_hash(tmp_path: Path) -> None:
+def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     company = Company(ticker="AAPL", cik="0000320193", name="Apple Inc.")
@@ -32,7 +35,7 @@ def test_download_updates_document_path_and_hash(tmp_path: Path) -> None:
         ),
         metadata_json={"primary_document": "aapl-20250927.htm"},
     )
-    filing_html = b"<html><body><p>Filing content</p></body></html>"
+    filing_html = FIXTURE_PATH.read_bytes()
     route = respx.get(document.primary_document_url).mock(
         return_value=httpx.Response(200, content=filing_html)
     )
@@ -49,18 +52,30 @@ def test_download_updates_document_path_and_hash(tmp_path: Path) -> None:
         summary = process_documents(
             session,
             downloader=SECFilingDownloader(client, raw_data_dir=tmp_path / "raw"),
+            parser=HtmlFilingParser(),
             tickers=["AAPL"],
             form_types=["10-K"],
             limit=1,
             download=True,
+            parse=True,
         )
         stored_document = session.scalar(select(Document))
 
         assert summary.downloaded == 1
+        assert summary.parsed_documents == 1
+        assert summary.parsed_elements > 0
         assert stored_document is not None
         assert stored_document.local_path is not None
         assert Path(stored_document.local_path).is_file()
         assert stored_document.sha256_hash is not None
+        assert session.scalar(select(func.count()).select_from(DocumentElement)) == (
+            summary.parsed_elements
+        )
+        assert session.scalar(
+            select(func.count())
+            .select_from(DocumentElement)
+            .where(DocumentElement.element_type == "table")
+        ) == 1
 
     client.close()
     assert route.call_count == 1

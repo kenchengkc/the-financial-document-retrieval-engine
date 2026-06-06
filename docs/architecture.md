@@ -1,8 +1,16 @@
 # Architecture
 
-FDRE is being implemented in phases. Phase 1 establishes the API, project configuration, Docker foundation, and test tooling. Phase 2 adds the SQLAlchemy data model and Alembic migration baseline.
+FDRE is being implemented in phases. Phases 1 and 2 establish the API, Docker foundation, database model, and migration baseline. Phases 3 through 5 add cached SEC metadata ingestion, deterministic filing downloads, and layout-aware HTML parsing into database-backed document elements.
 
-Later phases will add SEC ingestion, parsing, chunking, indexing, hybrid retrieval, reranking, citation verification, abstention, LangGraph orchestration, structured financial facts, observability, and the frontend evidence viewer.
+Later phases will add chunking, indexing, hybrid retrieval, reranking, citation verification, abstention, LangGraph orchestration, structured financial facts, observability, and the frontend evidence viewer.
+
+## Ingestion Boundary
+
+- `SECClient` owns user-agent enforcement, local HTTP caching, and request pacing.
+- Filing metadata is upserted idempotently before raw content is downloaded.
+- Filing HTML uses a stable CIK/accession path and SHA-256 content identity.
+- The HTML parser emits ordered typed elements and preserves tables as Markdown.
+- Downloaded files and cached responses remain outside version control.
 
 ## Cost Model
 
