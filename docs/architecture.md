@@ -1,6 +1,6 @@
 # Architecture
 
-FDRE is being implemented in phases. Phase 1 establishes the API, project configuration, Docker foundation, and test tooling.
+FDRE is being implemented in phases. Phase 1 establishes the API, project configuration, Docker foundation, and test tooling. Phase 2 adds the SQLAlchemy data model and Alembic migration baseline.
 
 Later phases will add SEC ingestion, parsing, chunking, indexing, hybrid retrieval, reranking, citation verification, abstention, LangGraph orchestration, structured financial facts, observability, and the frontend evidence viewer.
 

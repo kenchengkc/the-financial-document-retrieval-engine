@@ -66,7 +66,7 @@ flowchart LR
 
 ## Current Phase
 
-Phase 0 and Phase 1 are implemented:
+Phase 0 through Phase 2 are implemented:
 
 - Durable coding-agent guidance in `AGENTS.md`
 - Python project configuration in `pyproject.toml`
@@ -77,8 +77,28 @@ Phase 0 and Phase 1 are implemented:
 - Basic pytest coverage
 - Ruff and mypy configuration
 - Data directories with ignored raw/cache/processed outputs
+- SQLAlchemy 2.0 models for documents, evidence, runs, citations, facts, and evals
+- Alembic initial migration with PostgreSQL and SQLite test coverage
 
-Later phases will add schema migrations, SEC ingestion, parsing, chunking, indexing, retrieval, answer generation, LangGraph orchestration, structured financial facts, observability, and the evidence viewer frontend.
+Later phases will add SEC ingestion, parsing, chunking, indexing, retrieval, answer generation, LangGraph orchestration, structured financial facts ingestion, observability, and the evidence viewer frontend.
+
+## Data Model
+
+```mermaid
+erDiagram
+  COMPANIES ||--o{ DOCUMENTS : files
+  COMPANIES ||--o{ FINANCIAL_FACTS : reports
+  DOCUMENTS ||--o{ DOCUMENT_ELEMENTS : contains
+  DOCUMENTS ||--o{ CHUNKS : produces
+  DOCUMENT_ELEMENTS ||--o{ CHUNKS : source
+  CHUNKS ||--o{ EMBEDDINGS : indexed_as
+  RETRIEVAL_RUNS ||--o{ RETRIEVAL_RESULTS : returns
+  CHUNKS ||--o{ RETRIEVAL_RESULTS : ranked
+  ANSWER_RUNS ||--o{ CITATIONS : includes
+  CHUNKS ||--o{ CITATIONS : supports
+```
+
+See [`docs/data_model.md`](docs/data_model.md) for field and index details.
 
 ## Local Setup
 
@@ -123,6 +143,7 @@ Start PostgreSQL and the API:
 
 ```bash
 docker compose up --build
+docker compose exec api alembic upgrade head
 ```
 
 The API listens on `http://127.0.0.1:8000`.
@@ -139,6 +160,27 @@ mypy .
 
 CI runs the same backend checks on GitHub Actions. Frontend checks will be added once the Next.js app is implemented.
 
+## Database Migrations
+
+Apply migrations locally:
+
+```bash
+alembic upgrade head
+```
+
+Check the current revision and schema drift:
+
+```bash
+alembic current
+alembic check
+```
+
+Run the migration through Docker:
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
 ## Data Policy
 
 Do not commit raw SEC filings, downloaded PDFs, caches, embeddings, vector indexes, generated artifacts, database dumps, `.env` files, or secrets.
@@ -152,4 +194,4 @@ Use:
 
 ## Roadmap
 
-The next phase is Phase 2: database schema and Alembic migrations for companies, documents, document elements, chunks, embeddings, financial facts, retrieval runs, answer runs, citations, and eval tables.
+The next phase is Phase 3: SEC ingestion for the initial AAPL, MSFT, NVDA, AMZN, and GOOGL sample set.

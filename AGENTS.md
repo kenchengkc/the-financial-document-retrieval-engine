@@ -92,6 +92,7 @@ Backend:
 pytest
 ruff check .
 mypy .
+alembic check
 ```
 
 API:
@@ -104,6 +105,7 @@ Docker:
 
 ```bash
 docker compose up --build
+docker compose exec api alembic upgrade head
 ```
 
 Frontend:

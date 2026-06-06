@@ -17,10 +17,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -38,6 +38,14 @@ jobs:
 
       - name: Pytest
         run: pytest
+
+      - name: Validate Alembic migrations
+        env:
+          DATABASE_URL: sqlite+pysqlite:////tmp/fdre-ci.db
+        run: |
+          alembic upgrade head
+          alembic check
+          alembic downgrade base
 
       - name: Validate Docker Compose
         run: docker compose config
