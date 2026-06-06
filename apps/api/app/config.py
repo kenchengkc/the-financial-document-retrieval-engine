@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,12 +18,42 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://fdre:fdre@localhost:5432/fdre",
         alias="DATABASE_URL",
     )
+    cors_origins: str = Field(
+        default="https://thefdre.com,https://www.thefdre.com,http://localhost:3000",
+        alias="CORS_ORIGINS",
+    )
     sec_user_agent: str | None = Field(default=None, alias="SEC_USER_AGENT")
     sec_cache_dir: str = Field(default="data/cache/sec", alias="SEC_CACHE_DIR")
     sec_rate_limit_requests_per_second: int = Field(
         default=5,
         alias="SEC_RATE_LIMIT_REQUESTS_PER_SECOND",
     )
+    embedding_provider: str = Field(default="local_hash", alias="EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="local-hash-v1", alias="EMBEDDING_MODEL")
+    sparse_provider: str = Field(default="postgres", alias="SPARSE_PROVIDER")
+    reranker_provider: str = Field(default="none", alias="RERANKER_PROVIDER")
+    rerank_top_n: int = Field(default=50, alias="RERANK_TOP_N")
+    answer_generator: str = Field(default="mock", alias="ANSWER_GENERATOR")
+    min_evidence_chunks: int = Field(default=2, alias="MIN_EVIDENCE_CHUNKS")
+    min_retrieval_score: float = Field(default=0.2, alias="MIN_RETRIEVAL_SCORE")
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+
+    @field_validator("database_url")
+    @classmethod
+    def _ensure_psycopg_driver(cls, value: str) -> str:
+        """Normalize bare Postgres URLs (e.g. Railway's) to the psycopg driver."""
+
+        if value.startswith("postgresql+"):
+            return value
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value[len("postgresql://") :]
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value[len("postgres://") :]
+        return value
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache

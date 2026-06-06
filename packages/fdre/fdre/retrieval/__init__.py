@@ -1,1 +1,1 @@
-"""Retrieval modules."""
+"""Query processing and hybrid retrieval."""

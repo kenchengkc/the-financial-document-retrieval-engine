@@ -5,9 +5,11 @@ import argparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from apps.api.app.config import get_settings
 from apps.api.app.db import create_db_engine
 from apps.api.app.models import Company, Document
 from fdre.chunking import rebuild_document_chunks
+from fdre.indexing.embeddings import embedding_provider_from_settings, rebuild_embeddings
 
 
 def chunk_selected_documents(
@@ -35,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     chunk_parser = subparsers.add_parser("chunk", help="Rebuild document chunks")
     chunk_parser.add_argument("--tickers", nargs="+")
     chunk_parser.add_argument("--max-tokens", type=int, default=220)
+    subparsers.add_parser("index", help="Rebuild stored chunk embeddings")
     return parser.parse_args()
 
 
@@ -48,6 +51,9 @@ def main() -> None:
                 max_tokens=args.max_tokens,
             )
             print({"documents": documents, "chunks": chunks})
+        elif args.command == "index":
+            provider = embedding_provider_from_settings(get_settings())
+            print({"embeddings": rebuild_embeddings(session, provider)})
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-"""Indexing modules."""
+"""Embedding and sparse indexing modules."""

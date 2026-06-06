@@ -1,5 +1,8 @@
+from collections.abc import Generator
+from functools import lru_cache
+
 from sqlalchemy import Engine, MetaData, create_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 
 from apps.api.app.config import get_settings
 
@@ -22,3 +25,13 @@ def create_db_engine(database_url: str | None = None) -> Engine:
     """Create a SQLAlchemy engine without connecting at import time."""
 
     return create_engine(database_url or get_settings().database_url, pool_pre_ping=True)
+
+
+@lru_cache
+def get_engine() -> Engine:
+    return create_db_engine()
+
+
+def get_db_session() -> Generator[Session, None, None]:
+    with Session(get_engine()) as session:
+        yield session
