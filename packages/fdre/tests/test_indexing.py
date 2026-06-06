@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from apps.api.app.db import Base
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
-from fdre.indexing.sparse_index import PostgresFullTextIndexer
+from fdre.indexing.sparse_index import PostgresFullTextIndexer, build_sparse_tsquery
 from fdre.retrieval.query import SearchFilters
 
 
@@ -61,6 +61,7 @@ def test_local_embeddings_are_deterministic_and_persisted() -> None:
 
 
 def test_sparse_search_works_offline_and_honors_filters() -> None:
+    assert build_sparse_tsquery("AI revenue, AI demand") == "ai | revenue | demand"
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:

@@ -54,7 +54,13 @@ class MockAnswerGenerator:
         evidence: list[RetrievalCandidate],
     ) -> GeneratedAnswer:
         del question
-        selected = evidence[:2]
+        substantive = [
+            candidate
+            for candidate in evidence
+            if candidate.metadata.get("element_type") not in {"section_header", "title"}
+            and len(candidate.text.split()) >= 5
+        ]
+        selected = (substantive or evidence)[:2]
         claims = [
             AnswerClaim(
                 claim_text=_first_sentence(candidate.text),
@@ -116,7 +122,7 @@ def retrieve_text_node(context: WorkflowContext, state: AgentState) -> AgentStat
         context.session,
         state["rewritten_queries"][0],
         filters=filters,
-        limit=max(context.settings.rerank_top_n, 10),
+        limit=max(context.settings.answer_top_k, 10),
     )
     return {
         "text_candidates": [candidate.model_dump(mode="json") for candidate in candidates],
@@ -137,7 +143,7 @@ def retrieve_tables_node(context: WorkflowContext, state: AgentState) -> AgentSt
         context.session,
         state["rewritten_queries"][0],
         filters=filters,
-        limit=max(context.settings.rerank_top_n, 10),
+        limit=max(context.settings.answer_top_k, 10),
     )
     return {
         "table_candidates": [candidate.model_dump(mode="json") for candidate in candidates],
@@ -213,7 +219,7 @@ def rerank_node(context: WorkflowContext, state: AgentState) -> AgentState:
     reranked = reranker_from_name(context.settings.reranker_provider).rerank(
         state["user_query"],
         candidates,
-        top_n=context.settings.rerank_top_n,
+        top_n=context.settings.answer_top_k,
     )
     return {
         "reranked_candidates": [

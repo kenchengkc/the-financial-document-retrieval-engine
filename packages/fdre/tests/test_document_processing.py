@@ -6,11 +6,13 @@ from pathlib import Path
 import httpx
 import respx
 from scripts.download_filings import process_documents
+from scripts.retrieval_pipeline import seed_demo_document
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
-from apps.api.app.models import Company, Document, DocumentElement
+from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
+from fdre.indexing.embeddings import LocalHashEmbeddingProvider
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader
 from fdre.parsing.html_filing_parser import HtmlFilingParser
@@ -79,3 +81,21 @@ def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
 
     client.close()
     assert route.call_count == 1
+
+
+def test_seed_demo_document_is_idempotent() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        provider = LocalHashEmbeddingProvider()
+        first = seed_demo_document(session, fixture_path=FIXTURE_PATH, provider=provider)
+        second = seed_demo_document(session, fixture_path=FIXTURE_PATH, provider=provider)
+
+        assert first == second
+        assert first["documents"] == 1
+        assert first["chunks"] > 0
+        assert session.scalar(select(func.count()).select_from(Company)) == 1
+        assert session.scalar(select(func.count()).select_from(Document)) == 1
+        assert session.scalar(select(func.count()).select_from(Chunk)) == first["chunks"]
+        assert session.scalar(select(func.count()).select_from(Embedding)) == first["embeddings"]

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     reranker_provider: str = Field(default="none", alias="RERANKER_PROVIDER")
     rerank_top_n: int = Field(default=50, alias="RERANK_TOP_N")
     answer_generator: str = Field(default="mock", alias="ANSWER_GENERATOR")
+    answer_top_k: int = Field(default=8, ge=1, le=50, alias="ANSWER_TOP_K")
     min_evidence_chunks: int = Field(default=2, alias="MIN_EVIDENCE_CHUNKS")
     min_retrieval_score: float = Field(default=0.2, alias="MIN_RETRIEVAL_SCORE")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")

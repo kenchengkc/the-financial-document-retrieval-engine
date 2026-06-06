@@ -15,7 +15,9 @@ htmlcov/
 .env.*
 !.env.example
 node_modules/
+**/node_modules/
 apps/web/.next/
+apps/web/.vercel/
 apps/web/out/
 apps/web/dist/
 data/raw/*

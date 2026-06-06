@@ -27,6 +27,10 @@ services:
       SEC_USER_AGENT: ${SEC_USER_AGENT:-FDRE local docker contact@example.com}
       SEC_CACHE_DIR: /app/data/cache/sec
       SEC_RATE_LIMIT_REQUESTS_PER_SECOND: ${SEC_RATE_LIMIT_REQUESTS_PER_SECOND:-5}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local_hash}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-local-hash-v1}
+      RERANKER_PROVIDER: ${RERANKER_PROVIDER:-fake}
+      ANSWER_TOP_K: ${ANSWER_TOP_K:-8}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

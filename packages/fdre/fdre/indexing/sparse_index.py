@@ -42,8 +42,11 @@ class PostgresFullTextIndexer:
         filters: SearchFilters,
         limit: int,
     ) -> list[SparseHit]:
+        tsquery = build_sparse_tsquery(query)
+        if not tsquery:
+            return []
         vector = func.to_tsvector("english", Chunk.chunk_text)
-        parsed_query = func.plainto_tsquery("english", query)
+        parsed_query = func.to_tsquery("english", tsquery)
         score = func.ts_rank_cd(vector, parsed_query).label("sparse_score")
         rows = session.execute(
             select(Chunk, score)
@@ -82,3 +85,10 @@ class PostgresFullTextIndexer:
             )
             hits.append(SparseHit(chunk=chunk, score=score))
         return sorted(hits, key=lambda hit: (-hit.score, hit.chunk.id))[:limit]
+
+
+def build_sparse_tsquery(query: str) -> str:
+    """Build an OR query so partial lexical matches remain retrievable."""
+
+    tokens = dict.fromkeys(TOKEN_PATTERN.findall(query.casefold()))
+    return " | ".join(tokens)
