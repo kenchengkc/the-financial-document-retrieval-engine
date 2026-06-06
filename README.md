@@ -4,6 +4,8 @@ FDRE is a layout-aware search, evidence retrieval, and citation verification sys
 
 Website: `thefdre.com`
 
+Repository: `the-financial-document-retrieval-engine`
+
 FDRE is not a generic "chat with PDFs" wrapper. The project is being built as a production-style financial data and retrieval system that ingests SEC filings, parses document structure, indexes text and tables, evaluates retrieval quality, verifies citations, and abstains when evidence is insufficient.
 
 ## Architecture Bias
