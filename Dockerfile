@@ -12,8 +12,9 @@ COPY scripts ./scripts
 COPY data ./data
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install --no-cache-dir -e .
+    && python -m pip install --no-cache-dir -e . \
+    && chmod +x scripts/start.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "apps.api.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "scripts/start.sh"]

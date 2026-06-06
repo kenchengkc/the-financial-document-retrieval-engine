@@ -19,7 +19,10 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
     cors_origins: str = Field(
-        default="https://thefdre.com,https://www.thefdre.com,http://localhost:3000",
+        default=(
+            "https://thefdre.com,https://www.thefdre.com,"
+            "http://localhost:3000,http://127.0.0.1:3000"
+        ),
         alias="CORS_ORIGINS",
     )
     sec_user_agent: str | None = Field(default=None, alias="SEC_USER_AGENT")

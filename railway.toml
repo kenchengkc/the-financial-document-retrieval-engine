@@ -1,0 +1,12 @@
+# Railway service config for the FDRE API.
+# Build from the repo-root Dockerfile; health-check the /health endpoint.
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "sh scripts/start.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
