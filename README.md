@@ -86,8 +86,15 @@ Phases 0 through 13 are implemented and tested:
 - Persistent retrieval runs, answer runs, and verified citations
 - A typed Next.js evidence viewer with score and graph trace inspection
 
-Phase 14 and later remain roadmap work: XBRL fact ingestion and safe fact tools, trace/eval
-read endpoints, optional complex PDF parsing, and broader production observability.
+Later-phase status:
+
+- Phase 14 is partial: the schema and read-only graph route exist, but XBRL ingestion and the
+  bounded SQL facts tool remain.
+- Phase 15 is complete: the evidence viewer is deployed at [thefdre.com](https://thefdre.com).
+- Phase 16 is partial: answer traces are returned and stored, but trace/eval read endpoints and
+  broader production observability remain.
+- Phase 17 remains optional roadmap work for complex PDF parsing.
+- Phase 18 website and README polish are complete.
 
 ## How the Agent Works
 
@@ -215,6 +222,12 @@ npm run dev
 
 `NEXT_PUBLIC_API_URL` selects the FastAPI deployment. The local default is
 `http://127.0.0.1:8000`.
+
+The production frontend uses `https://fdre-api.vercel.app`. That public API currently uses a
+deterministically seeded SQLite database in Vercel's temporary function storage, so the demo works
+without paid infrastructure but run history is not durable across function replacement. Point
+`DATABASE_URL` at managed PostgreSQL before treating the deployment as persistent production
+storage.
 
 ## Quality Checks
 
