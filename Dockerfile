@@ -9,6 +9,7 @@ COPY pyproject.toml README.md alembic.ini ./
 COPY apps ./apps
 COPY packages ./packages
 COPY scripts ./scripts
+COPY data ./data
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir -e .

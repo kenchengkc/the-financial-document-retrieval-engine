@@ -25,8 +25,12 @@ services:
       API_PORT: 8000
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fdre}:${POSTGRES_PASSWORD:-fdre}@postgres:5432/${POSTGRES_DB:-fdre}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-FDRE local docker contact@example.com}
+      SEC_CACHE_DIR: /app/data/cache/sec
+      SEC_RATE_LIMIT_REQUESTS_PER_SECOND: ${SEC_RATE_LIMIT_REQUESTS_PER_SECOND:-5}
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
