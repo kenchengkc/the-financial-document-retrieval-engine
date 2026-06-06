@@ -2,7 +2,7 @@
 
 FDRE is a layout-aware search, evidence retrieval, and citation verification system for financial documents.
 
-Website: `thefdre.com`
+Website: [thefdre.com](https://thefdre.com)
 
 Repository: `the-financial-document-retrieval-engine`
 
@@ -23,13 +23,13 @@ flowchart LR
   api --> graph[Bounded answer workflow]
   graph --> preprocess[Query preprocessing]
   graph --> retrieval[Hybrid retrieval]
-  graph --> facts[Safe SQL facts tool]
+  graph --> facts[Read-only financial facts route]
   retrieval --> sparse[PostgreSQL full-text search]
   retrieval --> dense[Local/hash embeddings or optional pgvector]
   retrieval --> rerank[Optional reranker]
   graph --> verify[Citation verification]
   verify --> answer[Answer or abstention]
-  api --> traces[Trace storage]
+  api --> traces[Answer run and citation storage]
   sparse --> pg[(PostgreSQL)]
   dense --> pg
   facts --> pg
@@ -64,31 +64,56 @@ flowchart LR
   install --> mypy[Mypy types]
   install --> pytest[Pytest]
   install --> compose[Docker Compose config]
+  ci --> node[Node 22]
+  node --> eslint[ESLint]
+  node --> types[TypeScript]
+  node --> next[Next.js build]
 ```
 
-## Current Phase
+## Current Status
 
-Phase 0 through Phase 5 are implemented:
+Phases 0 through 13 are implemented and tested:
 
-- Durable coding-agent guidance in `AGENTS.md`
-- Python project configuration in `pyproject.toml`
-- FastAPI application factory
-- `GET /health` endpoint
-- Docker Compose stack with API and PostgreSQL
-- Local environment example
-- Basic pytest coverage
-- Ruff and mypy configuration
-- Data directories with ignored raw/cache/processed outputs
-- SQLAlchemy 2.0 models for documents, evidence, runs, citations, facts, and evals
-- Alembic initial migration with PostgreSQL and SQLite test coverage
-- SEC submissions ingestion for AAPL, MSFT, NVDA, AMZN, and GOOGL
-- Cached and rate-limited SEC HTTP access using a required contact user agent
-- Idempotent company and filing metadata upserts for 10-K and 10-Q filings
-- Deterministic raw filing storage with SHA-256 duplicate detection
-- Layout-aware SEC HTML parsing into ordered text, section header, title, and table elements
-- Markdown table preservation and canonical filing section detection
+- SEC ingestion, cached downloads, SHA-256 deduplication, and layout-aware HTML parsing
+- Section-aware text chunks and preserved table markdown/summary chunks
+- Deterministic local embeddings with an optional OpenAI embedding provider
+- PostgreSQL full-text search with a SQLite test fallback
+- Deterministic ticker, filing, section, table, and financial-fact routing
+- Hybrid dense/sparse retrieval, metadata filters, and pluggable reranking
+- Retrieval evaluation for Recall@k, Precision@k, MRR, nDCG, section hits, and table recall
+- Citation verification, answer abstention, and a bounded typed LangGraph workflow
+- `GET /health`, `POST /search`, and `POST /answer`
+- Persistent retrieval runs, answer runs, and verified citations
+- A typed Next.js evidence viewer with score and graph trace inspection
 
-Later phases will add chunking, indexing, retrieval, answer generation, LangGraph orchestration, structured financial facts ingestion, observability, and the evidence viewer frontend.
+Phase 14 and later remain roadmap work: XBRL fact ingestion and safe fact tools, trace/eval
+read endpoints, optional complex PDF parsing, and broader production observability.
+
+## How the Agent Works
+
+The current agent is a fixed LangGraph state machine, not an open-ended autonomous loop:
+
+```mermaid
+flowchart LR
+  q[Question] --> p[Preprocess]
+  p --> r[Route tools]
+  r --> text[Retrieve text]
+  text --> tables[Retrieve tables]
+  tables --> facts[Read financial facts]
+  facts --> merge[Merge and deduplicate]
+  merge --> rank[Rerank]
+  rank --> gate{Evidence gate}
+  gate -->|weak/private/missing facts| abstain[Abstain]
+  gate -->|pass| generate[Extractive mock generator]
+  generate --> verify{Verify every citation}
+  verify -->|fail| abstain
+  verify -->|pass| answer[Cited answer]
+```
+
+The default generator is deterministic and free. It extracts claims from retrieved evidence; it
+does not call a paid LLM. Retrieval uses local hash embeddings and PostgreSQL full-text search.
+`MIN_EVIDENCE_CHUNKS` and `MIN_RETRIEVAL_SCORE` control the evidence gate. Every transition is
+returned to the web client, and the answer run and citations are persisted.
 
 ## Data Model
 
@@ -116,7 +141,7 @@ Create a virtual environment and install the project:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
 
 Create a local environment file:
@@ -126,6 +151,12 @@ cp .env.example .env
 ```
 
 Update `SEC_USER_AGENT` in `.env` with your own contact value before making live SEC requests.
+
+For a deterministic no-network demo, load the checked-in sample filing:
+
+```bash
+python -m scripts.retrieval_pipeline seed-demo
+```
 
 Ingest the latest two 10-K and 10-Q filing records per sample company:
 
@@ -165,12 +196,25 @@ Start PostgreSQL and the API:
 
 ```bash
 docker compose up --build
-docker compose exec api alembic upgrade head
+docker compose exec api python scripts/retrieval_pipeline.py seed-demo
 ```
 
 The API listens on `http://127.0.0.1:8000`.
+Container startup applies Alembic migrations automatically.
 
 The Compose PostgreSQL service is exposed on host port `15432` by default to avoid colliding with a local Postgres instance on `5432`.
+
+## Frontend
+
+```bash
+cd apps/web
+cp .env.example .env.local
+npm ci
+npm run dev
+```
+
+`NEXT_PUBLIC_API_URL` selects the FastAPI deployment. The local default is
+`http://127.0.0.1:8000`.
 
 ## Quality Checks
 
@@ -178,9 +222,14 @@ The Compose PostgreSQL service is exposed on host port `15432` by default to avo
 pytest
 ruff check .
 mypy .
+cd apps/web
+npm run lint
+npm run typecheck
+npm run build
 ```
 
-CI runs the same backend checks on GitHub Actions. Frontend checks will be added once the Next.js app is implemented.
+GitHub Actions runs backend, migration, Docker Compose, frontend lint, TypeScript, and
+production build checks.
 
 ## Database Migrations
 
@@ -214,6 +263,8 @@ Use:
 - `data/cache/` for HTTP cache
 - `data/processed/` for generated parsed/chunked/indexed artifacts
 
-## Roadmap
+## API Keys
 
-The next phase is Phase 6: element-aware text and table chunking.
+No API key is required for the local MVP or demo. A descriptive `SEC_USER_AGENT` is required only
+when downloading live SEC data. `OPENAI_API_KEY` is optional and currently used only when
+`EMBEDDING_PROVIDER=openai`; local hash embeddings remain the default.
