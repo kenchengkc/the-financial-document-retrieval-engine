@@ -4,7 +4,7 @@ import argparse
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import get_settings
@@ -126,6 +126,29 @@ def seed_demo_document(
         session.add(document)
         session.flush()
     else:
+        element_count = session.scalar(
+            select(func.count())
+            .select_from(DocumentElement)
+            .where(DocumentElement.document_id == document.id)
+        ) or 0
+        chunk_count = session.scalar(
+            select(func.count())
+            .select_from(Chunk)
+            .where(Chunk.document_id == document.id)
+        ) or 0
+        embedding_count = session.scalar(
+            select(func.count())
+            .select_from(Embedding)
+            .join(Chunk, Chunk.id == Embedding.chunk_id)
+            .where(Chunk.document_id == document.id)
+        ) or 0
+        if element_count and chunk_count and embedding_count == chunk_count:
+            return {
+                "documents": 1,
+                "elements": element_count,
+                "chunks": chunk_count,
+                "embeddings": embedding_count,
+            }
         chunk_ids = select(Chunk.id).where(Chunk.document_id == document.id)
         session.execute(delete(Embedding).where(Embedding.chunk_id.in_(chunk_ids)))
         session.execute(delete(Chunk).where(Chunk.document_id == document.id))

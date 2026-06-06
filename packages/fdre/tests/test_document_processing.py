@@ -90,9 +90,12 @@ def test_seed_demo_document_is_idempotent() -> None:
     with Session(engine) as session:
         provider = LocalHashEmbeddingProvider()
         first = seed_demo_document(session, fixture_path=FIXTURE_PATH, provider=provider)
+        first_chunk_ids = list(session.scalars(select(Chunk.id).order_by(Chunk.id)))
         second = seed_demo_document(session, fixture_path=FIXTURE_PATH, provider=provider)
+        second_chunk_ids = list(session.scalars(select(Chunk.id).order_by(Chunk.id)))
 
         assert first == second
+        assert first_chunk_ids == second_chunk_ids
         assert first["documents"] == 1
         assert first["chunks"] > 0
         assert session.scalar(select(func.count()).select_from(Company)) == 1
