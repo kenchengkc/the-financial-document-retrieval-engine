@@ -108,7 +108,10 @@ class HtmlFilingParser(BaseDocumentParser):
         for tag in soup.find_all(["script", "style", "noscript", "template"]):
             tag.decompose()
         for tag in soup.find_all(True):
-            if not isinstance(tag, Tag):
+            # A parent decompose() also decomposes its children; skip tags that
+            # were already removed (their attrs/name become None) to avoid
+            # AttributeError on real-world nested filings.
+            if not isinstance(tag, Tag) or tag.decomposed:
                 continue
             name = tag.name.lower()
             style = str(tag.get("style", "")).lower().replace(" ", "")
