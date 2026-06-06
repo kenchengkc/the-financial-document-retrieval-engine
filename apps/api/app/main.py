@@ -1,5 +1,5 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
 
 
 def _initialize_demo_database() -> None:
-    from scripts.retrieval_pipeline import seed_demo_document
+    from fdre.demo import seed_demo_document
 
     engine = get_engine()
     Base.metadata.create_all(engine)

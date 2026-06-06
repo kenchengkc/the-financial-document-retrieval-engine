@@ -246,3 +246,4 @@ data/processed/*
 *.arrow
 *.faiss
 *.index
+.vercel

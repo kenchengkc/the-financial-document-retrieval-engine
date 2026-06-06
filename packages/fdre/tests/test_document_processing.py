@@ -6,12 +6,12 @@ from pathlib import Path
 import httpx
 import respx
 from scripts.download_filings import process_documents
-from scripts.retrieval_pipeline import seed_demo_document
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
+from fdre.demo import seed_demo_document
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader
