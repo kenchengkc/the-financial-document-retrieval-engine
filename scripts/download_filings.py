@@ -81,9 +81,11 @@ def process_documents(
     parsed_elements = 0
 
     for document in documents:
+        content_changed = True
         if download:
             if downloader is None:
                 raise ValueError("A downloader is required when download=True")
+            previous_sha256 = document.sha256_hash
             primary_document = _primary_document(document)
             result = downloader.download(
                 cik=document.company.cik,
@@ -93,12 +95,20 @@ def process_documents(
             )
             document.local_path = str(result.local_path)
             document.sha256_hash = result.sha256_hash
+            content_changed = previous_sha256 != result.sha256_hash
             if result.downloaded:
                 downloaded += 1
             else:
                 skipped_downloads += 1
 
         if parse:
+            has_elements = session.scalar(
+                select(DocumentElement.id)
+                .where(DocumentElement.document_id == document.id)
+                .limit(1)
+            ) is not None
+            if has_elements and not content_changed:
+                continue
             if not document.local_path:
                 raise ValueError(
                     f"Document {document.accession_number} has no local file; use --download first"

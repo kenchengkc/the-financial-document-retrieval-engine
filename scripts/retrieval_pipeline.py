@@ -34,6 +34,8 @@ def chunk_selected_documents(
 
     chunk_count = 0
     for document in documents:
+        if document.chunks:
+            continue
         chunk_count += len(
             rebuild_document_chunks(session, document.id, max_tokens=max_tokens)
         )
@@ -43,10 +45,10 @@ def chunk_selected_documents(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build FDRE retrieval artifacts")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    chunk_parser = subparsers.add_parser("chunk", help="Rebuild document chunks")
+    chunk_parser = subparsers.add_parser("chunk", help="Build missing document chunks")
     chunk_parser.add_argument("--tickers", nargs="+")
     chunk_parser.add_argument("--max-tokens", type=int, default=220)
-    subparsers.add_parser("index", help="Rebuild stored chunk embeddings")
+    subparsers.add_parser("index", help="Build missing stored chunk embeddings")
     eval_parser = subparsers.add_parser("eval", help="Run retrieval evaluation")
     eval_parser.add_argument("dataset")
     eval_parser.add_argument("--output-dir", default="data/processed/evals")
@@ -70,7 +72,7 @@ def main() -> None:
             print({"documents": documents, "chunks": chunks})
         elif args.command == "index":
             provider = embedding_provider_from_settings(get_settings())
-            print({"embeddings": rebuild_embeddings(session, provider)})
+            print({"embeddings": rebuild_embeddings(session, provider, missing_only=True)})
         elif args.command == "eval":
             metrics = run_retrieval_eval(
                 session,

@@ -60,6 +60,20 @@ def test_local_embeddings_are_deterministic_and_persisted() -> None:
         assert embedding.dimensions == 16
 
 
+def test_incremental_indexing_preserves_existing_embeddings() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    provider = LocalHashEmbeddingProvider(dimensions=16)
+
+    with Session(engine) as session:
+        _seed_chunk(session)
+        assert rebuild_embeddings(session, provider, missing_only=True) == 1
+        embedding_id = session.scalar(select(Embedding.id))
+
+        assert rebuild_embeddings(session, provider, missing_only=True) == 0
+        assert session.scalar(select(Embedding.id)) == embedding_id
+
+
 def test_sparse_search_works_offline_and_honors_filters() -> None:
     assert build_sparse_tsquery("AI revenue, AI demand") == "ai | revenue | demand"
     engine = create_engine("sqlite+pysqlite:///:memory:")

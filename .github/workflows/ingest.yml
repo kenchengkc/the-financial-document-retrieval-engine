@@ -30,8 +30,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prerequisites:
+    name: Check ingestion prerequisites
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+    steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          if [ -n "${DATABASE_URL}" ] && [ -n "${SEC_USER_AGENT}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Skipping ingestion until DATABASE_URL and SEC_USER_AGENT are configured."
+          fi
+
   ingest:
     name: Ingest filings
+    needs: prerequisites
+    if: needs.prerequisites.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -42,12 +63,11 @@ jobs:
       FORMS: ${{ github.event.inputs.forms || '10-K 10-Q' }}
       LIMIT: ${{ github.event.inputs.limit || '1' }}
     steps:
-      - name: Guard - require DATABASE_URL secret
+      - name: Validate inputs
         run: |
-          if [ -z "${DATABASE_URL}" ]; then
-            echo "DATABASE_URL secret not set; skipping ingestion."
-            exit 0
-          fi
+          [[ "${TICKERS}" =~ ^[A-Z0-9.-]+([[:space:]]+[A-Z0-9.-]+)*$ ]]
+          [[ "${FORMS}" =~ ^[0-9A-Z-]+([[:space:]]+[0-9A-Z-]+)*$ ]]
+          [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
 
       - name: Check out repository
         uses: actions/checkout@v6
@@ -64,16 +84,29 @@ jobs:
           python -m pip install -e .
 
       - name: Ingest filing metadata
-        run: python scripts/ingest_sec_sample.py --tickers ${TICKERS} --forms ${FORMS} --limit ${LIMIT}
+        run: |
+          read -r -a ticker_args <<< "${TICKERS}"
+          read -r -a form_args <<< "${FORMS}"
+          python scripts/ingest_sec_sample.py \
+            --tickers "${ticker_args[@]}" \
+            --forms "${form_args[@]}" \
+            --limit "${LIMIT}"
 
       - name: Download and parse filings
-        run: python -m scripts.download_filings --tickers ${TICKERS} --forms ${FORMS} --limit ${LIMIT} --download --parse
+        run: |
+          read -r -a ticker_args <<< "${TICKERS}"
+          read -r -a form_args <<< "${FORMS}"
+          python -m scripts.download_filings \
+            --tickers "${ticker_args[@]}" \
+            --forms "${form_args[@]}" \
+            --limit "${LIMIT}" \
+            --download \
+            --parse
 
       - name: Chunk documents
-        run: python -m scripts.retrieval_pipeline chunk --tickers ${TICKERS}
+        run: |
+          read -r -a ticker_args <<< "${TICKERS}"
+          python -m scripts.retrieval_pipeline chunk --tickers "${ticker_args[@]}"
 
-      # NOTE: `index` currently rebuilds ALL embeddings each run. That is free/fast with
-      # local_hash, but with a paid embedder (voyage/gemini/etc.) make this incremental
-      # (embed only chunks lacking an embedding) before enabling on a schedule.
-      - name: Build embeddings index
+      - name: Build missing embeddings
         run: python -m scripts.retrieval_pipeline index

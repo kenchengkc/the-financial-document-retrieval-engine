@@ -83,22 +83,30 @@ def rebuild_embeddings(
     provider: EmbeddingProvider,
     *,
     chunk_ids: list[int] | None = None,
+    missing_only: bool = False,
 ) -> int:
     statement = select(Chunk).order_by(Chunk.id)
     if chunk_ids is not None:
         statement = statement.where(Chunk.id.in_(chunk_ids))
+    if missing_only:
+        existing_chunk_ids = select(Embedding.chunk_id).where(
+            Embedding.provider == provider.name,
+            Embedding.model == provider.model,
+        )
+        statement = statement.where(~Chunk.id.in_(existing_chunk_ids))
     chunks = list(session.scalars(statement))
     if not chunks:
         return 0
 
     selected_ids = [chunk.id for chunk in chunks]
-    session.execute(
-        delete(Embedding).where(
-            Embedding.chunk_id.in_(selected_ids),
-            Embedding.provider == provider.name,
-            Embedding.model == provider.model,
+    if not missing_only:
+        session.execute(
+            delete(Embedding).where(
+                Embedding.chunk_id.in_(selected_ids),
+                Embedding.provider == provider.name,
+                Embedding.model == provider.model,
+            )
         )
-    )
     vectors = provider.embed_texts([chunk.chunk_text for chunk in chunks])
     for chunk, vector in zip(chunks, vectors, strict=True):
         session.add(
