@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
     app_name: str = "FDRE API"
     app_env: str = Field(default="local", alias="APP_ENV")
@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     )
     embedding_provider: str = Field(default="local_hash", alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field(default="local-hash-v1", alias="EMBEDDING_MODEL")
+    embedding_dimensions: int | None = Field(
+        default=None,
+        ge=1,
+        alias="EMBEDDING_DIMENSIONS",
+    )
+    embedding_batch_size: int = Field(default=64, ge=1, le=1000, alias="EMBEDDING_BATCH_SIZE")
     sparse_provider: str = Field(default="postgres", alias="SPARSE_PROVIDER")
     reranker_provider: str = Field(default="none", alias="RERANKER_PROVIDER")
     rerank_top_n: int = Field(default=50, alias="RERANK_TOP_N")
@@ -41,6 +47,7 @@ class Settings(BaseSettings):
     min_evidence_chunks: int = Field(default=2, alias="MIN_EVIDENCE_CHUNKS")
     min_retrieval_score: float = Field(default=0.2, alias="MIN_RETRIEVAL_SCORE")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    voyage_api_key: str | None = Field(default=None, alias="VOYAGE_API_KEY")
 
     @field_validator("database_url")
     @classmethod

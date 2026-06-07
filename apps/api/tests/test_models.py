@@ -94,7 +94,7 @@ def test_models_persist_related_financial_document_data() -> None:
             provider="fake",
             model="fake-v1",
             dimensions=3,
-            vector_json=[0.1, 0.2, 0.3],
+            vector=[0.1, 0.2, 0.3],
         )
     )
     company.financial_facts.append(

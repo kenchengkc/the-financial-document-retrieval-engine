@@ -228,7 +228,8 @@ PostgreSQL, so indexed filings, retrieval runs, answer runs, and citations persi
 deployments. Vercel serves the Next.js frontend at [thefdre.com](https://thefdre.com).
 
 The scheduled SEC ingestion workflow requires the `DATABASE_URL` and `SEC_USER_AGENT` GitHub
-repository secrets. Without both, it reports a successful skip rather than attempting ingestion
+repository secrets. External embedding providers also require their API-key secret. Without the
+required values, it reports a successful skip rather than attempting ingestion
 against an unconfigured database.
 
 ## Quality Checks
@@ -281,5 +282,17 @@ Use:
 ## API Keys
 
 No API key is required for the local MVP or demo. A descriptive `SEC_USER_AGENT` is required only
-when downloading live SEC data. `OPENAI_API_KEY` is optional and currently used only when
-`EMBEDDING_PROVIDER=openai`; local hash embeddings remain the default.
+when downloading live SEC data. Native pgvector storage is used in PostgreSQL, while local hash
+embeddings remain the default.
+
+For Voyage:
+
+```dotenv
+EMBEDDING_PROVIDER=voyage
+EMBEDDING_MODEL=voyage-4-large
+EMBEDDING_DIMENSIONS=512
+VOYAGE_API_KEY=...
+```
+
+`VOYAGE_API_KEY` or `OPENAI_API_KEY` is required only when its provider is selected. Indexing is
+incremental and commits in batches, so unchanged chunks are not sent to an external API again.

@@ -38,15 +38,25 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
     steps:
       - name: Check required secrets
         id: check
         run: |
-          if [ -n "${DATABASE_URL}" ] && [ -n "${SEC_USER_AGENT}" ]; then
+          provider_ready=true
+          if [ "${EMBEDDING_PROVIDER}" = "voyage" ] && [ -z "${VOYAGE_API_KEY}" ]; then
+            provider_ready=false
+          fi
+          if [ "${EMBEDDING_PROVIDER}" = "openai" ] && [ -z "${OPENAI_API_KEY}" ]; then
+            provider_ready=false
+          fi
+          if [ -n "${DATABASE_URL}" ] && [ -n "${SEC_USER_AGENT}" ] && [ "${provider_ready}" = true ]; then
             echo "enabled=true" >> "${GITHUB_OUTPUT}"
           else
             echo "enabled=false" >> "${GITHUB_OUTPUT}"
-            echo "::notice::Skipping ingestion until DATABASE_URL and SEC_USER_AGENT are configured."
+            echo "::notice::Skipping ingestion until database, SEC, and embedding provider credentials are configured."
           fi
 
   ingest:
@@ -58,6 +68,12 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
+      EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '' }}
+      EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '64' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       PYTHONPATH: .
       TICKERS: ${{ github.event.inputs.tickers || 'AAPL MSFT NVDA AMZN GOOGL' }}
       FORMS: ${{ github.event.inputs.forms || '10-K 10-Q' }}

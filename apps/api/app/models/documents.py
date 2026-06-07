@@ -3,7 +3,18 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    JSON,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.app.db import Base
@@ -111,6 +122,14 @@ class Chunk(Base):
 
 class Embedding(Base):
     __tablename__ = "embeddings"
+    __table_args__ = (
+        UniqueConstraint(
+            "chunk_id",
+            "provider",
+            "model",
+            name="uq_embeddings_chunk_provider_model",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     chunk_id: Mapped[int] = mapped_column(
@@ -121,7 +140,10 @@ class Embedding(Base):
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
-    vector_json: Mapped[list[float]] = mapped_column(JSON, nullable=False)
+    vector: Mapped[list[float]] = mapped_column(
+        Vector().with_variant(JSON, "sqlite"),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

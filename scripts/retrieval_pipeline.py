@@ -71,8 +71,18 @@ def main() -> None:
             )
             print({"documents": documents, "chunks": chunks})
         elif args.command == "index":
-            provider = embedding_provider_from_settings(get_settings())
-            print({"embeddings": rebuild_embeddings(session, provider, missing_only=True)})
+            settings = get_settings()
+            provider = embedding_provider_from_settings(settings)
+            print(
+                {
+                    "embeddings": rebuild_embeddings(
+                        session,
+                        provider,
+                        missing_only=True,
+                        batch_size=settings.embedding_batch_size,
+                    )
+                }
+            )
         elif args.command == "eval":
             metrics = run_retrieval_eval(
                 session,

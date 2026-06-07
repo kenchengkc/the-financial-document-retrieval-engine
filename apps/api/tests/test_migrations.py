@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 from apps.api.app import models  # noqa: F401
 from apps.api.app.db import Base
@@ -27,3 +28,124 @@ def test_initial_migration_upgrades_and_downgrades(tmp_path: Path) -> None:
 
     remaining_tables = set(inspect(engine).get_table_names())
     assert EXPECTED_TABLES.isdisjoint(remaining_tables)
+
+
+def test_pgvector_migration_preserves_existing_embeddings(tmp_path: Path) -> None:
+    database_path = tmp_path / "fdre-vectors.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    config = Config(REPO_ROOT / "alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "e60bbbb80e8c")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO companies (id, ticker, cik, name, created_at, updated_at)
+                VALUES (
+                    1,
+                    'NVDA',
+                    '0001045810',
+                    'NVIDIA Corporation',
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO documents
+                    (
+                        id,
+                        company_id,
+                        source_type,
+                        form_type,
+                        accession_number,
+                        created_at
+                    )
+                VALUES (
+                    1,
+                    1,
+                    'sec',
+                    '10-K',
+                    '0001045810-25-000023',
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO document_elements
+                    (id, document_id, element_type, reading_order, created_at)
+                VALUES (1, 1, 'text', 1, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO chunks
+                    (
+                        id,
+                        document_id,
+                        element_id,
+                        chunk_text,
+                        chunk_type,
+                        created_at
+                    )
+                VALUES (
+                    1,
+                    1,
+                    1,
+                    'AI demand increased.',
+                    'text',
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO embeddings
+                    (
+                        id,
+                        chunk_id,
+                        provider,
+                        model,
+                        dimensions,
+                        vector_json,
+                        created_at
+                    )
+                VALUES (
+                    1,
+                    1,
+                    'local_hash',
+                    'local-hash-v1',
+                    3,
+                    '[0.1, 0.2, 0.3]',
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    columns = {column["name"] for column in inspect(engine).get_columns("embeddings")}
+    assert "vector" in columns
+    assert "vector_json" not in columns
+    with engine.connect() as connection:
+        stored_vector = connection.scalar(text("SELECT vector FROM embeddings WHERE id = 1"))
+    assert json.loads(stored_vector) == [0.1, 0.2, 0.3]
+
+    unique_constraints = inspect(engine).get_unique_constraints("embeddings")
+    assert any(
+        constraint["column_names"] == ["chunk_id", "provider", "model"]
+        for constraint in unique_constraints
+    )

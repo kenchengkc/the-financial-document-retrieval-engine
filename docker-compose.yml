@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:0.8.2-pg16-trixie
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-fdre}
       POSTGRES_USER: ${POSTGRES_USER:-fdre}
@@ -29,6 +29,9 @@ services:
       SEC_RATE_LIMIT_REQUESTS_PER_SECOND: ${SEC_RATE_LIMIT_REQUESTS_PER_SECOND:-5}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local_hash}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-local-hash-v1}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       RERANKER_PROVIDER: ${RERANKER_PROVIDER:-fake}
       ANSWER_TOP_K: ${ANSWER_TOP_K:-8}
     ports:

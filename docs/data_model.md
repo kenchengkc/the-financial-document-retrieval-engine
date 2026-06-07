@@ -50,7 +50,9 @@ Each chunk belongs to one document and one source element. It stores text, chunk
 
 Provider-independent embedding storage.
 
-The MVP stores vectors in `vector_json` for portability. A later optional pgvector migration can add native vector storage without changing the provider interface.
+PostgreSQL stores embeddings in a native pgvector `vector` column. SQLite uses the same
+model attribute with a JSON fallback for tests. `(chunk_id, provider, model)` is unique, and
+incremental indexing only requests vectors that are missing for the configured dimensions.
 
 ### `financial_facts`
 

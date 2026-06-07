@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import respx
+from httpx import Response
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
-from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
+from fdre.indexing.embeddings import (
+    LocalHashEmbeddingProvider,
+    VoyageEmbeddingProvider,
+    rebuild_embeddings,
+)
 from fdre.indexing.sparse_index import PostgresFullTextIndexer, build_sparse_tsquery
 from fdre.retrieval.query import SearchFilters
 
@@ -72,6 +78,56 @@ def test_incremental_indexing_preserves_existing_embeddings() -> None:
 
         assert rebuild_embeddings(session, provider, missing_only=True) == 0
         assert session.scalar(select(Embedding.id)) == embedding_id
+
+
+def test_incremental_indexing_replaces_wrong_dimensions() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        _seed_chunk(session)
+        assert rebuild_embeddings(
+            session,
+            LocalHashEmbeddingProvider(dimensions=8),
+            missing_only=True,
+        ) == 1
+        assert rebuild_embeddings(
+            session,
+            LocalHashEmbeddingProvider(dimensions=16),
+            missing_only=True,
+        ) == 1
+        embeddings = list(session.scalars(select(Embedding)))
+        assert len(embeddings) == 1
+        assert embeddings[0].dimensions == 16
+
+
+@respx.mock
+def test_voyage_provider_uses_retrieval_input_type_and_dimensions() -> None:
+    route = respx.post("https://api.voyageai.com/v1/embeddings").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"index": 1, "embedding": [0.0, 1.0]},
+                    {"index": 0, "embedding": [1.0, 0.0]},
+                ]
+            },
+        )
+    )
+    provider = VoyageEmbeddingProvider(
+        api_key="test-key",
+        model="voyage-4-large",
+        dimensions=2,
+    )
+
+    assert provider.embed_texts(["first", "second"], input_type="query") == [
+        [1.0, 0.0],
+        [0.0, 1.0],
+    ]
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer test-key"
+    assert b'"input_type":"query"' in request.content
+    assert b'"output_dimension":2' in request.content
 
 
 def test_sparse_search_works_offline_and_honors_filters() -> None:

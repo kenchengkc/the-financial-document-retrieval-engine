@@ -4,8 +4,9 @@ import hashlib
 import math
 import re
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
+import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,7 @@ from apps.api.app.config import Settings
 from apps.api.app.models import Chunk, Embedding
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+EmbeddingInputType = Literal["document", "query"]
 
 
 class EmbeddingProvider(Protocol):
@@ -20,7 +22,12 @@ class EmbeddingProvider(Protocol):
     model: str
     dimensions: int
 
-    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]: ...
+    def embed_texts(
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType = "document",
+    ) -> list[list[float]]: ...
 
 
 class LocalHashEmbeddingProvider:
@@ -30,7 +37,12 @@ class LocalHashEmbeddingProvider:
         self.model = model
         self.dimensions = dimensions
 
-    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed_texts(
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType = "document",
+    ) -> list[list[float]]:
         return [_hash_embedding(text, self.dimensions) for text in texts]
 
 
@@ -41,39 +53,114 @@ class FakeEmbeddingProvider:
         self.model = model
         self.dimensions = dimensions
 
-    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed_texts(
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType = "document",
+    ) -> list[list[float]]:
         return [_hash_embedding(text, self.dimensions) for text in texts]
 
 
 class OpenAIEmbeddingProvider:
     name = "openai"
 
-    def __init__(self, *, api_key: str, model: str) -> None:
+    def __init__(self, *, api_key: str, model: str, dimensions: int | None = None) -> None:
         from openai import OpenAI
 
         self.model = model
         self._client = OpenAI(api_key=api_key)
-        self.dimensions = 0
+        default_dimensions = {
+            "text-embedding-3-small": 1536,
+            "text-embedding-3-large": 3072,
+        }
+        self.dimensions = dimensions or default_dimensions.get(model, 0)
+        if self.dimensions <= 0:
+            raise ValueError("EMBEDDING_DIMENSIONS is required for this OpenAI model")
 
-    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        response = self._client.embeddings.create(model=self.model, input=list(texts))
+    def embed_texts(
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType = "document",
+    ) -> list[list[float]]:
+        response = self._client.embeddings.create(
+            model=self.model,
+            input=list(texts),
+            dimensions=self.dimensions,
+        )
         vectors = [item.embedding for item in response.data]
-        if vectors:
-            self.dimensions = len(vectors[0])
         return vectors
+
+
+class VoyageEmbeddingProvider:
+    name = "voyage"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "voyage-4-large",
+        dimensions: int = 512,
+        api_url: str = "https://api.voyageai.com/v1/embeddings",
+    ) -> None:
+        self.model = model
+        self.dimensions = dimensions
+        self._api_key = api_key
+        self._api_url = api_url
+
+    def embed_texts(
+        self,
+        texts: Sequence[str],
+        *,
+        input_type: EmbeddingInputType = "document",
+    ) -> list[list[float]]:
+        response = httpx.post(
+            self._api_url,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "input": list(texts),
+                "model": self.model,
+                "input_type": input_type,
+                "output_dimension": self.dimensions,
+                "output_dtype": "float",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()["data"]
+        return [item["embedding"] for item in sorted(data, key=lambda item: item["index"])]
 
 
 def embedding_provider_from_settings(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_provider == "fake":
-        return FakeEmbeddingProvider(model=settings.embedding_model)
+        return FakeEmbeddingProvider(
+            model=settings.embedding_model,
+            dimensions=settings.embedding_dimensions or 8,
+        )
     if settings.embedding_provider == "local_hash":
-        return LocalHashEmbeddingProvider(model=settings.embedding_model)
+        return LocalHashEmbeddingProvider(
+            model=settings.embedding_model,
+            dimensions=settings.embedding_dimensions or 64,
+        )
     if settings.embedding_provider == "openai":
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for EMBEDDING_PROVIDER=openai")
         return OpenAIEmbeddingProvider(
             api_key=settings.openai_api_key,
             model=settings.embedding_model,
+            dimensions=settings.embedding_dimensions,
+        )
+    if settings.embedding_provider == "voyage":
+        if not settings.voyage_api_key:
+            raise ValueError("VOYAGE_API_KEY is required for EMBEDDING_PROVIDER=voyage")
+        return VoyageEmbeddingProvider(
+            api_key=settings.voyage_api_key,
+            model=settings.embedding_model,
+            dimensions=settings.embedding_dimensions or 512,
         )
     raise ValueError(f"Unsupported embedding provider: {settings.embedding_provider}")
 
@@ -84,6 +171,7 @@ def rebuild_embeddings(
     *,
     chunk_ids: list[int] | None = None,
     missing_only: bool = False,
+    batch_size: int = 64,
 ) -> int:
     statement = select(Chunk).order_by(Chunk.id)
     if chunk_ids is not None:
@@ -92,14 +180,17 @@ def rebuild_embeddings(
         existing_chunk_ids = select(Embedding.chunk_id).where(
             Embedding.provider == provider.name,
             Embedding.model == provider.model,
+            Embedding.dimensions == provider.dimensions,
         )
         statement = statement.where(~Chunk.id.in_(existing_chunk_ids))
     chunks = list(session.scalars(statement))
     if not chunks:
         return 0
 
-    selected_ids = [chunk.id for chunk in chunks]
-    if not missing_only:
+    indexed = 0
+    for offset in range(0, len(chunks), batch_size):
+        batch = chunks[offset : offset + batch_size]
+        selected_ids = [chunk.id for chunk in batch]
         session.execute(
             delete(Embedding).where(
                 Embedding.chunk_id.in_(selected_ids),
@@ -107,19 +198,28 @@ def rebuild_embeddings(
                 Embedding.model == provider.model,
             )
         )
-    vectors = provider.embed_texts([chunk.chunk_text for chunk in chunks])
-    for chunk, vector in zip(chunks, vectors, strict=True):
-        session.add(
-            Embedding(
-                chunk_id=chunk.id,
-                provider=provider.name,
-                model=provider.model,
-                dimensions=len(vector),
-                vector_json=vector,
-            )
+        vectors = provider.embed_texts(
+            [chunk.chunk_text for chunk in batch],
+            input_type="document",
         )
-    session.commit()
-    return len(chunks)
+        for chunk, vector in zip(batch, vectors, strict=True):
+            if len(vector) != provider.dimensions:
+                raise ValueError(
+                    f"{provider.name}/{provider.model} returned {len(vector)} dimensions; "
+                    f"expected {provider.dimensions}"
+                )
+            session.add(
+                Embedding(
+                    chunk_id=chunk.id,
+                    provider=provider.name,
+                    model=provider.model,
+                    dimensions=len(vector),
+                    vector=vector,
+                )
+            )
+        session.commit()
+        indexed += len(batch)
+    return indexed
 
 
 def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
