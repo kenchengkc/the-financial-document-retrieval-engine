@@ -1,0 +1,79 @@
+name: Scheduled SEC ingestion
+
+# Loads SEC filings into the production database over time.
+# Requires two repository secrets:
+#   DATABASE_URL    -> Railway Postgres PUBLIC url (Postgres service -> Variables -> DATABASE_PUBLIC_URL)
+#   SEC_USER_AGENT  -> e.g. "FDRE your-email@example.com" (SEC requires a descriptive UA)
+# The job is a no-op (skips) if DATABASE_URL is not configured, to avoid failure noise.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Space-separated tickers"
+        default: "AAPL MSFT NVDA AMZN GOOGL"
+      forms:
+        description: "Space-separated form types"
+        default: "10-K 10-Q"
+      limit:
+        description: "Latest N filings per form per company"
+        default: "1"
+  schedule:
+    # Weekly, Monday 09:00 UTC. Tune or remove as needed.
+    - cron: "0 9 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sec-ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: Ingest filings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      PYTHONPATH: .
+      TICKERS: ${{ github.event.inputs.tickers || 'AAPL MSFT NVDA AMZN GOOGL' }}
+      FORMS: ${{ github.event.inputs.forms || '10-K 10-Q' }}
+      LIMIT: ${{ github.event.inputs.limit || '1' }}
+    steps:
+      - name: Guard - require DATABASE_URL secret
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "DATABASE_URL secret not set; skipping ingestion."
+            exit 0
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Ingest filing metadata
+        run: python scripts/ingest_sec_sample.py --tickers ${TICKERS} --forms ${FORMS} --limit ${LIMIT}
+
+      - name: Download and parse filings
+        run: python -m scripts.download_filings --tickers ${TICKERS} --forms ${FORMS} --limit ${LIMIT} --download --parse
+
+      - name: Chunk documents
+        run: python -m scripts.retrieval_pipeline chunk --tickers ${TICKERS}
+
+      # NOTE: `index` currently rebuilds ALL embeddings each run. That is free/fast with
+      # local_hash, but with a paid embedder (voyage/gemini/etc.) make this incremental
+      # (embed only chunks lacking an embedding) before enabling on a schedule.
+      - name: Build embeddings index
+        run: python -m scripts.retrieval_pipeline index
