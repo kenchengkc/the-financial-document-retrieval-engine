@@ -43,7 +43,10 @@ class RetrievalResult(Base):
         index=True,
         nullable=False,
     )
-    chunk_id: Mapped[int] = mapped_column(ForeignKey("chunks.id"), index=True, nullable=False)
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chunks.id", ondelete="SET NULL"),
+        index=True,
+    )
     dense_score: Mapped[float | None] = mapped_column(Float)
     sparse_score: Mapped[float | None] = mapped_column(Float)
     hybrid_score: Mapped[float | None] = mapped_column(Float)
@@ -56,4 +59,4 @@ class RetrievalResult(Base):
     )
 
     retrieval_run: Mapped[RetrievalRun] = relationship(back_populates="results")
-    chunk: Mapped[Chunk] = relationship()
+    chunk: Mapped[Chunk | None] = relationship()

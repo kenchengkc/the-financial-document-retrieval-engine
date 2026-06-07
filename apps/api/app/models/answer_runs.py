@@ -48,7 +48,10 @@ class Citation(Base):
         index=True,
         nullable=False,
     )
-    chunk_id: Mapped[int] = mapped_column(ForeignKey("chunks.id"), index=True, nullable=False)
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chunks.id", ondelete="SET NULL"),
+        index=True,
+    )
     claim_text: Mapped[str] = mapped_column(Text)
     citation_text: Mapped[str] = mapped_column(Text)
     page_number: Mapped[int | None] = mapped_column(Integer)
@@ -61,4 +64,4 @@ class Citation(Base):
     )
 
     answer_run: Mapped[AnswerRun] = relationship(back_populates="citations")
-    chunk: Mapped[Chunk] = relationship()
+    chunk: Mapped[Chunk | None] = relationship()

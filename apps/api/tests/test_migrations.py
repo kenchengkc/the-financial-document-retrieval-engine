@@ -149,3 +149,140 @@ def test_pgvector_migration_preserves_existing_embeddings(tmp_path: Path) -> Non
         constraint["column_names"] == ["chunk_id", "provider", "model"]
         for constraint in unique_constraints
     )
+
+
+def test_chunk_rebuild_preserves_run_history(tmp_path: Path) -> None:
+    database_path = tmp_path / "fdre-history.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    config = Config(REPO_ROOT / "alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "head")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+        connection.execute(
+            text(
+                """
+                INSERT INTO companies (id, ticker, cik, name, created_at, updated_at)
+                VALUES (
+                    1,
+                    'AMZN',
+                    '0001018724',
+                    'Amazon.com, Inc.',
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO documents
+                    (id, company_id, source_type, form_type, accession_number, created_at)
+                VALUES (1, 1, 'sec', '10-K', '0001018724-26-000004', CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO document_elements
+                    (id, document_id, element_type, text, reading_order, created_at)
+                VALUES (
+                    1,
+                    1,
+                    'text',
+                    'Competition presents an ongoing risk.',
+                    1,
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO chunks
+                    (
+                        id,
+                        document_id,
+                        element_id,
+                        chunk_text,
+                        chunk_type,
+                        created_at
+                    )
+                VALUES (
+                    1,
+                    1,
+                    1,
+                    'Competition presents an ongoing risk.',
+                    'text',
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO retrieval_runs
+                    (id, query, retriever_variant, created_at)
+                VALUES (1, 'Amazon risk factors', 'hybrid', CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO retrieval_results
+                    (id, retrieval_run_id, chunk_id, rank, created_at)
+                VALUES (1, 1, 1, 1, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO answer_runs
+                    (id, question, abstained, created_at)
+                VALUES (1, 'What risks did Amazon report?', 0, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO citations
+                    (
+                        id,
+                        answer_run_id,
+                        chunk_id,
+                        claim_text,
+                        citation_text,
+                        created_at
+                    )
+                VALUES (
+                    1,
+                    1,
+                    1,
+                    'Amazon reported competition risk.',
+                    'Competition presents an ongoing risk.',
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+
+        connection.execute(text("DELETE FROM document_elements WHERE id = 1"))
+
+        assert connection.scalar(text("SELECT COUNT(*) FROM chunks")) == 0
+        assert connection.scalar(
+            text("SELECT chunk_id FROM retrieval_results WHERE id = 1")
+        ) is None
+        assert connection.scalar(text("SELECT chunk_id FROM citations WHERE id = 1")) is None
+        assert (
+            connection.scalar(text("SELECT citation_text FROM citations WHERE id = 1"))
+            == "Competition presents an ongoing risk."
+        )
