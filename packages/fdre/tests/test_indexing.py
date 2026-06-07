@@ -102,6 +102,27 @@ def test_incremental_indexing_replaces_wrong_dimensions() -> None:
 
 
 @respx.mock
+def test_voyage_provider_retries_after_rate_limit() -> None:
+    route = respx.post("https://api.voyageai.com/v1/embeddings")
+    route.side_effect = [
+        Response(429, headers={"Retry-After": "0"}),
+        Response(
+            200,
+            json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]},
+        ),
+    ]
+    provider = VoyageEmbeddingProvider(
+        api_key="test-key",
+        model="voyage-4-large",
+        dimensions=2,
+        requests_per_minute=None,
+    )
+
+    assert provider.embed_texts(["hello"]) == [[1.0, 0.0]]
+    assert route.call_count == 2
+
+
+@respx.mock
 def test_voyage_provider_uses_retrieval_input_type_and_dimensions() -> None:
     route = respx.post("https://api.voyageai.com/v1/embeddings").mock(
         return_value=Response(

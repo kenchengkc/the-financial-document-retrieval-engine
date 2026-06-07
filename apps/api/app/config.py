@@ -39,6 +39,11 @@ class Settings(BaseSettings):
         alias="EMBEDDING_DIMENSIONS",
     )
     embedding_batch_size: int = Field(default=64, ge=1, le=1000, alias="EMBEDDING_BATCH_SIZE")
+    embedding_requests_per_minute: int | None = Field(
+        default=None,
+        ge=1,
+        alias="EMBEDDING_REQUESTS_PER_MINUTE",
+    )
     sparse_provider: str = Field(default="postgres", alias="SPARSE_PROVIDER")
     reranker_provider: str = Field(default="none", alias="RERANKER_PROVIDER")
     rerank_top_n: int = Field(default=50, alias="RERANK_TOP_N")

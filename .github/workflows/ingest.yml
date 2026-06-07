@@ -68,14 +68,15 @@ jobs:
     needs: prerequisites
     if: needs.prerequisites.outputs.enabled == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
       EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
       EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '' }}
-      EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '64' }}
+      EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '128' }}
+      EMBEDDING_REQUESTS_PER_MINUTE: ${{ vars.EMBEDDING_REQUESTS_PER_MINUTE || '2' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       PYTHONPATH: .
