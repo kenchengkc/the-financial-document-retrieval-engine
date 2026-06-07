@@ -223,11 +223,13 @@ npm run dev
 `NEXT_PUBLIC_API_URL` selects the FastAPI deployment. The local default is
 `http://127.0.0.1:8000`.
 
-The production frontend uses `https://fdre-api.vercel.app`. That public API currently uses a
-deterministically seeded SQLite database in Vercel's temporary function storage, so the demo works
-without paid infrastructure but run history is not durable across function replacement. Point
-`DATABASE_URL` at managed PostgreSQL before treating the deployment as persistent production
-storage.
+The production frontend uses `https://api.thefdre.com`. The API runs on Railway with managed
+PostgreSQL, so indexed filings, retrieval runs, answer runs, and citations persist across
+deployments. Vercel serves the Next.js frontend at [thefdre.com](https://thefdre.com).
+
+The scheduled SEC ingestion workflow requires the `DATABASE_URL` and `SEC_USER_AGENT` GitHub
+repository secrets. Without both, it reports a successful skip rather than attempting ingestion
+against an unconfigured database.
 
 ## Quality Checks
 
