@@ -41,3 +41,22 @@ def test_extracts_sections_text_tables_and_reading_order() -> None:
     )
     assert tables[0].metadata["row_count"] == 2
     assert tables[0].metadata["column_count"] == 2
+
+
+def test_removes_nested_hidden_tags_without_crashing() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html>
+          <body>
+            <div style="display: none">
+              <span><strong>Hidden filing metadata</strong></span>
+            </div>
+            <p>Visible filing content.</p>
+          </body>
+        </html>
+        """
+    )
+
+    texts = [element.text for element in elements]
+    assert "Visible filing content." in texts
+    assert not any("Hidden filing metadata" in (text or "") for text in texts)
