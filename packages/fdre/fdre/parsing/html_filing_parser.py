@@ -61,6 +61,19 @@ class HtmlFilingParser(BaseDocumentParser):
                 continue
 
             if tag.name == "table":
+                text = _clean_text(tag.get_text(" ", strip=True))
+                detected_section = _detect_section(text)
+                if detected_section is not None and _looks_like_section_header(tag, text):
+                    current_section = detected_section
+                    last_signature = self._append(
+                        elements,
+                        element_type="section_header",
+                        text=text,
+                        section=detected_section,
+                        metadata={"tag": tag.name},
+                        last_signature=last_signature,
+                    )
+                    continue
                 table = _parse_table(tag)
                 if table is None:
                     continue

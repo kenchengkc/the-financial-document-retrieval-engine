@@ -60,3 +60,35 @@ def test_removes_nested_hidden_tags_without_crashing() -> None:
     texts = [element.text for element in elements]
     assert "Visible filing content." in texts
     assert not any("Hidden filing metadata" in (text or "") for text in texts)
+
+
+def test_detects_sections_encoded_as_layout_tables() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html>
+          <body>
+            <table>
+              <tr><td>Item 3.</td><td>Legal Proceedings</td></tr>
+            </table>
+            <p>We are involved in legal matters.</p>
+            <table>
+              <tr><td>Item 1A.</td><td>Risk Factors</td></tr>
+            </table>
+            <p>Competition may reduce sales and profits.</p>
+          </body>
+        </html>
+        """
+    )
+
+    risk_header = next(
+        element
+        for element in elements
+        if element.element_type == "section_header" and element.section == "Risk Factors"
+    )
+    assert risk_header.text == "Item 1A. Risk Factors"
+    risk_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "Competition" in (element.text or "")
+    )
+    assert risk_text.section == "Risk Factors"

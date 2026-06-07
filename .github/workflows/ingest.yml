@@ -18,6 +18,10 @@ on:
       limit:
         description: "Latest N filings per form per company"
         default: "1"
+      force_parse:
+        description: "Reparse unchanged filings after parser updates"
+        type: boolean
+        default: false
   schedule:
     # Weekly, Monday 09:00 UTC. Tune or remove as needed.
     - cron: "0 9 * * 1"
@@ -78,12 +82,14 @@ jobs:
       TICKERS: ${{ github.event.inputs.tickers || 'AAPL MSFT NVDA AMZN GOOGL' }}
       FORMS: ${{ github.event.inputs.forms || '10-K 10-Q' }}
       LIMIT: ${{ github.event.inputs.limit || '1' }}
+      FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
     steps:
       - name: Validate inputs
         run: |
           [[ "${TICKERS}" =~ ^[A-Z0-9.-]+([[:space:]]+[A-Z0-9.-]+)*$ ]]
           [[ "${FORMS}" =~ ^[0-9A-Z-]+([[:space:]]+[0-9A-Z-]+)*$ ]]
           [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${FORCE_PARSE}" =~ ^(true|false)$ ]]
 
       - name: Check out repository
         uses: actions/checkout@v6
@@ -112,12 +118,17 @@ jobs:
         run: |
           read -r -a ticker_args <<< "${TICKERS}"
           read -r -a form_args <<< "${FORMS}"
+          force_args=()
+          if [ "${FORCE_PARSE}" = "true" ]; then
+            force_args+=(--force-parse)
+          fi
           python -m scripts.download_filings \
             --tickers "${ticker_args[@]}" \
             --forms "${form_args[@]}" \
             --limit "${LIMIT}" \
             --download \
-            --parse
+            --parse \
+            "${force_args[@]}"
 
       - name: Chunk documents
         run: |

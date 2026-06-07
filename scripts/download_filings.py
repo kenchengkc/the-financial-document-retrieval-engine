@@ -68,6 +68,7 @@ def process_documents(
     limit: int,
     download: bool,
     parse: bool,
+    force_parse: bool = False,
 ) -> ProcessingSummary:
     documents = select_documents(
         session,
@@ -107,7 +108,7 @@ def process_documents(
                 .where(DocumentElement.document_id == document.id)
                 .limit(1)
             ) is not None
-            if has_elements and not content_changed:
+            if has_elements and not content_changed and not force_parse:
                 continue
             if not document.local_path:
                 raise ValueError(
@@ -167,6 +168,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Replace document elements from downloaded HTML",
     )
+    parser.add_argument(
+        "--force-parse",
+        action="store_true",
+        help="Reparse selected filings even when their downloaded content is unchanged",
+    )
     return parser.parse_args()
 
 
@@ -184,6 +190,7 @@ def main() -> None:
                     limit=args.limit,
                     download=True,
                     parse=args.parse,
+                    force_parse=args.force_parse,
                 )
         else:
             summary = process_documents(
@@ -195,6 +202,7 @@ def main() -> None:
                 limit=args.limit,
                 download=False,
                 parse=args.parse,
+                force_parse=args.force_parse,
             )
     print(summary)
 
