@@ -18,7 +18,7 @@ from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
-from fdre.retrieval.rerank import reranker_from_name
+from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
 
 PRIVATE_INFORMATION_PATTERN = re.compile(
@@ -216,11 +216,16 @@ def rerank_node(context: WorkflowContext, state: AgentState) -> AgentState:
         RetrievalCandidate.model_validate(payload)
         for payload in state.get("retrieved_candidates", [])
     ]
-    reranked = reranker_from_name(context.settings.reranker_provider).rerank(
+    reranked = reranker_from_settings(context.settings).rerank(
         state["user_query"],
         candidates,
         top_n=context.settings.answer_top_k,
     )
+    floor = context.settings.min_rerank_score
+    if floor > 0:
+        reranked = [
+            candidate for candidate in reranked if (candidate.rerank_score or 0.0) >= floor
+        ]
     return {
         "reranked_candidates": [
             candidate.model_dump(mode="json") for candidate in reranked

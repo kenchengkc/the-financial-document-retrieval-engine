@@ -12,7 +12,7 @@ from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
 from fdre.retrieval.query import PreprocessedQuery, RetrievalCandidate, SearchFilters
-from fdre.retrieval.rerank import reranker_from_name
+from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
 
 
@@ -45,11 +45,17 @@ def search_documents(
         filters=preprocessed.filters,
         limit=max(top_k, settings.rerank_top_n),
     )
-    candidates = reranker_from_name(settings.reranker_provider).rerank(
+    candidates = reranker_from_settings(settings).rerank(
         query,
         candidates,
         top_n=min(top_k, settings.rerank_top_n),
     )
+    if settings.min_rerank_score > 0:
+        candidates = [
+            candidate
+            for candidate in candidates
+            if (candidate.rerank_score or 0.0) >= settings.min_rerank_score
+        ]
     latency_ms = round((perf_counter() - started) * 1000)
     retrieval_run = RetrievalRun(
         query=query,
