@@ -101,3 +101,50 @@ def test_rebuild_document_chunks_is_idempotent_and_propagates_metadata() -> None
             assert metadata["form_type"] == "10-K"
             assert metadata["document_id"] == document.id
             assert metadata["element_id"] == chunk.element_id
+
+
+def test_rebuild_document_chunks_dedupes_repeated_text() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    company = Company(ticker="GOOGL", cik="0001652044", name="Alphabet Inc.")
+    document = Document(
+        company=company,
+        source_type="sec",
+        form_type="10-K",
+        accession_number="0001652044-25-000010",
+    )
+    document.elements.extend(
+        [
+            DocumentElement(
+                element_type="text", section="Business", text="Table of Contents", reading_order=1
+            ),
+            DocumentElement(
+                element_type="text",
+                section="Risk Factors",
+                text="Table of Contents",
+                reading_order=2,
+            ),
+            DocumentElement(
+                element_type="text",
+                section="Risk Factors",
+                text="table of   contents",  # whitespace/case variant
+                reading_order=3,
+            ),
+            DocumentElement(
+                element_type="text",
+                section="Risk Factors",
+                text="Unique risk disclosure.",
+                reading_order=4,
+            ),
+        ]
+    )
+
+    with Session(engine) as session:
+        session.add(company)
+        session.commit()
+        chunks = rebuild_document_chunks(session, document.id, max_tokens=50)
+        texts = [chunk.chunk_text for chunk in chunks]
+
+        assert len(chunks) == 2
+        assert sum(text == "Table of Contents" for text in texts) == 1
+        assert any("Unique risk disclosure" in text for text in texts)

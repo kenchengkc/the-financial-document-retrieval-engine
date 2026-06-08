@@ -101,6 +101,7 @@ def rebuild_document_chunks(
     text_chunker = ElementChunker(max_tokens=max_tokens)
     table_chunker = TableChunker()
     stored: list[Chunk] = []
+    seen_texts: set[str] = set()
     elements = sorted(
         document.elements,
         key=lambda element: (
@@ -117,6 +118,12 @@ def rebuild_document_chunks(
             else text_chunker.chunk(element, metadata=metadata)
         )
         for spec in specs:
+            # Skip chunks whose text already appeared in this document (e.g. repeated
+            # "Table of Contents" / "PART II" boilerplate), keeping the first occurrence.
+            dedup_key = " ".join(spec.chunk_text.split()).casefold()
+            if dedup_key in seen_texts:
+                continue
+            seen_texts.add(dedup_key)
             chunk = Chunk(
                 document=document,
                 element=element,
