@@ -44,6 +44,12 @@ class Settings(BaseSettings):
         ge=1,
         alias="EMBEDDING_REQUESTS_PER_MINUTE",
     )
+    embedding_tokens_per_minute: int | None = Field(
+        default=None,
+        ge=1,
+        alias="EMBEDDING_TOKENS_PER_MINUTE",
+    )
+    embedding_concurrency: int = Field(default=8, ge=1, le=64, alias="EMBEDDING_CONCURRENCY")
     sparse_provider: str = Field(default="postgres", alias="SPARSE_PROVIDER")
     reranker_provider: str = Field(default="none", alias="RERANKER_PROVIDER")
     reranker_model: str = Field(default="rerank-2.5", alias="RERANKER_MODEL")

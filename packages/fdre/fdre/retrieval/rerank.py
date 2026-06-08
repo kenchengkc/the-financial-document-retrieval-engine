@@ -4,7 +4,11 @@ import re
 from typing import Protocol
 
 from apps.api.app.config import Settings
-from fdre.indexing.embeddings import RequestPacer, _post_json_with_retries
+from fdre.indexing.embeddings import (
+    EmbeddingRateLimiter,
+    _post_json_with_retries,
+    estimate_embedding_tokens,
+)
 from fdre.retrieval.query import RetrievalCandidate
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
@@ -102,8 +106,10 @@ class VoyageReranker:
         self.model = model
         self._api_key = api_key
         self._api_url = api_url
-        self._pacer = (
-            RequestPacer(requests_per_minute) if requests_per_minute is not None else None
+        self._rate_limiter = (
+            EmbeddingRateLimiter(requests_per_minute=requests_per_minute)
+            if requests_per_minute is not None
+            else None
         )
         self._max_attempts = max_attempts
 
@@ -117,6 +123,7 @@ class VoyageReranker:
         if not candidates:
             return []
         subset = [candidate.model_copy(deep=True) for candidate in candidates]
+        documents = [candidate.text for candidate in subset]
         response = _post_json_with_retries(
             url=self._api_url,
             headers={
@@ -125,13 +132,14 @@ class VoyageReranker:
             },
             json_body={
                 "query": query,
-                "documents": [candidate.text for candidate in subset],
+                "documents": documents,
                 "model": self.model,
                 "top_k": min(top_n, len(subset)),
                 "truncation": True,
             },
             timeout=30,
-            pacer=self._pacer,
+            rate_limiter=self._rate_limiter,
+            token_count=estimate_embedding_tokens([query, *documents]),
             max_attempts=self._max_attempts,
         )
         reranked: list[RetrievalCandidate] = []

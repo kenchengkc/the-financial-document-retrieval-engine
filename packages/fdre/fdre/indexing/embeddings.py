@@ -4,40 +4,76 @@ import hashlib
 import math
 import random
 import re
+import threading
 import time
+from collections import deque
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Literal, Protocol
 
 import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from apps.api.app.config import Settings
-from apps.api.app.models import Chunk, Embedding
+from apps.api.app.models import Chunk, Company, Document, Embedding
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 VOYAGE_MAX_BATCH_SIZE = 128
+VOYAGE_DEFAULT_REQUESTS_PER_MINUTE = 2000
+VOYAGE_DEFAULT_TOKENS_PER_MINUTE = 3_000_000
 RETRYABLE_HTTP_STATUS_CODES = frozenset({429, 502, 503, 504})
 EmbeddingInputType = Literal["document", "query"]
 
 
-class RequestPacer:
-    """Pace outbound embedding requests to stay under provider RPM limits."""
+def estimate_embedding_tokens(texts: Sequence[str]) -> int:
+    return sum(max(1, len(text.split())) for text in texts)
 
-    def __init__(self, requests_per_minute: int) -> None:
-        if requests_per_minute <= 0:
-            raise ValueError("requests_per_minute must be positive")
-        self._minimum_interval = 60.0 / requests_per_minute
-        self._last_request_at: float | None = None
 
-    def wait(self) -> None:
-        now = time.monotonic()
-        if self._last_request_at is not None:
-            remaining = self._minimum_interval - (now - self._last_request_at)
-            if remaining > 0:
-                time.sleep(remaining)
+class EmbeddingRateLimiter:
+    """Thread-safe sliding-window limiter for provider RPM and TPM caps."""
+
+    def __init__(
+        self,
+        *,
+        requests_per_minute: int | None = None,
+        tokens_per_minute: int | None = None,
+    ) -> None:
+        self._requests_per_minute = requests_per_minute
+        self._tokens_per_minute = tokens_per_minute
+        self._lock = threading.Lock()
+        self._request_times: deque[float] = deque()
+        self._token_usage: deque[tuple[float, int]] = deque()
+
+    def acquire(self, *, token_count: int) -> None:
+        if self._requests_per_minute is None and self._tokens_per_minute is None:
+            return
+        while True:
+            with self._lock:
                 now = time.monotonic()
-        self._last_request_at = now
+                cutoff = now - 60.0
+                while self._request_times and self._request_times[0] <= cutoff:
+                    self._request_times.popleft()
+                while self._token_usage and self._token_usage[0][0] <= cutoff:
+                    self._token_usage.popleft()
+
+                wait_for = 0.0
+                if (
+                    self._requests_per_minute is not None
+                    and len(self._request_times) >= self._requests_per_minute
+                ):
+                    wait_for = max(wait_for, self._request_times[0] + 60.0 - now)
+                if self._tokens_per_minute is not None and self._token_usage:
+                    used_tokens = sum(tokens for _, tokens in self._token_usage)
+                    if used_tokens + token_count > self._tokens_per_minute:
+                        wait_for = max(wait_for, self._token_usage[0][0] + 60.0 - now)
+
+                if wait_for <= 0:
+                    self._request_times.append(now)
+                    self._token_usage.append((now, token_count))
+                    return
+            time.sleep(min(wait_for, 1.0))
 
 
 def _retry_after_seconds(response: httpx.Response, *, attempt: int) -> float:
@@ -57,13 +93,14 @@ def _post_json_with_retries(
     headers: dict[str, str],
     json_body: dict[str, object],
     timeout: float,
-    pacer: RequestPacer | None,
+    rate_limiter: EmbeddingRateLimiter | None,
+    token_count: int,
     max_attempts: int = 8,
 ) -> httpx.Response:
     delay_attempt = 1
     for attempt in range(1, max_attempts + 1):
-        if pacer is not None:
-            pacer.wait()
+        if rate_limiter is not None:
+            rate_limiter.acquire(token_count=token_count)
         response = httpx.post(url, headers=headers, json=json_body, timeout=timeout)
         if response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
             response.raise_for_status()
@@ -161,15 +198,21 @@ class VoyageEmbeddingProvider:
         model: str = "voyage-4-large",
         dimensions: int = 512,
         api_url: str = "https://api.voyageai.com/v1/embeddings",
-        requests_per_minute: int | None = 2,
+        requests_per_minute: int | None = VOYAGE_DEFAULT_REQUESTS_PER_MINUTE,
+        tokens_per_minute: int | None = VOYAGE_DEFAULT_TOKENS_PER_MINUTE,
         max_attempts: int = 8,
     ) -> None:
         self.model = model
         self.dimensions = dimensions
         self._api_key = api_key
         self._api_url = api_url
-        self._pacer = (
-            RequestPacer(requests_per_minute) if requests_per_minute is not None else None
+        self._rate_limiter = (
+            EmbeddingRateLimiter(
+                requests_per_minute=requests_per_minute,
+                tokens_per_minute=tokens_per_minute,
+            )
+            if requests_per_minute is not None or tokens_per_minute is not None
+            else None
         )
         self._max_attempts = max_attempts
 
@@ -198,7 +241,8 @@ class VoyageEmbeddingProvider:
                 "output_dtype": "float",
             },
             timeout=60,
-            pacer=self._pacer,
+            rate_limiter=self._rate_limiter,
+            token_count=estimate_embedding_tokens(texts),
             max_attempts=self._max_attempts,
         )
         data = response.json()["data"]
@@ -227,27 +271,42 @@ def embedding_provider_from_settings(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_provider == "voyage":
         if not settings.voyage_api_key:
             raise ValueError("VOYAGE_API_KEY is required for EMBEDDING_PROVIDER=voyage")
-        requests_per_minute = settings.embedding_requests_per_minute
-        if requests_per_minute is None:
-            requests_per_minute = 2
         return VoyageEmbeddingProvider(
             api_key=settings.voyage_api_key,
             model=settings.embedding_model,
             dimensions=settings.embedding_dimensions or 512,
-            requests_per_minute=requests_per_minute,
+            requests_per_minute=(
+                settings.embedding_requests_per_minute
+                if settings.embedding_requests_per_minute is not None
+                else VOYAGE_DEFAULT_REQUESTS_PER_MINUTE
+            ),
+            tokens_per_minute=(
+                settings.embedding_tokens_per_minute
+                if settings.embedding_tokens_per_minute is not None
+                else VOYAGE_DEFAULT_TOKENS_PER_MINUTE
+            ),
         )
     raise ValueError(f"Unsupported embedding provider: {settings.embedding_provider}")
 
 
-def rebuild_embeddings(
-    session: Session,
-    provider: EmbeddingProvider,
+def _chunk_select_statement(
     *,
-    chunk_ids: list[int] | None = None,
-    missing_only: bool = False,
-    batch_size: int = 64,
-) -> int:
+    chunk_ids: list[int] | None,
+    document_ids: list[int] | None,
+    tickers: list[str] | None,
+    missing_only: bool,
+    provider: EmbeddingProvider,
+) -> Select[tuple[Chunk]]:
     statement = select(Chunk).order_by(Chunk.id)
+    if tickers:
+        normalized = [ticker.upper() for ticker in tickers]
+        statement = (
+            statement.join(Chunk.document)
+            .join(Document.company)
+            .where(Company.ticker.in_(normalized))
+        )
+    if document_ids is not None:
+        statement = statement.where(Chunk.document_id.in_(document_ids))
     if chunk_ids is not None:
         statement = statement.where(Chunk.id.in_(chunk_ids))
     if missing_only:
@@ -257,6 +316,60 @@ def rebuild_embeddings(
             Embedding.dimensions == provider.dimensions,
         )
         statement = statement.where(~Chunk.id.in_(existing_chunk_ids))
+    return statement
+
+
+def _persist_embedding_batch(
+    session: Session,
+    provider: EmbeddingProvider,
+    batch: list[Chunk],
+    vectors: list[list[float]],
+) -> int:
+    selected_ids = [chunk.id for chunk in batch]
+    session.execute(
+        delete(Embedding).where(
+            Embedding.chunk_id.in_(selected_ids),
+            Embedding.provider == provider.name,
+            Embedding.model == provider.model,
+        )
+    )
+    for chunk, vector in zip(batch, vectors, strict=True):
+        if len(vector) != provider.dimensions:
+            raise ValueError(
+                f"{provider.name}/{provider.model} returned {len(vector)} dimensions; "
+                f"expected {provider.dimensions}"
+            )
+        session.add(
+            Embedding(
+                chunk_id=chunk.id,
+                provider=provider.name,
+                model=provider.model,
+                dimensions=len(vector),
+                vector=vector,
+            )
+        )
+    session.commit()
+    return len(batch)
+
+
+def rebuild_embeddings(
+    session: Session,
+    provider: EmbeddingProvider,
+    *,
+    chunk_ids: list[int] | None = None,
+    document_ids: list[int] | None = None,
+    tickers: list[str] | None = None,
+    missing_only: bool = False,
+    batch_size: int = 64,
+    concurrency: int = 1,
+) -> int:
+    statement = _chunk_select_statement(
+        chunk_ids=chunk_ids,
+        document_ids=document_ids,
+        tickers=tickers,
+        missing_only=missing_only,
+        provider=provider,
+    )
     chunks = list(session.scalars(statement))
     if not chunks:
         return 0
@@ -264,38 +377,33 @@ def rebuild_embeddings(
     if provider.name == "voyage":
         batch_size = min(batch_size, VOYAGE_MAX_BATCH_SIZE)
 
+    batches = [chunks[offset : offset + batch_size] for offset in range(0, len(chunks), batch_size)]
+    workers = max(1, min(concurrency, len(batches)))
+
+    if workers == 1:
+        indexed = 0
+        for batch in batches:
+            vectors = provider.embed_texts(
+                [chunk.chunk_text for chunk in batch],
+                input_type="document",
+            )
+            indexed += _persist_embedding_batch(session, provider, batch, vectors)
+        return indexed
+
     indexed = 0
-    for offset in range(0, len(chunks), batch_size):
-        batch = chunks[offset : offset + batch_size]
-        selected_ids = [chunk.id for chunk in batch]
-        vectors = provider.embed_texts(
-            [chunk.chunk_text for chunk in batch],
-            input_type="document",
-        )
-        session.execute(
-            delete(Embedding).where(
-                Embedding.chunk_id.in_(selected_ids),
-                Embedding.provider == provider.name,
-                Embedding.model == provider.model,
-            )
-        )
-        for chunk, vector in zip(batch, vectors, strict=True):
-            if len(vector) != provider.dimensions:
-                raise ValueError(
-                    f"{provider.name}/{provider.model} returned {len(vector)} dimensions; "
-                    f"expected {provider.dimensions}"
-                )
-            session.add(
-                Embedding(
-                    chunk_id=chunk.id,
-                    provider=provider.name,
-                    model=provider.model,
-                    dimensions=len(vector),
-                    vector=vector,
-                )
-            )
-        session.commit()
-        indexed += len(batch)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                provider.embed_texts,
+                [chunk.chunk_text for chunk in batch],
+                input_type="document",
+            ): batch
+            for batch in batches
+        }
+        for future in as_completed(futures):
+            batch = futures[future]
+            vectors = future.result()
+            indexed += _persist_embedding_batch(session, provider, batch, vectors)
     return indexed
 
 

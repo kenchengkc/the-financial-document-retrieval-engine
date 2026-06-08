@@ -196,3 +196,65 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
 
     client.close()
     assert route.call_count == 1
+
+
+def test_force_rechunk_rebuilds_existing_chunks() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    company = Company(ticker="AAPL", cik="0000320193", name="Apple Inc.")
+    document = Document(
+        company=company,
+        source_type="sec",
+        form_type="10-K",
+        filing_date=date(2025, 10, 31),
+        accession_number="0000320193-25-000079",
+    )
+    element = DocumentElement(
+        document=document,
+        element_type="text",
+        section="Risk Factors",
+        text="Supply constraints may affect product availability.",
+        reading_order=1,
+    )
+
+    with Session(engine) as session:
+        session.add(company)
+        session.add(
+            Chunk(
+                document=document,
+                element=element,
+                chunk_text=element.text or "",
+                chunk_type="text",
+                section=element.section,
+                token_count=6,
+            )
+        )
+        session.commit()
+        original_text = session.scalar(select(Chunk.chunk_text))
+
+        selected, created_chunks = chunk_selected_documents(
+            session,
+            tickers=["AAPL"],
+            max_tokens=220,
+        )
+        assert selected == 1
+        assert created_chunks == 0
+
+        element.section = "Business"
+        element.text = "Apple sells products and services globally."
+        session.commit()
+
+        selected, created_chunks = chunk_selected_documents(
+            session,
+            tickers=["AAPL"],
+            max_tokens=220,
+            force_rechunk=True,
+        )
+        stored_chunk = session.scalar(select(Chunk))
+
+        assert selected == 1
+        assert created_chunks == 1
+        assert stored_chunk is not None
+        assert stored_chunk.section == "Business"
+        assert stored_chunk.chunk_text != original_text
+        assert "Apple sells products" in stored_chunk.chunk_text

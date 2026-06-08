@@ -26,6 +26,7 @@ def chunk_selected_documents(
     *,
     tickers: list[str] | None,
     max_tokens: int,
+    force_rechunk: bool = False,
 ) -> tuple[int, int]:
     statement = select(Document).join(Document.company).order_by(Document.id)
     if tickers:
@@ -34,7 +35,7 @@ def chunk_selected_documents(
 
     chunk_count = 0
     for document in documents:
-        if document.chunks:
+        if document.chunks and not force_rechunk:
             continue
         chunk_count += len(
             rebuild_document_chunks(session, document.id, max_tokens=max_tokens)
@@ -45,10 +46,22 @@ def chunk_selected_documents(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build FDRE retrieval artifacts")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    chunk_parser = subparsers.add_parser("chunk", help="Build missing document chunks")
+    chunk_parser = subparsers.add_parser("chunk", help="Build document chunks")
     chunk_parser.add_argument("--tickers", nargs="+")
     chunk_parser.add_argument("--max-tokens", type=int, default=220)
-    subparsers.add_parser("index", help="Build missing stored chunk embeddings")
+    chunk_parser.add_argument(
+        "--force-rechunk",
+        action="store_true",
+        help="Rebuild chunks even when a document already has stored chunks",
+    )
+    index_parser = subparsers.add_parser("index", help="Build missing stored chunk embeddings")
+    index_parser.add_argument("--tickers", nargs="+", help="Limit indexing to these tickers")
+    index_parser.add_argument(
+        "--document-ids",
+        nargs="+",
+        type=int,
+        help="Limit indexing to these document IDs",
+    )
     eval_parser = subparsers.add_parser("eval", help="Run retrieval evaluation")
     eval_parser.add_argument("dataset")
     eval_parser.add_argument("--output-dir", default="data/processed/evals")
@@ -68,6 +81,7 @@ def main() -> None:
                 session,
                 tickers=args.tickers,
                 max_tokens=args.max_tokens,
+                force_rechunk=args.force_rechunk,
             )
             print({"documents": documents, "chunks": chunks})
         elif args.command == "index":
@@ -78,8 +92,11 @@ def main() -> None:
                     "embeddings": rebuild_embeddings(
                         session,
                         provider,
+                        tickers=args.tickers,
+                        document_ids=args.document_ids,
                         missing_only=True,
                         batch_size=settings.embedding_batch_size,
+                        concurrency=settings.embedding_concurrency,
                     )
                 }
             )

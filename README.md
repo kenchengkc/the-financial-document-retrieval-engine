@@ -2,19 +2,21 @@
 
 FDRE is a layout-aware search, evidence retrieval, and citation verification system for financial documents.
 
-Website: [thefdre.com](https://thefdre.com)
+Live demo: [thefdre.com](https://thefdre.com)
 
-Repository: `the-financial-document-retrieval-engine`
+Repository: [kenchengkc/the-financial-document-retrieval-engine](https://github.com/kenchengkc/the-financial-document-retrieval-engine)
 
 FDRE is not a generic "chat with PDFs" wrapper. The project is being built as a production-style financial data and retrieval system that ingests SEC filings, parses document structure, indexes text and tables, evaluates retrieval quality, verifies citations, and abstains when evidence is insufficient.
 
-## Architecture Bias
+## Architecture
 
 FDRE is designed to be cheap to run while still looking serious technically. The MVP favors PostgreSQL, PostgreSQL full-text search, deterministic local embeddings, mocked generation, cached SEC data, and explicit evaluation before adding paid model providers or extra infrastructure.
 
 The core signal should come from retrieval quality, financial metadata design, table handling, citation verification, abstention, and traceability, not from expensive APIs.
 
-## System Diagram
+See [`docs/architecture.md`](docs/architecture.md) for phase-by-phase implementation notes.
+
+### System
 
 ```mermaid
 flowchart LR
@@ -23,7 +25,7 @@ flowchart LR
   api --> graph[Bounded answer workflow]
   graph --> preprocess[Query preprocessing]
   graph --> retrieval[Hybrid retrieval]
-  graph --> facts[Read-only financial facts route]
+  graph --> facts[Financial facts lookup in graph]
   retrieval --> sparse[PostgreSQL full-text search]
   retrieval --> dense[Local/hash embeddings or optional pgvector]
   retrieval --> rerank[Optional reranker]
@@ -36,7 +38,7 @@ flowchart LR
   traces --> pg
 ```
 
-## Pipeline Diagram
+### Ingestion and retrieval pipeline
 
 ```mermaid
 flowchart TD
@@ -54,20 +56,23 @@ flowchart TD
   abstain -->|no| refusal[Abstention]
 ```
 
-## CI Diagram
+### CI
 
 ```mermaid
 flowchart LR
   push[Push or PR] --> ci[GitHub Actions CI]
-  ci --> install[Install package]
-  install --> ruff[Ruff lint]
-  install --> mypy[Mypy types]
-  install --> pytest[Pytest]
-  install --> compose[Docker Compose config]
-  ci --> node[Node 22]
-  node --> eslint[ESLint]
-  node --> types[TypeScript]
-  node --> next[Next.js build]
+  ci --> backend[Python backend]
+  ci --> frontend[Node 22 frontend]
+  backend --> ruff[Ruff]
+  backend --> mypy[Mypy]
+  backend --> pytest[Pytest]
+  backend --> alembic[Alembic migrate check]
+  backend --> compose[Docker Compose config]
+  backend --> actionlint[Actionlint]
+  frontend --> eslint[ESLint]
+  frontend --> types[TypeScript]
+  frontend --> audit[npm audit]
+  frontend --> next[Next.js build]
 ```
 
 ## Current Status
@@ -94,7 +99,8 @@ Later-phase status:
 - Phase 16 is partial: answer traces are returned and stored, but trace/eval read endpoints and
   broader production observability remain.
 - Phase 17 remains optional roadmap work for complex PDF parsing.
-- Phase 18 website and README polish are complete.
+- Phase 18 is mostly complete: the live evidence viewer links here for architecture details;
+  trace/eval read API routes remain backlog.
 
 ## How the Agent Works
 
@@ -165,11 +171,19 @@ For a deterministic no-network demo, load the checked-in sample filing:
 python -m scripts.retrieval_pipeline seed-demo
 ```
 
-Ingest the latest two 10-K and 10-Q filing records per sample company:
+Ingest the latest two 10-K and 10-Q filing records per company:
 
 ```bash
 python -m scripts.ingest_sec_sample
 ```
+
+`data/sample/listed_companies.json` lists **5,794** NASDAQ/NYSE operating companies (one CIK each, ETFs excluded, dual-class tickers such as `GOOG`/`GOOGL` aliased to the same company). Regenerate it with:
+
+```bash
+python -m scripts.build_listed_company_seeds
+```
+
+Pass any supported ticker to `--tickers`; CI and local defaults still use the five megacap sample tickers.
 
 Download those filings and replace their parsed document elements:
 
@@ -203,7 +217,7 @@ Start PostgreSQL and the API:
 
 ```bash
 docker compose up --build
-docker compose exec api python scripts/retrieval_pipeline.py seed-demo
+docker compose exec api python -m scripts.retrieval_pipeline seed-demo
 ```
 
 The API listens on `http://127.0.0.1:8000`.
@@ -285,14 +299,29 @@ No API key is required for the local MVP or demo. A descriptive `SEC_USER_AGENT`
 when downloading live SEC data. Native pgvector storage is used in PostgreSQL, while local hash
 embeddings remain the default.
 
-For Voyage:
+For Voyage embeddings:
 
 ```dotenv
 EMBEDDING_PROVIDER=voyage
 EMBEDDING_MODEL=voyage-4-large
 EMBEDDING_DIMENSIONS=512
+EMBEDDING_BATCH_SIZE=128
+EMBEDDING_REQUESTS_PER_MINUTE=2000
+EMBEDDING_TOKENS_PER_MINUTE=3000000
+EMBEDDING_CONCURRENCY=8
+VOYAGE_API_KEY=...
+```
+
+For Voyage reranking:
+
+```dotenv
+RERANKER_PROVIDER=voyage
+RERANKER_MODEL=rerank-2.5
 VOYAGE_API_KEY=...
 ```
 
 `VOYAGE_API_KEY` or `OPENAI_API_KEY` is required only when its provider is selected. Indexing is
 incremental and commits in batches, so unchanged chunks are not sent to an external API again.
+Use `python -m scripts.retrieval_pipeline chunk --force-rechunk` after parser fixes, and scope
+embedding backfills with `index --tickers AAPL MSFT`. Scheduled ingestion skips when
+`DATABASE_URL`, `SEC_USER_AGENT`, or the selected embedding provider credentials are missing.

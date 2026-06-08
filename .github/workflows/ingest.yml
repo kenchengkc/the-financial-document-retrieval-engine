@@ -76,7 +76,9 @@ jobs:
       EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
       EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '' }}
       EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '128' }}
-      EMBEDDING_REQUESTS_PER_MINUTE: ${{ vars.EMBEDDING_REQUESTS_PER_MINUTE || '2' }}
+      EMBEDDING_REQUESTS_PER_MINUTE: ${{ vars.EMBEDDING_REQUESTS_PER_MINUTE || '2000' }}
+      EMBEDDING_TOKENS_PER_MINUTE: ${{ vars.EMBEDDING_TOKENS_PER_MINUTE || '3000000' }}
+      EMBEDDING_CONCURRENCY: ${{ vars.EMBEDDING_CONCURRENCY || '8' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       PYTHONPATH: .
@@ -134,7 +136,15 @@ jobs:
       - name: Chunk documents
         run: |
           read -r -a ticker_args <<< "${TICKERS}"
-          python -m scripts.retrieval_pipeline chunk --tickers "${ticker_args[@]}"
+          rechunk_args=()
+          if [ "${FORCE_PARSE}" = "true" ]; then
+            rechunk_args+=(--force-rechunk)
+          fi
+          python -m scripts.retrieval_pipeline chunk \
+            --tickers "${ticker_args[@]}" \
+            "${rechunk_args[@]}"
 
       - name: Build missing embeddings
-        run: python -m scripts.retrieval_pipeline index
+        run: |
+          read -r -a ticker_args <<< "${TICKERS}"
+          python -m scripts.retrieval_pipeline index --tickers "${ticker_args[@]}"
