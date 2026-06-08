@@ -123,11 +123,13 @@ export default function Home() {
       <main>
         <section className="workspace-intro">
           <div>
-            <p className="eyebrow">Evidence-first financial search</p>
+            <p className="eyebrow">Hybrid RAG for SEC filings</p>
             <h1>Financial Document Retrieval Engine</h1>
             <p>
-              Ask a filing question. FDRE preprocesses it, retrieves and reranks evidence,
-              verifies every citation, and abstains when the evidence is not strong enough.
+              FDRE batch-indexes filings into a <strong>pgvector</strong> store, then runs a
+              bounded <strong>LangGraph retrieval agent</strong> on every question: hybrid
+              embedding + keyword search, reranking, verified citations, and abstention when
+              evidence is weak — not traditional keyword search or an ungrounded chatbot.
             </p>
           </div>
           <Image
@@ -189,10 +191,11 @@ export default function Home() {
             {!result && !error && (
               <div className="empty-state">
                 <Database size={28} />
-                <h3>Inspect the complete retrieval path</h3>
+                <h3>Live RAG retrieval over indexed filings</h3>
                 <p>
-                  Results include deterministic filters, dense and sparse scores, reranking,
-                  verified citations, and every bounded graph transition.
+                  Queries hit pre-built vector and FTS indexes in PostgreSQL, then the agent
+                  reranks evidence, verifies citations, and returns a full graph trace — dense,
+                  sparse, hybrid, and rerank scores for every chunk.
                 </p>
               </div>
             )}
@@ -310,15 +313,15 @@ export default function Home() {
 
         <section className="architecture">
           <div>
-            <p className="eyebrow">Bounded workflow</p>
-            <h2>Context engineering before generation</h2>
+            <p className="eyebrow">RAG stack</p>
+            <h2>Index offline, retrieve live</h2>
           </div>
           <ol>
-            <li>Deterministic preprocessing</li>
-            <li>Dense + sparse retrieval</li>
-            <li>Reranking and evidence gate</li>
-            <li>Citation verification</li>
-            <li>Answer or abstention</li>
+            <li>Batch ingest: parse filings, chunk text and tables</li>
+            <li>Vector index: embed chunks into pgvector (Voyage)</li>
+            <li>Live query: hybrid RAG + rerank via LangGraph agent</li>
+            <li>Citation verification on every claim</li>
+            <li>Answer or abstention — no hallucination fallback</li>
           </ol>
           <a
             href="https://github.com/kenchengkc/the-financial-document-retrieval-engine#architecture"

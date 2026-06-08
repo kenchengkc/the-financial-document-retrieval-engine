@@ -1,22 +1,42 @@
 # Financial Document Retrieval Engine
 
-FDRE is a layout-aware search, evidence retrieval, and citation verification system for financial documents.
+FDRE is a **financial RAG system**: it batch-indexes SEC filings into a hybrid vector + keyword store, then runs a **bounded retrieval agent at query time** to fetch evidence, verify citations, and abstain when support is weak.
 
 Live demo: [thefdre.com](https://thefdre.com)
 
 Repository: [kenchengkc/the-financial-document-retrieval-engine](https://github.com/kenchengkc/the-financial-document-retrieval-engine)
 
-FDRE is not a generic "chat with PDFs" wrapper. The project is being built as a production-style financial data and retrieval system that ingests SEC filings, parses document structure, indexes text and tables, evaluates retrieval quality, verifies citations, and abstains when evidence is insufficient.
+FDRE is not a generic "chat with PDFs" wrapper or a legacy document keyword box. It is a production-style retrieval stack for funds and research teams: layout-aware parsing, **pgvector embeddings**, PostgreSQL full-text search, reranking, **LangGraph agent routing**, citation verification, evals, and abstention.
 
-## Architecture
+## How RAG Works Here
 
-FDRE is designed to be cheap to run while still looking serious technically. The MVP favors PostgreSQL, PostgreSQL full-text search, deterministic local embeddings, mocked generation, cached SEC data, and explicit evaluation before adding paid model providers or extra infrastructure.
+FDRE separates **offline indexing** from **online retrieval**:
 
-The core signal should come from retrieval quality, financial metadata design, table handling, citation verification, abstention, and traceability, not from expensive APIs.
+| Phase | When | What happens |
+|-------|------|--------------|
+| **Ingest** | Batch / scheduled | Download SEC filings, parse structure, chunk text and tables |
+| **Index** | Batch / incremental | Embed chunks into **pgvector**; build sparse FTS indexes in PostgreSQL |
+| **Retrieve** | **Live on every query** | Hybrid dense + sparse search, rerank, metadata filters |
+| **Answer** | **Live on every query** | Bounded LangGraph agent verifies citations, then answers or abstains |
+
+You do **not** need filings indexed for every name in the company catalog. `listed_companies.json` is an ingestion allowlist (one CIK per NASDAQ/NYSE company, ETFs excluded). **RAG only runs on documents you have parsed and embedded** — today that is the ingested sample universe (e.g. AAPL, MSFT, NVDA, AMZN, GOOGL), expandable ticker by ticker.
+
+Compared with traditional search (Ctrl+F, basic EDGAR keyword search, or static screeners):
+
+- **Semantic retrieval** over section-aware chunks and tables, not just literal string match
+- **Hybrid ranking** combines vector similarity and lexical recall
+- **Agent workflow** routes to text, tables, and facts tools before any generation
+- **Grounded output** with verified citations and explicit abstention when evidence is thin
+
+The core signal should come from retrieval quality, financial metadata design, table handling, citation verification, abstention, and traceability — not from expensive generation APIs.
 
 See [`docs/architecture.md`](docs/architecture.md) for phase-by-phase implementation notes.
 
-### System
+## Architecture
+
+FDRE is designed to be cheap to run while still looking serious technically. The MVP uses **PostgreSQL as the vector database** (`pgvector` for embeddings, native FTS for sparse retrieval), optional Voyage embeddings, cached SEC data, and explicit evals before adding extra infrastructure.
+
+### System (RAG + agent at query time)
 
 ```mermaid
 flowchart LR
@@ -27,7 +47,7 @@ flowchart LR
   graph --> retrieval[Hybrid retrieval]
   graph --> facts[Financial facts lookup in graph]
   retrieval --> sparse[PostgreSQL full-text search]
-  retrieval --> dense[Local/hash embeddings or optional pgvector]
+  retrieval --> dense[pgvector embeddings + Voyage]
   retrieval --> rerank[Optional reranker]
   graph --> verify[Citation verification]
   verify --> answer[Answer or abstention]
@@ -104,7 +124,7 @@ Later-phase status:
 
 ## How the Agent Works
 
-The current agent is a fixed LangGraph state machine, not an open-ended autonomous loop:
+The retrieval **agent** is a fixed **LangGraph** state machine — not an open-ended autonomous loop. Each query triggers live hybrid RAG retrieval, then citation checks:
 
 ```mermaid
 flowchart LR

@@ -66,7 +66,11 @@ def _load_nasdaq_symbol_flags(*, client: httpx.Client) -> tuple[set[str], set[st
     return etf_symbols, test_symbols
 
 
-def _load_sec_exchange_rows(*, client: httpx.Client, user_agent: str) -> list[tuple[int, str, str, str]]:
+def _load_sec_exchange_rows(
+    *,
+    client: httpx.Client,
+    user_agent: str,
+) -> list[tuple[int, str, str, str]]:
     response = client.get(
         SEC_COMPANY_TICKERS_EXCHANGE_URL,
         headers={"User-Agent": user_agent},

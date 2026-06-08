@@ -3,13 +3,13 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://thefdre.com"),
-  title: "FDRE — Financial Document Retrieval Engine",
+  title: "FDRE — Financial RAG for SEC Filings",
   description:
-    "FDRE searches, ranks, and verifies evidence across SEC filings, financial tables, and structured company facts. Not a chatbot over documents — a retrieval engine with citations, evals, and abstention.",
+    "Hybrid RAG over SEC filings: pgvector embeddings, PostgreSQL full-text search, LangGraph retrieval agent, reranking, verified citations, and abstention. Built for research teams, not generic chat.",
   openGraph: {
-    title: "FDRE — Financial Document Retrieval Engine",
+    title: "FDRE — Financial RAG for SEC Filings",
     description:
-      "Layout-aware search, hybrid retrieval, citation verification, and abstention over SEC filings.",
+      "Vector + keyword RAG, bounded retrieval agent, and citation verification over SEC filings.",
     url: "https://thefdre.com",
     siteName: "FDRE",
     type: "website",
