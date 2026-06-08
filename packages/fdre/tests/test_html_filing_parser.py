@@ -92,3 +92,49 @@ def test_detects_sections_encoded_as_layout_tables() -> None:
         if element.element_type == "text" and "Competition" in (element.text or "")
     )
     assert risk_text.section == "Risk Factors"
+
+
+def test_financial_statement_notes_reset_section_after_legal_proceedings() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html>
+          <body>
+            <p>Legal Proceedings</p>
+            <p>We are involved in claims and litigation from time to time.</p>
+            <p>Note 5 — DEBT</p>
+            <p>As of March 31, 2026, we had unsecured senior notes outstanding.</p>
+            <p>Note 8 — SEGMENT INFORMATION</p>
+            <p>AWS</p>
+            <p>The AWS segment consists of global compute and storage services.</p>
+            <table>
+              <tr>
+                <td>Item 2.</td>
+                <td>Management's Discussion and Analysis</td>
+              </tr>
+            </table>
+            <p>Forward-Looking Statements</p>
+          </body>
+        </html>
+        """
+    )
+
+    debt_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "unsecured senior notes" in (element.text or "")
+    )
+    assert debt_text.section == "Note 5 — DEBT"
+
+    aws_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "global compute and storage" in (element.text or "")
+    )
+    assert aws_text.section == "Note 8 — SEGMENT INFORMATION"
+
+    mda_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "Forward-Looking Statements" in (element.text or "")
+    )
+    assert mda_text.section == "MD&A"

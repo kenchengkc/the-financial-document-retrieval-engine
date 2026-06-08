@@ -18,7 +18,8 @@ SECTION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(?:item\s+3\b[.:\s-]*)?legal proceedings?\b", re.I), "Legal Proceedings"),
     (
         re.compile(
-            r"^(?:item\s+7\b[.:\s-]*)?management(?:'|\u2019)s discussion and analysis\b",
+            r"^(?:item\s+(?:2|7)\b[.:\s-]*(?:\|\s*)?)?"
+            r"management(?:'|\u2019)s discussion and analysis\b",
             re.I,
         ),
         "MD&A",
@@ -175,6 +176,10 @@ class HtmlFilingParser(BaseDocumentParser):
 
 def _detect_section(text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", text).strip()
+    note_match = re.match(r"^note\s+(\d+[a-z]?)\s*[\u2014\u2013-]\s*(.+)$", normalized, re.I)
+    if note_match:
+        title = note_match.group(2).strip()
+        return f"Note {note_match.group(1)} \u2014 {title}"
     for pattern, section in SECTION_PATTERNS:
         if pattern.search(normalized):
             return section
@@ -186,6 +191,7 @@ def _looks_like_section_header(tag: Tag, text: str) -> bool:
         len(text) <= 220
         and (
             re.match(r"^item\s+\d+[a-z]?\b", text, re.I) is not None
+            or re.match(r"^note\s+\d+[a-z]?\s*[\u2014\u2013-]\s*.+", text, re.I) is not None
             or text.casefold()
             in {
                 "business",
