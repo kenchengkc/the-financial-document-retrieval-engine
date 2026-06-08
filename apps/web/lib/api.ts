@@ -1,4 +1,4 @@
-import type { AnswerResponse } from "@/lib/types";
+import type { AnswerResponse, CoverageResponse } from "@/lib/types";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(
   /\/$/,
@@ -20,6 +20,18 @@ export async function checkHealth() {
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+export async function fetchCoverage(): Promise<CoverageResponse | null> {
+  try {
+    const response = await fetch(`${API_URL}/coverage`, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as CoverageResponse;
+  } catch {
+    return null;
   }
 }
 

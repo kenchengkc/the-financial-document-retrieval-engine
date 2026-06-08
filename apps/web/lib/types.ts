@@ -22,6 +22,16 @@ export type TraceStep = {
   details: Record<string, unknown>;
 };
 
+export type CoverageResponse = {
+  catalog_count: number;
+  sp500_catalog_count: number;
+  indexed_count: number;
+  sp500_indexed_count: number;
+  document_count: number;
+  chunk_count: number;
+  indexed_tickers: string[];
+};
+
 export type AnswerResponse = {
   answer_run_id: number;
   question: string;

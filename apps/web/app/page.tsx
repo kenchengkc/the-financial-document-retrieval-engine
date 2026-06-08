@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
-import { askQuestion, checkHealth } from "@/lib/api";
-import type { AnswerResponse, RetrievalCandidate } from "@/lib/types";
+import { askQuestion, checkHealth, fetchCoverage } from "@/lib/api";
+import type { AnswerResponse, CoverageResponse, RetrievalCandidate } from "@/lib/types";
 
 const examples = [
   "What could affect Example Company's operating results?",
@@ -69,9 +69,16 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
 
   useEffect(() => {
-    checkHealth().then(setApiOnline);
+    void (async () => {
+      const online = await checkHealth();
+      setApiOnline(online);
+      if (online) {
+        setCoverage(await fetchCoverage());
+      }
+    })();
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -104,6 +111,21 @@ export default function Home() {
           </span>
         </Link>
         <nav aria-label="Project links">
+          {coverage && (
+            <span className="coverage-badge" title="Companies with embedded chunks searchable via RAG">
+              <Database size={14} aria-hidden="true" />
+              <span>
+                {coverage.indexed_count.toLocaleString()} / {coverage.catalog_count.toLocaleString()}{" "}
+                indexed
+              </span>
+              <span className="coverage-divider" aria-hidden="true">
+                |
+              </span>
+              <span>
+                S&amp;P 500: {coverage.sp500_indexed_count} / {coverage.sp500_catalog_count}
+              </span>
+            </span>
+          )}
           <span className={`status ${apiOnline === true ? "online" : ""}`}>
             <Activity size={14} />
             {apiOnline === null ? "Checking API" : apiOnline ? "API online" : "API unavailable"}

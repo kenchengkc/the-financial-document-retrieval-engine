@@ -125,6 +125,22 @@ a {
   background: var(--surface);
 }
 
+.coverage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 12px var(--mono);
+}
+
+.coverage-divider {
+  color: var(--muted);
+}
+
 .status {
   display: inline-flex;
   align-items: center;

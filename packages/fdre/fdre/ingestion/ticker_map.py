@@ -10,6 +10,9 @@ from fdre.ingestion.sec_client import normalize_cik
 LISTED_COMPANIES_PATH = (
     Path(__file__).resolve().parents[4] / "data" / "sample" / "listed_companies.json"
 )
+SP500_TICKERS_PATH = (
+    Path(__file__).resolve().parents[4] / "data" / "sample" / "sp500_tickers.json"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +38,8 @@ DEFAULT_SAMPLE_TICKERS = tuple(SAMPLE_COMPANIES)
 
 
 @lru_cache
-def _load_listed_companies(path: Path = LISTED_COMPANIES_PATH) -> dict[str, CompanySeed]:
+def _load_listed_companies(path_str: str) -> dict[str, CompanySeed]:
+    path = Path(path_str)
     if not path.is_file():
         return {}
 
@@ -56,15 +60,52 @@ def _load_listed_companies(path: Path = LISTED_COMPANIES_PATH) -> dict[str, Comp
 
 
 def listed_company_tickers() -> tuple[str, ...]:
-    listed = _load_listed_companies()
+    listed = _load_listed_companies(str(LISTED_COMPANIES_PATH))
     if listed:
         return tuple(sorted(listed))
     return DEFAULT_SAMPLE_TICKERS
 
 
+def catalog_company_count(path: Path | None = None) -> int:
+    resolved = path or LISTED_COMPANIES_PATH
+    if not resolved.is_file():
+        return len(SAMPLE_COMPANIES)
+    payload = json.loads(resolved.read_text(encoding="utf-8"))
+    if "company_count" in payload:
+        return int(payload["company_count"])
+    companies = payload.get("companies", [])
+    return len({normalize_cik(str(row["cik"])) for row in companies})
+
+
+@lru_cache
+def _sp500_primary_tickers(path_str: str) -> tuple[str, ...]:
+    path = Path(path_str)
+    if not path.is_file():
+        return DEFAULT_SAMPLE_TICKERS
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tickers = payload.get("primary_tickers") or payload.get("tickers") or []
+    return tuple(sorted({str(ticker).upper() for ticker in tickers}))
+
+
+def sp500_primary_tickers(path: Path | None = None) -> tuple[str, ...]:
+    resolved = path or SP500_TICKERS_PATH
+    return _sp500_primary_tickers(str(resolved))
+
+
+def sp500_batch_tickers(*, offset: int = 0, limit: int | None = None) -> list[str]:
+    tickers = list(sp500_primary_tickers())
+    if offset < 0:
+        raise ValueError("offset must be non-negative")
+    if limit is None:
+        return tickers[offset:]
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    return tickers[offset : offset + limit]
+
+
 def get_company_seed(ticker: str) -> CompanySeed:
     normalized_ticker = ticker.upper()
-    listed = _load_listed_companies()
+    listed = _load_listed_companies(str(LISTED_COMPANIES_PATH))
     company = listed.get(normalized_ticker) or SAMPLE_COMPANIES.get(normalized_ticker)
     if company is None:
         raise ValueError(f"Unsupported ticker {ticker!r}")

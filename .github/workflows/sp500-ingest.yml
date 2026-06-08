@@ -1,0 +1,117 @@
+name: S&P 500 batch ingestion
+
+# Runs one S&P 500 ticker batch through the full SEC ingest pipeline.
+# Use workflow_dispatch with offset/limit to walk the universe over time.
+# Requires DATABASE_URL, SEC_USER_AGENT, and embedding provider secrets (see ingest.yml).
+
+on:
+  workflow_dispatch:
+    inputs:
+      offset:
+        description: "Batch offset into sp500_tickers.json"
+        default: "0"
+      limit:
+        description: "Batch size (tickers per run)"
+        default: "25"
+      filing_limit:
+        description: "Latest N filings per form per company"
+        default: "1"
+      force_parse:
+        description: "Reparse unchanged filings after parser updates"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sp500-ingestion
+  cancel-in-progress: false
+
+jobs:
+  prerequisites:
+    name: Check ingestion prerequisites
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+    steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          provider_ready=true
+          if [ "${EMBEDDING_PROVIDER}" = "voyage" ] && [ -z "${VOYAGE_API_KEY}" ]; then
+            provider_ready=false
+          fi
+          if [ "${EMBEDDING_PROVIDER}" = "openai" ] && [ -z "${OPENAI_API_KEY}" ]; then
+            provider_ready=false
+          fi
+          if [ -n "${DATABASE_URL}" ] && [ -n "${SEC_USER_AGENT}" ] && [ "${provider_ready}" = true ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Skipping S&P 500 batch until database, SEC, and embedding provider credentials are configured."
+          fi
+
+  ingest-batch:
+    name: Ingest S&P 500 batch
+    needs: prerequisites
+    if: needs.prerequisites.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
+      EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '' }}
+      EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '128' }}
+      EMBEDDING_REQUESTS_PER_MINUTE: ${{ vars.EMBEDDING_REQUESTS_PER_MINUTE || '2000' }}
+      EMBEDDING_TOKENS_PER_MINUTE: ${{ vars.EMBEDDING_TOKENS_PER_MINUTE || '3000000' }}
+      EMBEDDING_CONCURRENCY: ${{ vars.EMBEDDING_CONCURRENCY || '8' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      PYTHONPATH: .
+      OFFSET: ${{ github.event.inputs.offset || '0' }}
+      LIMIT: ${{ github.event.inputs.limit || '25' }}
+      FILING_LIMIT: ${{ github.event.inputs.filing_limit || '1' }}
+      FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "${OFFSET}" =~ ^[0-9]+$ ]]
+          [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${FILING_LIMIT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${FORCE_PARSE}" =~ ^(true|false)$ ]]
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Run S&P 500 batch ingest
+        run: |
+          force_args=()
+          if [ "${FORCE_PARSE}" = "true" ]; then
+            force_args+=(--force-parse --force-rechunk)
+          fi
+          python scripts/ingest_ticker_batch.py \
+            --universe sp500 \
+            --offset "${OFFSET}" \
+            --limit "${LIMIT}" \
+            --filing-limit "${FILING_LIMIT}" \
+            "${force_args[@]}"

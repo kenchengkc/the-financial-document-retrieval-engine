@@ -231,6 +231,28 @@ Expected response:
 {"status":"ok"}
 ```
 
+Indexed coverage (companies with embedded chunks searchable via RAG):
+
+```bash
+curl http://127.0.0.1:8000/coverage
+```
+
+The web app top bar shows `indexed / catalog` counts and S&P 500 progress from this endpoint.
+
+Regenerate the S&P 500 batch list (Wikipedia constituents mapped to catalog primary tickers):
+
+```bash
+python scripts/build_sp500_tickers.py
+```
+
+Run one S&P 500 ingest batch locally (metadata → download/parse → chunk → embed):
+
+```bash
+python scripts/ingest_ticker_batch.py --universe sp500 --offset 0 --limit 25
+```
+
+GitHub Actions: **Scheduled SEC ingestion** keeps megacap tickers fresh; **S&P 500 batch ingestion** walks `data/sample/sp500_tickers.json` in batches via `workflow_dispatch` (`offset` + `limit`).
+
 ## Docker
 
 Start PostgreSQL and the API:
