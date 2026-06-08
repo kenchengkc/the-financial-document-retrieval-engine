@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from scripts.ingest_sec_sample import ingest_sec_metadata
 from sqlalchemy import create_engine, func, select
@@ -85,7 +86,7 @@ def test_ingestion_inserts_and_updates_companies_and_documents(tmp_path: Path) -
 @respx.mock
 def test_ingestion_reuses_company_row_for_dual_class_ticker_alias(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = {
         "name": "Alphabet Inc.",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from fdre.ingestion.ticker_map import (
 
 
 @pytest.fixture(autouse=True)
-def clear_listed_company_cache() -> None:
+def clear_listed_company_cache() -> Iterator[None]:
     _load_listed_companies.cache_clear()
     yield
     _load_listed_companies.cache_clear()
