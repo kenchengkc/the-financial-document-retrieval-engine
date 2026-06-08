@@ -16,7 +16,7 @@ from fdre.ingestion.sec_client import (
     company_submissions_url,
     extract_recent_filings,
 )
-from fdre.ingestion.ticker_map import DEFAULT_SAMPLE_TICKERS, get_company_seed
+from fdre.ingestion.ticker_map import DEFAULT_SAMPLE_TICKERS, CompanySeed, get_company_seed
 
 DEFAULT_FORMS = ("10-K", "10-Q")
 
@@ -44,25 +44,16 @@ def ingest_sec_metadata(
         "documents_updated": 0,
     }
 
+    processed_ciks: set[str] = set()
     for ticker in tickers:
         seed = get_company_seed(ticker)
+        if seed.cik in processed_ciks:
+            continue
+        processed_ciks.add(seed.cik)
+
         submissions = client.get_company_submissions(seed.cik)
-        company = session.scalar(select(Company).where(Company.ticker == seed.ticker))
-        if company is None:
-            company = Company(
-                ticker=seed.ticker,
-                cik=seed.cik,
-                name=_string_value(submissions.get("name")) or seed.name,
-                exchange=_first_string(submissions.get("exchanges")) or seed.exchange,
-            )
-            session.add(company)
-            session.flush()
-            counters["companies_created"] += 1
-        else:
-            company.cik = seed.cik
-            company.name = _string_value(submissions.get("name")) or seed.name
-            company.exchange = _first_string(submissions.get("exchanges")) or seed.exchange
-            counters["companies_updated"] += 1
+        company, created = _resolve_company(session, seed, submissions)
+        counters["companies_created" if created else "companies_updated"] += 1
 
         filings = extract_recent_filings(submissions, form_types, limit)
         for filing in filings:
@@ -111,6 +102,35 @@ def ingest_sec_metadata(
 
     session.commit()
     return IngestionSummary(**counters)
+
+
+def _resolve_company(
+    session: Session,
+    seed: CompanySeed,
+    submissions: dict[str, Any],
+) -> tuple[Company, bool]:
+    """Match by CIK first so dual-class tickers (GOOG/GOOGL) share one company row."""
+
+    name = _string_value(submissions.get("name")) or seed.name
+    exchange = _first_string(submissions.get("exchanges")) or seed.exchange
+    company = session.scalar(select(Company).where(Company.cik == seed.cik))
+    if company is None:
+        company = session.scalar(select(Company).where(Company.ticker == seed.ticker))
+    if company is None:
+        company = Company(
+            ticker=seed.ticker,
+            cik=seed.cik,
+            name=name,
+            exchange=exchange,
+        )
+        session.add(company)
+        session.flush()
+        return company, True
+
+    company.cik = seed.cik
+    company.name = name
+    company.exchange = exchange
+    return company, False
 
 
 def _parse_date(value: Any) -> date | None:
