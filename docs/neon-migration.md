@@ -156,6 +156,24 @@ Coverage badge on [thefdre.com](https://thefdre.com) should reflect new `indexed
 
 Monitor usage in Neon **Billing** → set a spending alert on Launch.
 
+### Storage limit errors (`512 MB` / `DiskFull`)
+
+Neon projects start with a **512 MB data size limit** until you raise it. Full S&P 500 indexing
+needs **several GB**. When embed fails with `project size limit (512 MB) has been exceeded`:
+
+1. Neon console → your project → **Settings** → increase **Data size limit** (Launch: set to
+   **5–10 GB** to start, raise as ingest grows).
+2. Wait for the project to become writable again.
+3. **Resume embeddings only** for the failed batch (chunks already exist):
+
+```bash
+DATABASE_URL="$DATABASE_URL_DIRECT" python scripts/ingest_ticker_batch.py \
+  --universe sp500 --offset 40 --limit 10 --index-only
+```
+
+Or GitHub Actions → **S&P 500 batch ingestion** with the same `offset`/`limit` and
+`index_only=true`. Do **not** enable `chain` until storage headroom is confirmed.
+
 ## Troubleshooting
 
 | Symptom | Fix |

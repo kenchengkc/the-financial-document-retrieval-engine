@@ -24,6 +24,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--filing-limit", type=int, default=1, help="Latest N filings per form")
     parser.add_argument("--force-parse", action="store_true")
     parser.add_argument("--force-rechunk", action="store_true")
+    parser.add_argument(
+        "--index-only",
+        action="store_true",
+        help="Skip metadata/download/chunk; only build missing embeddings for tickers",
+    )
     return parser.parse_args()
 
 
@@ -50,36 +55,37 @@ def main() -> None:
     ticker_args = ["--tickers", *tickers]
     form_args = ["--forms", *args.forms]
 
-    _run(
-        [
+    if not args.index_only:
+        _run(
+            [
+                sys.executable,
+                "scripts/ingest_sec_sample.py",
+                *ticker_args,
+                *form_args,
+                "--limit",
+                str(args.filing_limit),
+            ]
+        )
+
+        download_cmd = [
             sys.executable,
-            "scripts/ingest_sec_sample.py",
+            "-m",
+            "scripts.download_filings",
             *ticker_args,
             *form_args,
             "--limit",
             str(args.filing_limit),
+            "--download",
+            "--parse",
         ]
-    )
+        if args.force_parse:
+            download_cmd.append("--force-parse")
+        _run(download_cmd)
 
-    download_cmd = [
-        sys.executable,
-        "-m",
-        "scripts.download_filings",
-        *ticker_args,
-        *form_args,
-        "--limit",
-        str(args.filing_limit),
-        "--download",
-        "--parse",
-    ]
-    if args.force_parse:
-        download_cmd.append("--force-parse")
-    _run(download_cmd)
-
-    chunk_cmd = [sys.executable, "-m", "scripts.retrieval_pipeline", "chunk", *ticker_args]
-    if args.force_rechunk:
-        chunk_cmd.append("--force-rechunk")
-    _run(chunk_cmd)
+        chunk_cmd = [sys.executable, "-m", "scripts.retrieval_pipeline", "chunk", *ticker_args]
+        if args.force_rechunk:
+            chunk_cmd.append("--force-rechunk")
+        _run(chunk_cmd)
 
     _run([sys.executable, "-m", "scripts.retrieval_pipeline", "index", *ticker_args])
 

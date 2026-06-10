@@ -25,6 +25,10 @@ on:
         description: "On success, automatically queue the next offset+limit batch"
         type: boolean
         default: false
+      index_only:
+        description: "Skip metadata/download/chunk; only embed missing chunks (recovery)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -128,12 +132,17 @@ jobs:
           if [ "${FORCE_PARSE}" = "true" ]; then
             force_args+=(--force-parse --force-rechunk)
           fi
+          index_args=()
+          if [ "${{ github.event.inputs.index_only }}" = "true" ]; then
+            index_args+=(--index-only)
+          fi
           python scripts/ingest_ticker_batch.py \
             --universe sp500 \
             --offset "${OFFSET}" \
             --limit "${LIMIT}" \
             --filing-limit "${FILING_LIMIT}" \
-            "${force_args[@]}"
+            "${force_args[@]}" \
+            "${index_args[@]}"
 
       - name: Queue next S&P 500 batch
         if: success() && github.event.inputs.chain == 'true'
