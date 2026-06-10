@@ -158,21 +158,29 @@ Monitor usage in Neon **Billing** → set a spending alert on Launch.
 
 ### Storage limit errors (`512 MB` / `DiskFull`)
 
-Neon projects start with a **512 MB data size limit** until you raise it. Full S&P 500 indexing
-needs **several GB**. When embed fails with `project size limit (512 MB) has been exceeded`:
+New Neon projects get a default **`branch_logical_size_limit` of 512 MB**. This is **not** a
+slider in the console (Compute defaults only control CU / scale-to-zero). Full S&P 500 indexing
+needs **several GB**.
 
-1. Neon console → your project → **Settings** → increase **Data size limit** (Launch: set to
-   **5–10 GB** to start, raise as ingest grows).
-2. Wait for the project to become writable again.
-3. **Resume embeddings only** for the failed batch (chunks already exist):
+When embed fails with `project size limit (512 MB) has been exceeded`:
+
+1. Confirm the org is on **Launch** (Billing → usage-based, not Free’s 0.5 GB/project cap).
+2. Request a limit increase: Neon console → **Settings** → **Feedback** (or
+   [Storage limit increase request](https://console.neon.tech/app/settings?modal=feedback&modalparams=%22Storage%20limit%20increase%22))
+   — ask for **10 GB** (or more) on project `ep-delicate-union-…`.
+3. Optionally shorten **History window** under Compute defaults to reduce restore/history overhead.
+4. After Neon confirms the raise (or the project accepts writes again), **resume embeddings only**:
 
 ```bash
 DATABASE_URL="$DATABASE_URL_DIRECT" python scripts/ingest_ticker_batch.py \
   --universe sp500 --offset 40 --limit 10 --index-only
 ```
 
-Or GitHub Actions → **S&P 500 batch ingestion** with the same `offset`/`limit` and
-`index_only=true`. Do **not** enable `chain` until storage headroom is confirmed.
+GitHub Actions: same `offset`/`limit`, `index_only=true`, **`chain=false`** until headroom is
+confirmed.
+
+Launch bills **$0.35/GB-month** for storage actually used; raising the limit does not charge for
+empty space.
 
 ## Troubleshooting
 
