@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from apps.api.app.models import Chunk, Document, DocumentElement
 
@@ -87,13 +87,12 @@ def rebuild_document_chunks(
     from fdre.chunking.table_chunker import TableChunker
 
     document = session.scalar(
-        select(Document)
-        .options(joinedload(Document.company))
-        .where(Document.id == document_id)
-        .with_for_update()
+        select(Document).where(Document.id == document_id).with_for_update()
     )
     if document is None:
         raise ValueError(f"Document {document_id} does not exist")
+    # Load company in a separate query; joinedload + FOR UPDATE breaks on Postgres.
+    _ = document.company
 
     session.execute(delete(Chunk).where(Chunk.document_id == document_id))
     session.flush()
