@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sp500-ingestion
+  group: fdre-ingestion
   cancel-in-progress: false
 
 jobs:

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from apps.api.app.models import Chunk, Document, DocumentElement
@@ -88,14 +88,14 @@ def rebuild_document_chunks(
 
     document = session.scalar(
         select(Document)
-        .options(joinedload(Document.company), joinedload(Document.elements))
+        .options(joinedload(Document.company))
         .where(Document.id == document_id)
+        .with_for_update()
     )
     if document is None:
         raise ValueError(f"Document {document_id} does not exist")
 
-    for existing_chunk in list(document.chunks):
-        session.delete(existing_chunk)
+    session.execute(delete(Chunk).where(Chunk.document_id == document_id))
     session.flush()
 
     text_chunker = ElementChunker(max_tokens=max_tokens)
@@ -103,7 +103,9 @@ def rebuild_document_chunks(
     stored: list[Chunk] = []
     seen_texts: set[str] = set()
     elements = sorted(
-        document.elements,
+        session.scalars(
+            select(DocumentElement).where(DocumentElement.document_id == document_id)
+        ).all(),
         key=lambda element: (
             element.reading_order is None,
             element.reading_order or 0,

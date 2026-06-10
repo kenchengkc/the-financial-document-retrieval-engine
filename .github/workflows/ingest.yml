@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sec-ingestion
+  group: fdre-ingestion
   cancel-in-progress: false
 
 jobs:

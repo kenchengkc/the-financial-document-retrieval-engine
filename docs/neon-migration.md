@@ -109,6 +109,9 @@ export DATABASE_URL="$NEON_DIRECT_URL"
 python -m scripts.retrieval_pipeline index --tickers A AAPL ABBV ...
 ```
 
+Only run **one** ingest workflow at a time. Megacap and S&P 500 jobs share the `fdre-ingestion`
+concurrency group so they queue instead of racing on the same tickers.
+
 ### Walk the full S&P 500
 
 Advance `offset` by `limit` after each successful run:
