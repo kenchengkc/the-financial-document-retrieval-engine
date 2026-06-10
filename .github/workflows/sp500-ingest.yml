@@ -21,9 +21,14 @@ on:
         description: "Reparse unchanged filings after parser updates"
         type: boolean
         default: false
+      chain:
+        description: "On success, automatically queue the next offset+limit batch"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: fdre-ingestion
@@ -129,3 +134,21 @@ jobs:
             --limit "${LIMIT}" \
             --filing-limit "${FILING_LIMIT}" \
             "${force_args[@]}"
+
+      - name: Queue next S&P 500 batch
+        if: success() && github.event.inputs.chain == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          next_offset=$((OFFSET + LIMIT))
+          if [ "${next_offset}" -lt 499 ]; then
+            echo "::notice::Queueing next batch at offset ${next_offset}"
+            gh workflow run "S&P 500 batch ingestion" \
+              -f offset="${next_offset}" \
+              -f limit="${LIMIT}" \
+              -f filing_limit="${FILING_LIMIT}" \
+              -f force_parse="${FORCE_PARSE}" \
+              -f chain=true
+          else
+            echo "::notice::S&P 500 ingest chain complete (offset ${OFFSET})."
+          fi

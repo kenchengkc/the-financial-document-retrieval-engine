@@ -112,6 +112,10 @@ python -m scripts.retrieval_pipeline index --tickers A AAPL ABBV ...
 Only run **one** ingest workflow at a time. Megacap and S&P 500 jobs share the `fdre-ingestion`
 concurrency group so they queue instead of racing on the same tickers.
 
+To walk the full list automatically, trigger **S&P 500 batch ingestion** once with `chain=true`;
+each successful batch queues the next `offset + limit`. Do not fire dozens of dispatches at
+once — GitHub cancels duplicate pending runs.
+
 ### Walk the full S&P 500
 
 Advance `offset` by `limit` after each successful run:
