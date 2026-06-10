@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tickers", nargs="+", help="Explicit tickers (overrides universe)")
     parser.add_argument("--offset", type=int, default=0, help="Batch offset for sp500 universe")
-    parser.add_argument("--limit", type=int, default=25, help="Batch size")
+    parser.add_argument("--limit", type=int, default=10, help="Batch size")
     parser.add_argument("--forms", nargs="+", default=["10-K", "10-Q"])
     parser.add_argument("--filing-limit", type=int, default=1, help="Latest N filings per form")
     parser.add_argument("--force-parse", action="store_true")

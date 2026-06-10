@@ -1,10 +1,11 @@
 name: Scheduled SEC ingestion
 
 # Loads SEC filings into the production database over time.
-# Requires two repository secrets:
-#   DATABASE_URL    -> Railway Postgres PUBLIC url (Postgres service -> Variables -> DATABASE_PUBLIC_URL)
-#   SEC_USER_AGENT  -> e.g. "FDRE your-email@example.com" (SEC requires a descriptive UA)
-# The job is a no-op (skips) if DATABASE_URL is not configured, to avoid failure noise.
+# Requires repository secrets:
+#   DATABASE_URL         -> Neon pooled URL (or legacy Railway Postgres public URL)
+#   DATABASE_URL_DIRECT  -> optional Neon direct URL for long ingest jobs
+#   SEC_USER_AGENT       -> e.g. "FDRE your-email@example.com" (SEC requires a descriptive UA)
+# See docs/neon-migration.md. The job is a no-op if database/SEC secrets are missing.
 
 on:
   workflow_dispatch:
@@ -40,7 +41,8 @@ jobs:
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -56,7 +58,8 @@ jobs:
           if [ "${EMBEDDING_PROVIDER}" = "openai" ] && [ -z "${OPENAI_API_KEY}" ]; then
             provider_ready=false
           fi
-          if [ -n "${DATABASE_URL}" ] && [ -n "${SEC_USER_AGENT}" ] && [ "${provider_ready}" = true ]; then
+          if { [ -n "${DATABASE_URL_DIRECT}" ] || [ -n "${DATABASE_URL_POOLED}" ]; } \
+            && [ -n "${SEC_USER_AGENT}" ] && [ "${provider_ready}" = true ]; then
             echo "enabled=true" >> "${GITHUB_OUTPUT}"
           else
             echo "enabled=false" >> "${GITHUB_OUTPUT}"
@@ -70,7 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
       EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
@@ -107,6 +111,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
+
+      - name: Use direct database URL for ingest
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "::notice::Using DATABASE_URL_DIRECT for SEC ingest."
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "::notice::DATABASE_URL_DIRECT not set; using DATABASE_URL."
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
 
       - name: Ingest filing metadata
         run: |

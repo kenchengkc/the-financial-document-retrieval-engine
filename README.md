@@ -248,10 +248,12 @@ python scripts/build_sp500_tickers.py
 Run one S&P 500 ingest batch locally (metadata → download/parse → chunk → embed):
 
 ```bash
-python scripts/ingest_ticker_batch.py --universe sp500 --offset 0 --limit 25
+python scripts/ingest_ticker_batch.py --universe sp500 --offset 0 --limit 10
 ```
 
-GitHub Actions: **Scheduled SEC ingestion** keeps megacap tickers fresh; **S&P 500 batch ingestion** walks `data/sample/sp500_tickers.json` in batches via `workflow_dispatch` (`offset` + `limit`).
+GitHub Actions: **Scheduled SEC ingestion** keeps megacap tickers fresh; **S&P 500 batch ingestion** walks `data/sample/sp500_tickers.json` in batches via `workflow_dispatch` (`offset` + `limit`, default `10`).
+
+Production Postgres on **Neon Launch** (pgvector, pay-as-you-go storage) is recommended for S&P 500 indexing. See [docs/neon-migration.md](docs/neon-migration.md) for pooled vs direct connection strings and secret setup.
 
 ## Docker
 
@@ -279,14 +281,16 @@ npm run dev
 `NEXT_PUBLIC_API_URL` selects the FastAPI deployment. The local default is
 `http://127.0.0.1:8000`.
 
-The production frontend uses `https://api.thefdre.com`. The API runs on Railway with managed
-PostgreSQL, so indexed filings, retrieval runs, answer runs, and citations persist across
-deployments. Vercel serves the Next.js frontend at [thefdre.com](https://thefdre.com).
+The production frontend uses `https://api.thefdre.com`. The API runs on Railway; production
+Postgres should use **Neon Launch** (pooled `DATABASE_URL` on the API, direct
+`DATABASE_URL_DIRECT` for ingest workflows). Indexed filings, retrieval runs, answer runs, and
+citations persist across deployments. Vercel serves the Next.js frontend at
+[thefdre.com](https://thefdre.com).
 
-The scheduled SEC ingestion workflow requires the `DATABASE_URL` and `SEC_USER_AGENT` GitHub
-repository secrets. External embedding providers also require their API-key secret. Without the
-required values, it reports a successful skip rather than attempting ingestion
-against an unconfigured database.
+GitHub ingest workflows require `DATABASE_URL`, `SEC_USER_AGENT`, and optional
+`DATABASE_URL_DIRECT` (see [docs/neon-migration.md](docs/neon-migration.md)). External
+embedding providers also require their API-key secret. Without the required values, workflows
+report a successful skip rather than attempting ingestion against an unconfigured database.
 
 ## Quality Checks
 
