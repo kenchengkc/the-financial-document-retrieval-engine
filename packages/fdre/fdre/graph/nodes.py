@@ -147,6 +147,20 @@ def retrieve_tables_node(context: WorkflowContext, state: AgentState) -> AgentSt
             "table_candidates": [],
             "trace": _trace(state, "retrieve_tables", {"count": 0, "skipped": True}),
         }
+    existing_tables = [
+        payload
+        for payload in state.get("text_candidates", [])
+        if payload.get("metadata", {}).get("element_type") == "table"
+    ]
+    if existing_tables:
+        return {
+            "table_candidates": existing_tables,
+            "trace": _trace(
+                state,
+                "retrieve_tables",
+                {"count": len(existing_tables), "reused": True},
+            ),
+        }
     filters = SearchFilters.model_validate(state.get("filters", {})).model_copy(
         update={"element_types": ["table"]}
     )
@@ -158,7 +172,11 @@ def retrieve_tables_node(context: WorkflowContext, state: AgentState) -> AgentSt
     )
     return {
         "table_candidates": [candidate.model_dump(mode="json") for candidate in candidates],
-        "trace": _trace(state, "retrieve_tables", {"count": len(candidates)}),
+        "trace": _trace(
+            state,
+            "retrieve_tables",
+            {"count": len(candidates), "reused": False},
+        ),
     }
 
 

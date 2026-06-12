@@ -188,6 +188,10 @@ def test_answer_workflow_routes_tables_and_financial_facts() -> None:
 
     assert "tables" in table_state["route"]
     assert table_state["evidence"][0]["metadata"]["element_type"] == "table"
+    table_trace = next(
+        step for step in table_state["trace"] if step["node"] == "retrieve_tables"
+    )
+    assert table_trace["details"]["reused"] is True
     assert "financial_facts" in fact_state["route"]
     assert fact_state["financial_facts"][0]["concept"] == "Revenues"
 
