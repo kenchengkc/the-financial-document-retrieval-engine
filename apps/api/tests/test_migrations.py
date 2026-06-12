@@ -153,6 +153,34 @@ def test_pgvector_migration_preserves_existing_embeddings(tmp_path: Path) -> Non
     )
 
 
+def test_retrieval_index_migration_recovers_from_partial_upgrade(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "fdre-partial-index.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    config = Config(REPO_ROOT / "alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "f4a6c8d2e901")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE chunks ADD COLUMN search_vector TEXT"))
+        connection.execute(
+            text(
+                "CREATE INDEX ix_chunks_search_vector_gin "
+                "ON chunks (search_vector)"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    indexes = {
+        index["name"]
+        for index in inspect(engine).get_indexes("chunks")
+    }
+    assert "ix_chunks_search_vector_gin" in indexes
+
+
 def test_chunk_rebuild_preserves_run_history(tmp_path: Path) -> None:
     database_path = tmp_path / "fdre-history.db"
     database_url = f"sqlite+pysqlite:///{database_path}"
