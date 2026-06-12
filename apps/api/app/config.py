@@ -50,6 +50,11 @@ class Settings(BaseSettings):
         alias="EMBEDDING_TOKENS_PER_MINUTE",
     )
     embedding_concurrency: int = Field(default=8, ge=1, le=64, alias="EMBEDDING_CONCURRENCY")
+    embedding_cost_per_million_tokens: float = Field(
+        default=0.0,
+        ge=0.0,
+        alias="EMBEDDING_COST_PER_MILLION_TOKENS",
+    )
     sparse_provider: str = Field(default="postgres", alias="SPARSE_PROVIDER")
     reranker_provider: str = Field(default="none", alias="RERANKER_PROVIDER")
     reranker_model: str = Field(default="rerank-2.5", alias="RERANKER_MODEL")

@@ -133,7 +133,23 @@ def test_models_persist_related_financial_document_data() -> None:
                 company,
                 retrieval_run,
                 answer_run,
-                EvalQuestion(question="Find Apple's supply risk.", answer_type="text"),
+                EvalQuestion(
+                    question_key="development-aapl-risk",
+                    question="Find Apple's supply risk.",
+                    split="development",
+                    category="narrative",
+                    relevant_evidence_json=[
+                        {
+                            "accession_number": "0000320193-25-000079",
+                            "section": "Risk Factors",
+                            "normalized_quote": "supply constraints may affect operations.",
+                            "content_fingerprint": "0" * 64,
+                        }
+                    ],
+                    answer_type="text",
+                    should_abstain=False,
+                    reviewed_by="test-reviewer",
+                ),
                 EvalResult(eval_run_id=1, metric_name="recall@5", metric_value=1.0),
             ]
         )
