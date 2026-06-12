@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from time import perf_counter
 from typing import Any
 
@@ -29,6 +29,11 @@ from fdre.evals.runner import (
 from fdre.indexing.embeddings import embedding_provider_from_settings, rebuild_embeddings
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.xbrl import ingest_company_facts
+from fdre.research.panel import (
+    ResearchPanelQuery,
+    build_research_panel,
+    write_research_panel,
+)
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
@@ -92,6 +97,25 @@ def parse_args() -> argparse.Namespace:
         help="Ingest SEC Company Facts for indexed filing accessions",
     )
     xbrl_parser.add_argument("--tickers", nargs="+")
+    panel_parser = subparsers.add_parser(
+        "panel",
+        help="Export the point-in-time issuer-period research panel",
+    )
+    panel_parser.add_argument("--output", required=True)
+    panel_parser.add_argument(
+        "--format",
+        choices=("json", "csv", "parquet"),
+        default="parquet",
+    )
+    panel_parser.add_argument("--tickers", nargs="+")
+    panel_parser.add_argument("--forms", nargs="+", default=["10-K", "10-Q"])
+    panel_parser.add_argument("--period-end-from")
+    panel_parser.add_argument("--period-end-to")
+    panel_parser.add_argument("--as-of")
+    panel_parser.add_argument("--sections", nargs="+")
+    panel_parser.add_argument("--features", nargs="+")
+    panel_parser.add_argument("--include-amendments", action="store_true")
+    panel_parser.add_argument("--limit", type=int, default=1000)
     eval_parser.add_argument(
         "--require-reviewed",
         action="store_true",
@@ -166,6 +190,34 @@ def main() -> None:
                         tickers=args.tickers,
                     )
                 )
+        elif args.command == "panel":
+            panel = build_research_panel(
+                session,
+                ResearchPanelQuery(
+                    tickers=args.tickers or [],
+                    period_end_from=_optional_date(args.period_end_from),
+                    period_end_to=_optional_date(args.period_end_to),
+                    as_of=_optional_datetime(args.as_of),
+                    form_types=args.forms,
+                    sections=args.sections or [],
+                    features=args.features or [],
+                    include_amendments=args.include_amendments,
+                    limit=args.limit,
+                ),
+            )
+            output = write_research_panel(
+                args.output,
+                panel,
+                output_format=args.format,
+            )
+            print(
+                {
+                    "output": str(output),
+                    "rows": len(panel.rows),
+                    "corpus_snapshot_id": panel.corpus_snapshot_id,
+                    "feature_version": panel.feature_version,
+                }
+            )
         elif args.command == "seed-demo":
             print(seed_demo_document(session))
 
@@ -297,6 +349,14 @@ def build_benchmark_metadata(
             settings.embedding_cost_per_million_tokens
         ),
     }
+
+
+def _optional_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
+
+
+def _optional_datetime(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
 
 
 if __name__ == "__main__":

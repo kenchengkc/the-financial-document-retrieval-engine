@@ -14,6 +14,7 @@ from fdre.research.financial_facts import (
     FinancialFactsResponse,
     query_financial_facts,
 )
+from fdre.research.panel import ResearchPanel, ResearchPanelQuery, build_research_panel
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -55,6 +56,33 @@ def financial_facts(
             as_of=as_of,
             form_types=form_types or [],
             restatement_policy=restatement_policy,
+            limit=limit,
+        ),
+    )
+
+
+@router.get("/panel", response_model=ResearchPanel)
+def research_panel(
+    session: Annotated[Session, Depends(get_db_session)],
+    tickers: Annotated[list[str] | None, Query()] = None,
+    period_end_from: Annotated[date | None, Query()] = None,
+    period_end_to: Annotated[date | None, Query()] = None,
+    as_of: Annotated[datetime | None, Query()] = None,
+    form_types: Annotated[list[str] | None, Query()] = None,
+    sections: Annotated[list[str] | None, Query()] = None,
+    include_amendments: Annotated[bool, Query()] = False,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
+) -> ResearchPanel:
+    return build_research_panel(
+        session,
+        ResearchPanelQuery(
+            tickers=tickers or [],
+            period_end_from=period_end_from,
+            period_end_to=period_end_to,
+            as_of=as_of,
+            form_types=form_types or ["10-K", "10-Q"],
+            sections=sections or [],
+            include_amendments=include_amendments,
             limit=limit,
         ),
     )
