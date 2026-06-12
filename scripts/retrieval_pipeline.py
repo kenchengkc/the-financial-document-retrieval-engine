@@ -29,6 +29,15 @@ from fdre.evals.runner import (
 from fdre.indexing.embeddings import embedding_provider_from_settings, rebuild_embeddings
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.xbrl import ingest_company_facts
+from fdre.research.event_study import (
+    EventStudyConfig,
+    EventWindow,
+    load_filing_events,
+    load_market_bars,
+    persist_event_study,
+    run_event_study,
+    write_event_study_report,
+)
 from fdre.research.panel import (
     ResearchPanelQuery,
     build_research_panel,
@@ -116,6 +125,24 @@ def parse_args() -> argparse.Namespace:
     panel_parser.add_argument("--features", nargs="+")
     panel_parser.add_argument("--include-amendments", action="store_true")
     panel_parser.add_argument("--limit", type=int, default=1000)
+    event_parser = subparsers.add_parser(
+        "event-study",
+        help="Run a benchmark-adjusted filing event study",
+    )
+    event_parser.add_argument("--panel", required=True)
+    event_parser.add_argument("--market-bars", required=True)
+    event_parser.add_argument("--output", required=True)
+    event_parser.add_argument("--feature")
+    event_parser.add_argument("--benchmark", default="SPY")
+    event_parser.add_argument(
+        "--windows",
+        nargs="+",
+        default=["0:1", "-1:1", "0:5"],
+    )
+    event_parser.add_argument("--bootstrap-iterations", type=int, default=1000)
+    event_parser.add_argument("--confidence-level", type=float, default=0.95)
+    event_parser.add_argument("--random-seed", type=int, default=17)
+    event_parser.add_argument("--walk-forward-splits", nargs="+")
     eval_parser.add_argument(
         "--require-reviewed",
         action="store_true",
@@ -216,6 +243,39 @@ def main() -> None:
                     "rows": len(panel.rows),
                     "corpus_snapshot_id": panel.corpus_snapshot_id,
                     "feature_version": panel.feature_version,
+                }
+            )
+        elif args.command == "event-study":
+            events, dataset_version, feature_version = load_filing_events(
+                args.panel,
+                feature=args.feature,
+            )
+            report = run_event_study(
+                events,
+                load_market_bars(args.market_bars),
+                EventStudyConfig(
+                    benchmark_ticker=args.benchmark,
+                    windows=[_event_window(value) for value in args.windows],
+                    bootstrap_iterations=args.bootstrap_iterations,
+                    confidence_level=args.confidence_level,
+                    random_seed=args.random_seed,
+                    walk_forward_splits=[
+                        date.fromisoformat(value)
+                        for value in args.walk_forward_splits or []
+                    ],
+                ),
+                dataset_version=dataset_version,
+                feature_version=feature_version,
+                code_sha=_git_sha(),
+            )
+            experiment = persist_event_study(session, report)
+            output = write_event_study_report(args.output, report)
+            print(
+                {
+                    "output": str(output),
+                    "experiment_id": experiment.id,
+                    "experiment_key": report.experiment_key,
+                    "events": report.event_count,
                 }
             )
         elif args.command == "seed-demo":
@@ -319,15 +379,6 @@ def build_benchmark_metadata(
         f"{settings.embedding_provider}:{settings.embedding_model}:"
         f"{settings.embedding_dimensions}"
     )
-    try:
-        git_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        git_sha = "unknown"
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "dataset": str(dataset),
@@ -337,7 +388,7 @@ def build_benchmark_metadata(
         "document_count": document_count,
         "chunk_count": chunk_count,
         "embedding_count": embedding_count,
-        "git_sha": git_sha,
+        "git_sha": _git_sha(),
         "parser_version": "html-filing-parser-v1",
         "embedding_provider": settings.embedding_provider,
         "embedding_model": settings.embedding_model,
@@ -357,6 +408,25 @@ def _optional_date(value: str | None) -> date | None:
 
 def _optional_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
+
+
+def _event_window(value: str) -> EventWindow:
+    start, separator, end = value.partition(":")
+    if not separator:
+        raise ValueError(f"Invalid event window {value!r}; expected START:END")
+    return EventWindow(start=int(start), end=int(end))
+
+
+def _git_sha() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
 
 
 if __name__ == "__main__":

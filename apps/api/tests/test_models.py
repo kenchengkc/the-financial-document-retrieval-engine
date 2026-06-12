@@ -16,6 +16,7 @@ from apps.api.app.models import (
     EvalQuestion,
     EvalResult,
     FinancialFact,
+    ResearchExperiment,
     RetrievalResult,
     RetrievalRun,
 )
@@ -33,6 +34,7 @@ EXPECTED_TABLES = {
     "financial_facts",
     "retrieval_results",
     "retrieval_runs",
+    "research_experiments",
 }
 
 
@@ -126,6 +128,15 @@ def test_models_persist_related_financial_document_data() -> None:
             )
         ],
     )
+    research_experiment = ResearchExperiment(
+        experiment_key="event-study-test",
+        experiment_type="event_study",
+        dataset_version="dataset-v1",
+        feature_version="feature-v1",
+        code_sha="abc123",
+        config_json={"windows": ["0:1"]},
+        results_json={"sample_size": 1},
+    )
 
     with Session(engine) as session:
         session.add_all(
@@ -133,6 +144,7 @@ def test_models_persist_related_financial_document_data() -> None:
                 company,
                 retrieval_run,
                 answer_run,
+                research_experiment,
                 EvalQuestion(
                     question_key="development-aapl-risk",
                     question="Find Apple's supply risk.",
