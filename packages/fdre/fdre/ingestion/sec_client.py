@@ -15,6 +15,7 @@ from apps.api.app.config import get_settings
 
 SEC_SUBMISSIONS_BASE_URL = "https://data.sec.gov/submissions"
 SEC_ARCHIVES_BASE_URL = "https://www.sec.gov/Archives/edgar/data"
+SEC_COMPANY_FACTS_BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
 JSONDict = dict[str, Any]
@@ -54,6 +55,10 @@ def build_primary_document_url(cik: str, accession: str, primary_document: str) 
 
 def company_submissions_url(cik: str) -> str:
     return f"{SEC_SUBMISSIONS_BASE_URL}/CIK{normalize_cik(cik)}.json"
+
+
+def company_facts_url(cik: str) -> str:
+    return f"{SEC_COMPANY_FACTS_BASE_URL}/CIK{normalize_cik(cik)}.json"
 
 
 class RateLimiter:
@@ -165,6 +170,9 @@ class SECClient:
 
     def get_company_submissions(self, cik: str) -> JSONDict:
         return self.get_json(company_submissions_url(cik))
+
+    def get_company_facts(self, cik: str) -> JSONDict:
+        return self.get_json(company_facts_url(cik))
 
     def list_recent_filings(
         self,

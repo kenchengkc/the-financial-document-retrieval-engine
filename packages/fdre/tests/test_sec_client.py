@@ -11,6 +11,7 @@ from fdre.ingestion.sec_client import (
     RateLimiter,
     SECClient,
     build_primary_document_url,
+    company_facts_url,
     company_submissions_url,
     extract_recent_filings,
     normalize_accession,
@@ -62,6 +63,7 @@ def test_normalizes_sec_identifiers_and_builds_archive_url() -> None:
         "https://www.sec.gov/Archives/edgar/data/320193/"
         "000032019325000079/aapl-20250927.htm"
     )
+    assert company_facts_url("320193").endswith("/CIK0000320193.json")
 
     with pytest.raises(ValueError):
         normalize_cik("")

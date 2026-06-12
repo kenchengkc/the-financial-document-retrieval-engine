@@ -27,6 +27,8 @@ from fdre.evals.runner import (
     write_eval_report,
 )
 from fdre.indexing.embeddings import embedding_provider_from_settings, rebuild_embeddings
+from fdre.ingestion.sec_client import SECClient
+from fdre.ingestion.xbrl import ingest_company_facts
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
@@ -85,6 +87,11 @@ def parse_args() -> argparse.Namespace:
         choices=("development", "holdout", "all"),
         default="development",
     )
+    xbrl_parser = subparsers.add_parser(
+        "xbrl",
+        help="Ingest SEC Company Facts for indexed filing accessions",
+    )
+    xbrl_parser.add_argument("--tickers", nargs="+")
     eval_parser.add_argument(
         "--require-reviewed",
         action="store_true",
@@ -150,6 +157,15 @@ def main() -> None:
                 ),
             )
             print({"json": str(paths[0]), "markdown": str(paths[1])})
+        elif args.command == "xbrl":
+            with SECClient.from_settings() as client:
+                print(
+                    ingest_company_facts(
+                        session,
+                        client,
+                        tickers=args.tickers,
+                    )
+                )
         elif args.command == "seed-demo":
             print(seed_demo_document(session))
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import create_engine
@@ -43,6 +43,8 @@ def _seed(session: Session, *, include_table: bool = False, include_fact: bool =
         source_type="sec",
         form_type="10-K",
         filing_date=date(2025, 10, 31),
+        accepted_at=datetime(2025, 10, 31, 6, tzinfo=UTC),
+        available_at=datetime(2025, 10, 31, 6, tzinfo=UTC),
         accession_number="0000320193-25-000079",
     )
     elements = [
@@ -97,15 +99,23 @@ def _seed(session: Session, *, include_table: bool = False, include_fact: bool =
     if include_fact:
         company.financial_facts.append(
             FinancialFact(
+                document=document,
                 ticker="AAPL",
+                fact_key="answer-workflow-revenue",
+                taxonomy="us-gaap",
                 concept="Revenues",
+                canonical_metric="revenue",
                 label="Revenue",
                 value=Decimal("391035000000"),
                 unit="USD",
+                period_start=date(2024, 9, 29),
                 period_end=date(2025, 9, 27),
+                period_type="duration",
                 fiscal_year=2025,
                 fiscal_period="FY",
                 form_type="10-K",
+                accession_number=document.accession_number,
+                available_at=document.available_at,
             )
         )
     session.add(company)

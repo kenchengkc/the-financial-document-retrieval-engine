@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
-from apps.api.app.models import FinancialFact
 from fdre.citations.verifier import AnswerClaim, CitationVerifier
 from fdre.graph.state import AgentState
 from fdre.indexing.embeddings import embedding_provider_from_settings
+from fdre.research.financial_facts import FinancialFactQuery, query_financial_facts
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
@@ -165,23 +163,15 @@ def retrieve_financial_facts_node(
             ),
         }
     filters = SearchFilters.model_validate(state.get("filters", {}))
-    statement = select(FinancialFact).order_by(
-        FinancialFact.period_end.desc(),
-        FinancialFact.id.desc(),
+    result = query_financial_facts(
+        context.session,
+        FinancialFactQuery(
+            tickers=filters.tickers,
+            as_of=filters.as_of,
+            limit=20,
+        ),
     )
-    if filters.tickers:
-        statement = statement.where(FinancialFact.ticker.in_(filters.tickers))
-    facts = list(context.session.scalars(statement.limit(20)))
-    serialized = [
-        {
-            "ticker": fact.ticker,
-            "concept": fact.concept,
-            "value": _decimal_string(fact.value),
-            "unit": fact.unit,
-            "period_end": fact.period_end.isoformat() if fact.period_end else None,
-        }
-        for fact in facts
-    ]
+    serialized = [fact.model_dump(mode="json") for fact in result.facts]
     return {
         "financial_facts": serialized,
         "trace": _trace(state, "retrieve_financial_facts", {"count": len(serialized)}),
@@ -348,7 +338,3 @@ def _trace(
 def _first_sentence(text: str) -> str:
     sentence = text.split(".", maxsplit=1)[0].strip()
     return f"{sentence}." if sentence else ""
-
-
-def _decimal_string(value: Decimal | None) -> str | None:
-    return str(value) if value is not None else None
