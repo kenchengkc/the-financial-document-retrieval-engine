@@ -12,6 +12,7 @@ from fdre.ingestion.sec_client import (
     SECClient,
     build_primary_document_url,
     company_submissions_url,
+    extract_recent_filings,
     normalize_accession,
     normalize_cik,
 )
@@ -111,3 +112,12 @@ def test_lists_latest_filings_per_form_and_reuses_cache(tmp_path: Path) -> None:
     cache_files = list(tmp_path.iterdir())
     assert len(cache_files) == 1
     assert json.loads(cache_files[0].read_text())["name"] == "Apple Inc."
+
+
+def test_extract_recent_filings_supports_form_specific_depth() -> None:
+    results = extract_recent_filings(
+        submissions_payload(),
+        ["10-K", "10-Q"],
+        {"10-K": 1, "10-Q": 2},
+    )
+    assert [filing["form_type"] for filing in results] == ["10-K", "10-Q", "10-Q"]

@@ -64,6 +64,16 @@ class PostgresFullTextIndexer:
             statement = statement.where(Document.filing_date >= filters.filing_date_from)
         if filters.filing_date_to:
             statement = statement.where(Document.filing_date <= filters.filing_date_to)
+        if filters.accepted_at_from:
+            statement = statement.where(Document.accepted_at >= filters.accepted_at_from)
+        if filters.accepted_at_to:
+            statement = statement.where(Document.accepted_at <= filters.accepted_at_to)
+        if filters.as_of:
+            statement = statement.where(Document.available_at <= filters.as_of)
+        if filters.amendment_policy == "exclude":
+            statement = statement.where(Document.is_amendment.is_(False))
+        elif filters.amendment_policy == "only":
+            statement = statement.where(Document.is_amendment.is_(True))
         if filters.sections:
             statement = statement.where(Chunk.section.in_(filters.sections))
         if filters.element_types:

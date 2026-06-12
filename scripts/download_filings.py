@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,10 +31,15 @@ def select_documents(
     *,
     tickers: list[str],
     form_types: list[str],
-    limit: int,
+    limit: int | Mapping[str, int],
 ) -> list[Document]:
-    if limit < 1:
-        raise ValueError("limit must be at least 1")
+    form_limits = (
+        {form.upper(): limit for form in form_types}
+        if isinstance(limit, int)
+        else {form.upper(): value for form, value in limit.items()}
+    )
+    if any(value < 1 for value in form_limits.values()):
+        raise ValueError("form limits must be at least 1")
 
     documents = session.scalars(
         select(Document)
@@ -51,7 +57,7 @@ def select_documents(
     for document in documents:
         key = (document.company.ticker, document.form_type)
         count = counts.get(key, 0)
-        if count >= limit:
+        if count >= form_limits[document.form_type.upper()]:
             continue
         selected.append(document)
         counts[key] = count + 1
@@ -65,7 +71,7 @@ def process_documents(
     parser: HtmlFilingParser,
     tickers: list[str],
     form_types: list[str],
-    limit: int,
+    limit: int | Mapping[str, int],
     download: bool,
     parse: bool,
     force_parse: bool = False,
@@ -162,6 +168,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tickers", nargs="+", default=list(DEFAULT_SAMPLE_TICKERS))
     parser.add_argument("--forms", nargs="+", default=list(DEFAULT_FORMS))
     parser.add_argument("--limit", type=int, default=2)
+    parser.add_argument("--annual-limit", type=int)
+    parser.add_argument("--quarterly-limit", type=int)
     parser.add_argument("--download", action="store_true", help="Download selected filing HTML")
     parser.add_argument(
         "--parse",
@@ -178,6 +186,18 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    limit: int | dict[str, int] = args.limit
+    if args.annual_limit is not None or args.quarterly_limit is not None:
+        limit = {
+            form.upper(): (
+                args.annual_limit
+                if form.upper().startswith("10-K") and args.annual_limit is not None
+                else args.quarterly_limit
+                if form.upper().startswith("10-Q") and args.quarterly_limit is not None
+                else args.limit
+            )
+            for form in args.forms
+        }
     with Session(create_db_engine()) as session:
         if args.download:
             with SECClient.from_settings() as client:
@@ -187,7 +207,7 @@ def main() -> None:
                     parser=HtmlFilingParser(),
                     tickers=args.tickers,
                     form_types=args.forms,
-                    limit=args.limit,
+                    limit=limit,
                     download=True,
                     parse=args.parse,
                     force_parse=args.force_parse,
@@ -199,7 +219,7 @@ def main() -> None:
                 parser=HtmlFilingParser(),
                 tickers=args.tickers,
                 form_types=args.forms,
-                limit=args.limit,
+                limit=limit,
                 download=False,
                 parse=args.parse,
                 force_parse=args.force_parse,

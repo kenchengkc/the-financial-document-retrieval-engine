@@ -6,6 +6,7 @@ from typing import Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -33,6 +34,13 @@ class Document(Base):
             "form_type",
             "filing_date",
         ),
+        Index(
+            "ix_documents_company_form_period_available",
+            "company_id",
+            "form_type",
+            "period_end_date",
+            "available_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -45,6 +53,16 @@ class Document(Base):
     form_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     filing_date: Mapped[date | None] = mapped_column(Date, index=True)
     period_end_date: Mapped[date | None] = mapped_column(Date)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    is_amendment: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        index=True,
+        nullable=False,
+    )
+    amends_accession_number: Mapped[str | None] = mapped_column(String(64), index=True)
     accession_number: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     primary_document_url: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str | None] = mapped_column(Text)

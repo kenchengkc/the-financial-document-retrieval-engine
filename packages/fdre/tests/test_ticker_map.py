@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fdre.ingestion.ticker_map import (
+    RESEARCH_UNIVERSE_TICKERS,
     CompanySeed,
     _load_listed_companies,
     _sp500_primary_tickers,
@@ -74,3 +75,9 @@ def test_sp500_batch_tickers_supports_offset_and_limit(
 
     assert sp500_primary_tickers() == ("AAPL", "MSFT", "NVDA")
     assert sp500_batch_tickers(offset=1, limit=1) == ["MSFT"]
+
+
+def test_research_universe_is_fixed_and_diversified() -> None:
+    assert len(RESEARCH_UNIVERSE_TICKERS) == 50
+    assert len(set(RESEARCH_UNIVERSE_TICKERS)) == 50
+    assert {"AAPL", "JPM", "LLY", "XOM"} <= set(RESEARCH_UNIVERSE_TICKERS)

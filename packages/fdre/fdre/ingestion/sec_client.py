@@ -5,7 +5,7 @@ import json
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -170,7 +170,7 @@ class SECClient:
         self,
         cik: str,
         form_types: list[str],
-        limit: int,
+        limit: int | Mapping[str, int],
     ) -> list[JSONDict]:
         submissions = self.get_company_submissions(cik)
         return extract_recent_filings(submissions, form_types, limit)
@@ -179,14 +179,12 @@ class SECClient:
 def extract_recent_filings(
     submissions: JSONDict,
     form_types: Iterable[str],
-    limit: int,
+    limit: int | Mapping[str, int],
 ) -> list[JSONDict]:
     """Select the latest filings, applying the limit independently per form."""
 
-    if limit < 1:
-        raise ValueError("limit must be at least 1")
-
     requested_forms = {form_type.upper() for form_type in form_types}
+    limits = _form_limits(requested_forms, limit)
     filings = submissions.get("filings")
     if not isinstance(filings, dict):
         return []
@@ -205,7 +203,10 @@ def extract_recent_filings(
         if not isinstance(form_type, str):
             continue
         normalized_form = form_type.upper()
-        if normalized_form not in requested_forms or counts[normalized_form] >= limit:
+        if (
+            normalized_form not in requested_forms
+            or counts[normalized_form] >= limits[normalized_form]
+        ):
             continue
 
         primary_document = _value_at(recent, "primaryDocument", index)
@@ -235,7 +236,7 @@ def extract_recent_filings(
         )
         counts[normalized_form] += 1
 
-        if counts and all(count >= limit for count in counts.values()):
+        if counts and all(count >= limits[form] for form, count in counts.items()):
             break
 
     return selected
@@ -248,11 +249,32 @@ def _value_at(payload: JSONDict, key: str, index: int) -> Any:
     return None
 
 
+def _form_limits(
+    requested_forms: set[str],
+    limit: int | Mapping[str, int],
+) -> dict[str, int]:
+    if isinstance(limit, int):
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        return dict.fromkeys(requested_forms, limit)
+    normalized = {form.upper(): value for form, value in limit.items()}
+    missing = requested_forms - normalized.keys()
+    if missing:
+        raise ValueError(f"missing limits for forms: {', '.join(sorted(missing))}")
+    if any(value < 1 for value in normalized.values()):
+        raise ValueError("form limits must be at least 1")
+    return {form: normalized[form] for form in requested_forms}
+
+
 def get_company_submissions(cik: str) -> JSONDict:
     with SECClient.from_settings() as client:
         return client.get_company_submissions(cik)
 
 
-def list_recent_filings(cik: str, form_types: list[str], limit: int) -> list[JSONDict]:
+def list_recent_filings(
+    cik: str,
+    form_types: list[str],
+    limit: int | Mapping[str, int],
+) -> list[JSONDict]:
     with SECClient.from_settings() as client:
         return client.list_recent_filings(cik, form_types, limit)

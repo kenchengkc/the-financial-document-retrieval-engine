@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 from sqlalchemy import select
@@ -35,7 +36,7 @@ def ingest_sec_metadata(
     client: SECClient,
     tickers: list[str],
     form_types: list[str],
-    limit: int,
+    limit: int | Mapping[str, int],
 ) -> IngestionSummary:
     counters = {
         "companies_created": 0,
@@ -79,6 +80,13 @@ def ingest_sec_metadata(
             document.form_type = str(filing["form_type"])
             document.filing_date = _parse_date(filing.get("filing_date"))
             document.period_end_date = _parse_date(filing.get("report_date"))
+            document.accepted_at = _parse_datetime(filing.get("acceptance_datetime"))
+            document.available_at = document.accepted_at or (
+                datetime.combine(document.filing_date, time.min, tzinfo=UTC)
+                if document.filing_date
+                else None
+            )
+            document.is_amendment = document.form_type.upper().endswith("/A")
             document.primary_document_url = build_primary_document_url(
                 seed.cik,
                 accession,
@@ -99,6 +107,8 @@ def ingest_sec_metadata(
                 and value != ""
             }
             counters["documents_created" if created else "documents_updated"] += 1
+
+        _resolve_amendment_lineage(session, company)
 
     session.commit()
     return IngestionSummary(**counters)
@@ -139,6 +149,36 @@ def _parse_date(value: Any) -> date | None:
     return date.fromisoformat(value)
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _resolve_amendment_lineage(session: Session, company: Company) -> None:
+    session.flush()
+    documents = list(
+        session.scalars(
+            select(Document)
+            .where(Document.company_id == company.id)
+            .order_by(Document.period_end_date, Document.accepted_at, Document.id)
+        )
+    )
+    originals = {
+        (document.form_type.upper(), document.period_end_date): document.accession_number
+        for document in documents
+        if not document.is_amendment
+    }
+    for document in documents:
+        if not document.is_amendment:
+            document.amends_accession_number = None
+            continue
+        base_form = document.form_type.upper().removesuffix("/A")
+        document.amends_accession_number = originals.get(
+            (base_form, document.period_end_date)
+        )
+
+
 def _string_value(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
@@ -169,18 +209,32 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Maximum filings per form and company",
     )
+    parser.add_argument("--annual-limit", type=int)
+    parser.add_argument("--quarterly-limit", type=int)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    limit: int | dict[str, int] = args.limit
+    if args.annual_limit is not None or args.quarterly_limit is not None:
+        limit = {
+            form.upper(): (
+                args.annual_limit
+                if form.upper().startswith("10-K") and args.annual_limit is not None
+                else args.quarterly_limit
+                if form.upper().startswith("10-Q") and args.quarterly_limit is not None
+                else args.limit
+            )
+            for form in args.forms
+        }
     with SECClient.from_settings() as client, Session(create_db_engine()) as session:
         summary = ingest_sec_metadata(
             session,
             client=client,
             tickers=args.tickers,
             form_types=args.forms,
-            limit=args.limit,
+            limit=limit,
         )
     print(summary)
 

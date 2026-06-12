@@ -4,7 +4,11 @@ import argparse
 import subprocess
 import sys
 
-from fdre.ingestion.ticker_map import DEFAULT_SAMPLE_TICKERS, sp500_batch_tickers
+from fdre.ingestion.ticker_map import (
+    DEFAULT_SAMPLE_TICKERS,
+    RESEARCH_UNIVERSE_TICKERS,
+    sp500_batch_tickers,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -13,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--universe",
-        choices=["megacap", "sp500"],
+        choices=["megacap", "sp500", "research50"],
         default="megacap",
         help="Ticker universe to ingest",
     )
@@ -22,6 +26,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=10, help="Batch size")
     parser.add_argument("--forms", nargs="+", default=["10-K", "10-Q"])
     parser.add_argument("--filing-limit", type=int, default=1, help="Latest N filings per form")
+    parser.add_argument("--annual-limit", type=int)
+    parser.add_argument("--quarterly-limit", type=int)
     parser.add_argument("--force-parse", action="store_true")
     parser.add_argument("--force-rechunk", action="store_true")
     parser.add_argument(
@@ -37,6 +43,8 @@ def _selected_tickers(args: argparse.Namespace) -> list[str]:
         return [ticker.upper() for ticker in args.tickers]
     if args.universe == "sp500":
         return sp500_batch_tickers(offset=args.offset, limit=args.limit)
+    if args.universe == "research50":
+        return list(RESEARCH_UNIVERSE_TICKERS[args.offset : args.offset + args.limit])
     return list(DEFAULT_SAMPLE_TICKERS)
 
 
@@ -56,14 +64,18 @@ def main() -> None:
     form_args = ["--forms", *args.forms]
 
     if not args.index_only:
+        history_args = ["--limit", str(args.filing_limit)]
+        if args.annual_limit is not None:
+            history_args.extend(["--annual-limit", str(args.annual_limit)])
+        if args.quarterly_limit is not None:
+            history_args.extend(["--quarterly-limit", str(args.quarterly_limit)])
         _run(
             [
                 sys.executable,
                 "scripts/ingest_sec_sample.py",
                 *ticker_args,
                 *form_args,
-                "--limit",
-                str(args.filing_limit),
+                *history_args,
             ]
         )
 
@@ -78,6 +90,10 @@ def main() -> None:
             "--download",
             "--parse",
         ]
+        if args.annual_limit is not None:
+            download_cmd.extend(["--annual-limit", str(args.annual_limit)])
+        if args.quarterly_limit is not None:
+            download_cmd.extend(["--quarterly-limit", str(args.quarterly_limit)])
         if args.force_parse:
             download_cmd.append("--force-parse")
         _run(download_cmd)
