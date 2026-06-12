@@ -1,13 +1,17 @@
 :root {
-  --canvas: #f4f6f8;
+  --canvas: #f3f1ea;
   --surface: #ffffff;
-  --surface-muted: #eef1f4;
-  --ink: #15191e;
-  --muted: #66717d;
-  --line: #d7dde3;
-  --line-strong: #b8c2cc;
-  --green: #0a7a53;
-  --green-soft: #e3f3ec;
+  --surface-muted: #faf9f4;
+  --ink: #1a1a14;
+  --muted: #414a39;
+  --prose: #313b30;
+  --line: #e4e1d6;
+  --line-strong: #d6d2c4;
+  /* ONE green — same literal value for text accents and buttons */
+  --green: #3a8a70;
+  --green-deep: #2f7059;
+  --green-soft: #e8f0ec;
+  --forest: #0e2a22;
   --cyan: #006f86;
   --cyan-soft: #e2f2f5;
   --amber: #8a5a00;
@@ -15,7 +19,9 @@
   --red: #a13939;
   --red-soft: #fae9e9;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --sans: Arial, Helvetica, sans-serif;
+  --sans: var(--font-sans), "Libre Franklin", system-ui, sans-serif;
+  --display: var(--font-display), "Newsreader", Georgia, serif;
+  --lede: var(--font-lede), "Public Sans", system-ui, sans-serif;
 }
 
 * {
@@ -34,6 +40,7 @@ body {
   font-family: var(--sans);
   font-size: 14px;
   letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -64,196 +71,6 @@ a {
   border: 0;
 }
 
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  min-height: 60px;
-  padding: 0 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  color: white;
-  background: var(--green);
-  border-radius: 6px;
-}
-
-.brand strong,
-.brand small {
-  display: block;
-}
-
-.brand strong {
-  font-size: 15px;
-}
-
-.brand small {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.topbar nav {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.topbar nav > a {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-}
-
-.coverage-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  font: 12px var(--mono);
-}
-
-.coverage-divider {
-  color: var(--muted);
-}
-
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--amber);
-  font: 12px var(--mono);
-}
-
-.status.online {
-  color: var(--green);
-}
-
-main {
-  width: min(1400px, calc(100% - 40px));
-  margin: 0 auto;
-  padding: 28px 0 64px;
-}
-
-.workspace-intro {
-  min-height: 190px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 40px;
-  align-items: center;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 24px;
-}
-
-.workspace-intro h1 {
-  margin: 4px 0 10px;
-  max-width: 760px;
-  font-size: clamp(30px, 4vw, 48px);
-  line-height: 1.02;
-  letter-spacing: 0;
-}
-
-.workspace-intro p:not(.eyebrow) {
-  max-width: 720px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1.6;
-}
-
-.workspace-intro img {
-  width: 100%;
-  height: 150px;
-  object-fit: cover;
-  object-position: top;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  filter: saturate(0.75);
-}
-
-.eyebrow {
-  margin: 0;
-  color: var(--green);
-  font: 11px var(--mono);
-  text-transform: uppercase;
-}
-
-.query-form {
-  height: 58px;
-  margin-top: 24px;
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 6px 6px 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  background: var(--surface);
-  box-shadow: 0 8px 30px rgba(40, 50, 60, 0.07);
-}
-
-.query-form:focus-within {
-  border-color: var(--green);
-  box-shadow: 0 0 0 3px rgba(10, 122, 83, 0.12);
-}
-
-.query-form > svg {
-  color: var(--muted);
-}
-
-.query-form input {
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--ink);
-  font-size: 16px;
-}
-
-.query-form button {
-  height: 44px;
-  min-width: 150px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--green);
-  color: white;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.query-form button:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-
 .spin {
   animation: spin 0.8s linear infinite;
 }
@@ -264,23 +81,953 @@ main {
   }
 }
 
-.examples {
-  min-height: 45px;
+/* ============================================================
+   Hero — refined sunset scene (design: Hero Directions, A)
+   ============================================================ */
+.hero {
+  position: relative;
+  min-height: clamp(580px, 94vh, 920px);
   display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow-x: auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: #181233;
 }
 
-.examples button {
+.gh-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* sunset sky — the indigo→plum→gold dusk; green lives ONLY in the sea.
+   Densely-eased stops (catmull-rom) so no Mach-band lines appear at stop boundaries. */
+.gh-sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #181233 0%, #191234 1.2%, #191336 2.3%, #1a1337 3.5%, #1b1439 4.7%, #1c153b 5.8%, #1d163e 7%, #1e1640 8.2%, #201742 9.3%, #211844 10.5%, #221946 11.7%, #241948 12.8%, #251a4a 14%, #271b4c 15.2%, #281b4e 16.4%, #2a1c4f 17.6%, #2c1d51 18.8%, #2e1e52 20%, #2f1e54 21.2%, #311f55 22.4%, #342056 23.6%, #362057 24.8%, #382158 26%, #3b2259 27.3%, #3e235a 28.5%, #41245a 29.8%, #45245b 31%, #48255b 32.3%, #4c265b 33.5%, #50285c 34.8%, #54295c 36%, #592b5c 37.1%, #5e2d5d 38.3%, #642f5d 39.4%, #6a315d 40.6%, #70345d 41.7%, #76375e 42.9%, #7c3a5e 44%, #853f5e 45.2%, #8f455f 46.4%, #994b5f 47.6%, #a3525f 48.8%, #ad5a60 50%, #bc6961 51.3%, #cb7964 52.7%, #d88a68 54%, #e6a474 55.4%, #f0bd85 56.8%, #fbe7b6 57.9%, #eac389 58.4%, #e0b57e 59.4%, #d3a675 60.5%, #c19a6e 61.5%, #a7926b 62.8%, #898e6a 64.2%, #6f8a6a 65.5%, #63896b 66.7%, #59886d 67.9%, #4f886f 69.1%, #478771 70.3%, #3f8470 71.5%, #39816e 72.7%, #347d6b 73.9%, #2f7967 75.1%, #2b7463 76.4%, #276e5f 77.6%, #23695b 78.8%, #1f6457 80%, #1c5f54 81.3%, #1a5a51 82.5%, #17554e 83.8%, #154f4b 85%, #134a48 86.3%, #124545 87.5%, #104042 88.8%, #0f3c40 90%, #0e383e 91.3%, #0d353c 92.5%, #0c3239 93.8%, #0c3038 95%, #0b2d36 96.3%, #0b2b34 97.5%, #0a2933 98.8%, #0a2832 100%);
+}
+
+/* ---- everything anchors to ONE vertical sun-axis (74%) + horizon (58%) ---- */
+
+/* symmetric bloom centred exactly on the sun */
+.gh-glow {
+  position: absolute;
+  left: 74%;
+  top: 58%;
+  width: 1180px;
+  height: 1180px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255, 240, 205, 0.72) 0%, rgba(255, 206, 138, 0.42) 15%, rgba(214, 168, 104, 0.18) 33%, rgba(70, 120, 100, 0.08) 55%, transparent 72%);
+  mix-blend-mode: screen;
+}
+
+/* the disc above the waterline (lower half clipped — it continues underwater) */
+.gh-sun {
+  position: absolute;
+  left: 74%;
+  top: 58%;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 50% 50%, #fff7e6 0%, #ffeebc 22%, #ffd994 38%, rgba(255, 196, 122, 0.85) 50%, rgba(252, 168, 102, 0.55) 61%, rgba(246, 142, 94, 0.32) 72%, rgba(238, 124, 94, 0.16) 82%, rgba(230, 114, 94, 0.06) 91%, transparent 100%);
+  box-shadow: 0 0 130px 60px rgba(255, 196, 130, 0.34);
+  filter: blur(7px);
+  animation: ghSun 9s ease-in-out infinite;
+  clip-path: inset(-80% -80% 50% -80%);
+}
+
+@keyframes ghSun {
+  0%,
+  100% {
+    opacity: 0.95;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* warm god-rays fanning symmetrically up from the sun */
+.gh-rays {
+  position: absolute;
+  left: 74%;
+  top: 58%;
+  width: 2200px;
+  height: 1600px;
+  transform: translate(-50%, -80%);
+  background: repeating-conic-gradient(from 201.5deg at 50% 100%, rgba(255, 238, 202, 0) 0deg, rgba(255, 238, 202, 0.045) 2.4deg, rgba(255, 238, 202, 0) 5.2deg, rgba(255, 238, 202, 0) 9deg);
+  -webkit-mask-image: radial-gradient(58% 64% at 50% 100%, #000 0%, rgba(0, 0, 0, 0.45) 42%, transparent 72%);
+  mask-image: radial-gradient(58% 64% at 50% 100%, #000 0%, rgba(0, 0, 0, 0.45) 42%, transparent 72%);
+  mix-blend-mode: screen;
+  filter: blur(2px);
+  opacity: 0.55;
+  animation: ghRays 30s ease-in-out infinite alternate;
+}
+
+@keyframes ghRays {
+  from {
+    transform: translate(-50%, -80%) rotate(-2.4deg);
+  }
+
+  to {
+    transform: translate(-50%, -80%) rotate(2.4deg);
+  }
+}
+
+/* thin cloud streaks — horizontal bands parallel to the horizon, gathered near the sun */
+.gh-cloud {
+  position: absolute;
+  height: 16px;
+  border-radius: 50%;
+  filter: blur(20px);
+  mix-blend-mode: screen;
+}
+
+.gh-cloud.c1 {
+  top: 33%;
+  left: 44%;
+  width: 360px;
+  transform: translateX(-50%);
+  background: rgba(255, 196, 128, 0.24);
+  animation: ghCloud1 90s ease-in-out infinite alternate;
+}
+
+.gh-cloud.c2 {
+  top: 38%;
+  left: 40%;
+  width: 520px;
+  transform: translateX(-50%);
+  background: rgba(255, 178, 116, 0.2);
+  animation: ghCloud2 116s ease-in-out infinite alternate;
+}
+
+.gh-cloud.c3 {
+  top: 27%;
+  left: 50%;
+  width: 240px;
+  transform: translateX(-50%);
+  background: rgba(196, 128, 156, 0.2);
+  animation: ghCloud1 140s ease-in-out infinite alternate;
+}
+
+@keyframes ghCloud1 {
+  from {
+    transform: translateX(-54%);
+  }
+
+  to {
+    transform: translateX(-46%);
+  }
+}
+
+@keyframes ghCloud2 {
+  from {
+    transform: translateX(-47%);
+  }
+
+  to {
+    transform: translateX(-53%);
+  }
+}
+
+/* soft glowing horizon — a diffuse hot band, no crisp stroke (sun sits above it) */
+.gh-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 58%;
+  height: 22px;
+  transform: translateY(-50%);
+  z-index: 1;
+  background: radial-gradient(54% 100% at 74% 50%, rgba(255, 243, 210, 0.75), rgba(255, 222, 170, 0.32) 36%, transparent 70%);
+  filter: blur(6px);
+}
+
+/* sun renders above the horizon glow so nothing draws a tangent line across it */
+.gh-sun,
+.gh-glow {
+  z-index: 2;
+}
+
+/* ---- sea: soft swells (blurred, low-contrast — no hard strips) ---- */
+.gh-sea {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 58%;
+  bottom: 0;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.gh-waves {
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: 0;
+  bottom: 0;
+}
+
+.gh-wave {
+  position: absolute;
+  left: 0;
+  width: 116%;
+  display: block;
+  filter: blur(6px);
+}
+
+.gh-wave path {
+  fill: currentColor;
+}
+
+.gh-wave.w1 {
+  top: 7%;
+  height: 30px;
+  color: rgba(255, 214, 168, 0.22);
+  animation: ghWaveA 15s ease-in-out infinite alternate;
+}
+
+.gh-wave.w2 {
+  top: 16%;
+  height: 42px;
+  color: rgba(150, 168, 148, 0.16);
+  animation: ghWaveB 19s ease-in-out infinite alternate;
+}
+
+.gh-wave.w3 {
+  top: 28%;
+  height: 60px;
+  color: rgba(56, 128, 108, 0.22);
+  filter: blur(8px);
+  animation: ghWaveA 24s ease-in-out infinite alternate;
+}
+
+.gh-wave.w4 {
+  top: 44%;
+  height: 84px;
+  color: rgba(26, 96, 84, 0.28);
+  filter: blur(10px);
+  animation: ghWaveB 30s ease-in-out infinite alternate;
+}
+
+.gh-wave.w5 {
+  top: 65%;
+  height: 122px;
+  color: rgba(10, 48, 46, 0.36);
+  filter: blur(13px);
+  animation: ghWaveA 36s ease-in-out infinite alternate;
+}
+
+@keyframes ghWaveA {
+  from {
+    transform: translateX(-2.5%);
+  }
+
+  to {
+    transform: translateX(2%);
+  }
+}
+
+@keyframes ghWaveB {
+  from {
+    transform: translateX(2%);
+  }
+
+  to {
+    transform: translateX(-2.5%);
+  }
+}
+
+/* the submerged half of the sun — refracted, flattened, dissolving into the water */
+.gh-sun-sub {
+  position: absolute;
+  left: 74%;
+  top: -6px;
+  width: 250px;
+  height: 185px;
+  transform: translateX(-50%);
+  background: radial-gradient(52% 90% at 50% 0%, rgba(255, 236, 180, 0.98) 0%, rgba(255, 206, 132, 0.8) 30%, rgba(245, 178, 112, 0.5) 55%, rgba(190, 160, 104, 0.22) 78%, transparent 100%);
+  -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 8px, rgba(0, 0, 0, 0.72) 8px 12px, #000 12px 20px);
+  mask-image: repeating-linear-gradient(180deg, #000 0 8px, rgba(0, 0, 0, 0.72) 8px 12px, #000 12px 20px);
+  filter: blur(4px);
+  animation: ghSunSub 7s ease-in-out infinite;
+}
+
+@keyframes ghSunSub {
+  0%,
+  100% {
+    transform: translateX(-50%) scaleX(1);
+    opacity: 0.92;
+  }
+
+  50% {
+    transform: translateX(-50%) scaleX(1.12);
+    opacity: 1;
+  }
+}
+
+/* molten reflection — a clean shimmering column straight below the sun */
+.gh-reflect {
+  position: absolute;
+  left: 74%;
+  top: 0;
+  width: 150px;
+  height: 88%;
+  transform: translateX(-50%);
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 224, 170, 0) 0 6px, rgba(255, 224, 170, 0.3) 6px 10px, rgba(255, 224, 170, 0) 10px 17px),
+    linear-gradient(180deg, rgba(255, 232, 184, 0.82), rgba(255, 194, 140, 0.4) 28%, rgba(220, 150, 124, 0.16) 60%, transparent 90%);
+  -webkit-mask-image: radial-gradient(50% 100% at 50% 0%, #000 30%, transparent 96%);
+  mask-image: radial-gradient(50% 100% at 50% 0%, #000 30%, transparent 96%);
+  filter: blur(3.5px);
+  animation: ghReflect 6.5s ease-in-out infinite;
+}
+
+@keyframes ghReflect {
+  0%,
+  100% {
+    transform: translateX(-50%) scaleX(1);
+    opacity: 0.9;
+  }
+
+  50% {
+    transform: translateX(-50%) scaleX(1.35);
+    opacity: 1;
+  }
+}
+
+/* single subtle warm haze hugging the waterline, centred on the axis */
+.gh-mist {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: 40%;
+  height: 150px;
+  pointer-events: none;
+  filter: blur(14px);
+  z-index: 2;
+  background: radial-gradient(46% 80% at 74% 55%, rgba(255, 226, 180, 0.28), transparent 72%);
+  animation: ghMistA 60s ease-in-out infinite alternate;
+}
+
+@keyframes ghMistA {
+  from {
+    transform: translateX(-3%);
+  }
+
+  to {
+    transform: translateX(3%);
+  }
+}
+
+/* film grain + legibility scrim (warm dark, soft) */
+.gh-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 3;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.gh-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background:
+    linear-gradient(98deg, rgba(16, 10, 30, 0.78) 0%, rgba(16, 10, 30, 0.46) 30%, rgba(16, 10, 30, 0.08) 56%, transparent 72%),
+    linear-gradient(180deg, rgba(16, 10, 30, 0.34) 0%, transparent 24%);
+}
+
+/* ---------------- hero nav ---------------- */
+.hd-nav {
+  position: relative;
+  z-index: 30;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  padding: 0 52px;
+}
+
+.hd-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hd-mark {
+  width: 40px;
+  height: 40px;
   flex: none;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--surface);
-  color: var(--muted);
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  font: 700 19px/1 var(--display);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.hd-brand strong {
+  display: block;
+  font: 700 21px/1 var(--display);
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.hd-brand small {
+  display: block;
+  margin-top: 3px;
+  font: 500 11px/1 var(--sans);
+  letter-spacing: 0.05em;
+  color: rgba(244, 236, 232, 0.66);
+}
+
+.hd-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-left: 6px;
+}
+
+.hd-links a {
+  font: 500 15px var(--sans);
+  position: relative;
+  color: rgba(245, 238, 235, 0.84);
+}
+
+.hd-links a.on {
+  color: #fff;
+}
+
+.hd-links a.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 2.5px;
+  border-radius: 3px;
+  background: var(--green);
+}
+
+.hd-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.hd-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 13px var(--sans);
+  color: rgba(245, 238, 235, 0.8);
+  white-space: nowrap;
+}
+
+.hd-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f3c785;
+  box-shadow: 0 0 0 3px rgba(243, 199, 133, 0.22);
+}
+
+.hd-status.online .dot {
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(58, 138, 112, 0.25);
+}
+
+.coverage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px);
+  color: rgba(245, 238, 235, 0.9);
+  font: 500 12.5px var(--sans);
+  white-space: nowrap;
+}
+
+.coverage-divider {
+  color: rgba(245, 238, 235, 0.4);
+}
+
+.hd-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 46px;
+  padding: 0 24px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font: 600 14.5px var(--sans);
+  white-space: nowrap;
   cursor: pointer;
-  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.hd-pill:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ---------------- hero content ---------------- */
+.gh-inner {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 24px 52px 64px;
+}
+
+.gh-copy {
+  max-width: 640px;
+}
+
+.hd-eyebrow {
+  margin: 0;
+  font: 600 12.5px/1 var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.gh-copy h1 {
+  margin: 16px 0 0;
+  font: 600 clamp(38px, 4.6vw, 62px)/1.05 var(--display);
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-shadow: 0 2px 34px rgba(0, 0, 0, 0.4);
+}
+
+.gh-copy h1 .accent {
+  color: var(--green);
+  font-style: italic;
+}
+
+.gh-copy .lede {
+  margin: 22px 0 0;
+  font: 400 18px/1.62 var(--lede);
+  color: rgba(244, 238, 228, 0.94);
+  max-width: 50ch;
+}
+
+/* search bar (rounded, not boxy) */
+.hd-search {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px 10px 22px;
+  background: var(--surface);
+  border-radius: 20px;
+}
+
+.hd-search > svg {
+  color: #8a887c;
+}
+
+.hd-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 16.5px var(--sans);
+}
+
+.hd-search input::placeholder {
+  color: #8a887c;
+}
+
+.hd-search .go {
+  height: 50px;
+  padding: 0 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  font: 600 15px var(--sans);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.hd-search .go:hover {
+  background: var(--green-deep);
+}
+
+.hd-search .go:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.gh-form {
+  margin-top: 30px;
+  box-shadow: 0 24px 60px rgba(12, 6, 24, 0.5);
+}
+
+.gh-form:focus-within {
+  box-shadow: 0 24px 60px rgba(12, 6, 24, 0.5), 0 0 0 3px rgba(58, 138, 112, 0.45);
+}
+
+/* example chips */
+.hd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 15px;
+  border-radius: 999px;
+  font: 400 13.5px var(--sans);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2efe9;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.hd-chip:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.hd-chip .k {
+  font: 600 9.5px var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.hd-chip.ab .k {
+  color: #f3c785;
+}
+
+.gh-chips {
+  margin-top: 18px;
+}
+
+.gh-trust {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  color: rgba(244, 238, 228, 0.6);
+  font-size: 13px;
+}
+
+.gh-trust .sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* ============================================================
+   About hero — real imagery, arched nature windows (design: B)
+   ============================================================ */
+.about-hero {
+  position: relative;
+  min-height: clamp(580px, 94vh, 920px);
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+}
+
+/* light nav (on cream) */
+.hd-nav.light .hd-mark {
+  background: var(--forest);
+  box-shadow: none;
+}
+
+.hd-nav.light .hd-brand strong {
+  color: var(--ink);
+}
+
+.hd-nav.light .hd-brand small {
+  color: var(--muted);
+}
+
+.hd-nav.light .hd-links a {
+  color: var(--muted);
+}
+
+.hd-nav.light .hd-links a.on {
+  color: var(--ink);
+}
+
+.hd-nav.light .hd-pill {
+  background: var(--green);
+  box-shadow: none;
+}
+
+.hd-nav.light .hd-pill:hover {
+  background: var(--green-deep);
+}
+
+.ih-stage {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr) 248px;
+  gap: 26px;
+  align-items: stretch;
+  margin: 24px 44px 44px;
+}
+
+/* arched window wrapper clips the footage + holds motion overlay */
+.ih-panel {
+  position: relative;
+  overflow: hidden;
+  background: var(--forest);
+  border-radius: 150px 150px 36px 36px;
+  box-shadow: 0 24px 54px rgba(14, 26, 20, 0.22);
+}
+
+.ih-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+}
+
+/* finalized crop positions: left 42%, right 53% */
+.ih-panel.left .ih-video {
+  object-position: 42% 50%;
+}
+
+.ih-panel.right .ih-video {
+  object-position: 53% 50%;
+}
+
+.ih-motion {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 2;
+  mix-blend-mode: screen;
+}
+
+.ih-panel.left .ih-motion {
+  background: radial-gradient(42% 30% at 58% 18%, rgba(150, 240, 200, 0.22), transparent 62%);
+  animation: ihSweepA 11s ease-in-out infinite;
+}
+
+.ih-panel.right .ih-motion {
+  background: radial-gradient(42% 30% at 42% 16%, rgba(160, 220, 255, 0.22), transparent 62%);
+  animation: ihSweepB 11s ease-in-out infinite;
+}
+
+@keyframes ihSweepA {
+  0%,
+  100% {
+    transform: translate(-6%, -4%);
+    opacity: 0.7;
+  }
+
+  50% {
+    transform: translate(8%, 7%);
+    opacity: 1;
+  }
+}
+
+@keyframes ihSweepB {
+  0%,
+  100% {
+    transform: translate(6%, -3%);
+    opacity: 0.7;
+  }
+
+  50% {
+    transform: translate(-8%, 8%);
+    opacity: 1;
+  }
+}
+
+.ih-tag {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(8, 22, 18, 0.5);
+  backdrop-filter: blur(6px);
+  color: rgba(238, 246, 242, 0.92);
+  font: 600 10px var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ih-tag .lv {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(58, 138, 112, 0.3);
+  animation: ihBlink 2.4s ease-in-out infinite;
+}
+
+@keyframes ihBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* centre arch — deep forest card */
+.ih-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 150px 150px 36px 36px;
+  background: linear-gradient(168deg, #12352a 0%, #0e2a22 58%, #0a2019 100%);
+  box-shadow: 0 30px 70px rgba(14, 26, 20, 0.26);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 92px 60px 64px;
+}
+
+.ih-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(78% 50% at 50% 6%, rgba(58, 138, 112, 0.22), transparent 58%);
+  pointer-events: none;
+}
+
+.ih-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ih-card h1 {
+  margin: 16px 0 0;
+  font: 600 clamp(40px, 4vw, 56px)/1.06 var(--display);
+  letter-spacing: -0.01em;
+  color: #eef4f0;
+  max-width: 15ch;
+}
+
+.ih-card h1 .accent {
+  color: var(--green);
+  font-style: italic;
+}
+
+.ih-card .lede {
+  margin: 20px 0 0;
+  font: 400 18px/1.62 var(--lede);
+  color: rgba(224, 234, 228, 0.84);
+  max-width: 46ch;
+}
+
+/* meta row — quiet pillars of the product, replaces homepage search/chips */
+.ih-meta {
+  margin-top: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: rgba(214, 228, 222, 0.72);
+  font: 500 13.5px var(--sans);
+  letter-spacing: 0.02em;
+}
+
+.ih-meta .sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ih-down {
+  margin-top: 40px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(230, 240, 234, 0.85);
+  animation: ihDown 2.6s ease-in-out infinite;
+}
+
+@keyframes ihDown {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.75;
+  }
+
+  50% {
+    transform: translateY(6px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-sun,
+  .gh-sun-sub,
+  .gh-rays,
+  .gh-cloud,
+  .gh-wave,
+  .gh-reflect,
+  .gh-mist,
+  .ih-motion,
+  .ih-tag .lv,
+  .ih-down {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   Workspace below the hero
+   ============================================================ */
+main {
+  width: min(1400px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+  scroll-margin-top: 16px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--green);
+  font: 600 11.5px var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .result-grid {
@@ -308,7 +1055,7 @@ main {
 .aside-title h2,
 .architecture h2 {
   margin: 4px 0 0;
-  font-size: 17px;
+  font: 500 19px var(--display);
   letter-spacing: 0;
 }
 
@@ -331,6 +1078,7 @@ main {
 .empty-state h3 {
   margin: 16px 0 8px;
   color: var(--ink);
+  font: 500 21px var(--display);
 }
 
 .empty-state p {
@@ -345,7 +1093,7 @@ main {
   margin: 14px 0;
   padding: 14px;
   border: 1px solid;
-  border-radius: 6px;
+  border-radius: 12px;
 }
 
 .notice strong,
@@ -407,7 +1155,7 @@ main {
 .evidence {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -434,7 +1182,7 @@ main {
 .evidence > p {
   margin: 0;
   padding: 14px 12px;
-  color: #39434d;
+  color: var(--prose);
   line-height: 1.65;
 }
 
@@ -499,7 +1247,7 @@ main {
 .route-list span {
   padding: 5px 7px;
   border: 1px solid #b9d8df;
-  border-radius: 4px;
+  border-radius: 999px;
   background: var(--cyan-soft);
   color: var(--cyan);
   font: 10px var(--mono);
@@ -541,7 +1289,7 @@ main {
 
 .citations p {
   margin: 5px 0;
-  color: #39434d;
+  color: var(--prose);
   line-height: 1.5;
 }
 
@@ -615,6 +1363,13 @@ main {
   border-bottom: 1px solid var(--line-strong);
 }
 
+.architecture > div > p:not(.eyebrow) {
+  margin: 10px 0 0;
+  color: var(--prose);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .architecture ol {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -631,7 +1386,7 @@ main {
   align-items: center;
   border-left: 3px solid var(--green);
   background: var(--surface);
-  color: #39434d;
+  color: var(--prose);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -645,10 +1400,6 @@ main {
 }
 
 @media (max-width: 980px) {
-  .workspace-intro {
-    grid-template-columns: 1fr 260px;
-  }
-
   .result-grid {
     grid-template-columns: 1fr;
   }
@@ -665,16 +1416,69 @@ main {
   .architecture {
     grid-template-columns: 1fr;
   }
+
+  .hd-nav {
+    padding: 0 28px;
+  }
+
+  .gh-inner {
+    padding: 24px 28px 56px;
+  }
+
+  .coverage-badge {
+    display: none;
+  }
+
+  .ih-stage {
+    grid-template-columns: 170px minmax(0, 1fr) 170px;
+    gap: 18px;
+    margin: 16px 28px 28px;
+  }
+
+  .ih-card {
+    padding: 72px 36px 48px;
+  }
 }
 
 @media (max-width: 700px) {
-  .topbar {
-    padding: 0 16px;
+  .hd-nav {
+    padding: 0 18px;
+    gap: 16px;
   }
 
-  .brand small,
-  .status {
+  .hd-brand small {
     display: none;
+  }
+
+  .hd-status {
+    display: none;
+  }
+
+  .hd-pill {
+    height: 40px;
+    padding: 0 18px;
+  }
+
+  .hd-links {
+    gap: 16px;
+  }
+
+  .ih-stage {
+    grid-template-columns: 1fr;
+    margin: 12px 18px 24px;
+  }
+
+  .ih-panel {
+    display: none;
+  }
+
+  .ih-card {
+    padding: 64px 28px 48px;
+    border-radius: 110px 110px 28px 28px;
+  }
+
+  .gh-inner {
+    padding: 18px 18px 48px;
   }
 
   main {
@@ -682,24 +1486,15 @@ main {
     padding-top: 18px;
   }
 
-  .workspace-intro {
-    grid-template-columns: 1fr;
-    gap: 18px;
+  .hd-search {
+    grid-template-columns: 20px minmax(0, 1fr);
+    padding: 12px 12px 12px 16px;
   }
 
-  .workspace-intro img {
-    height: 110px;
-  }
-
-  .query-form {
-    height: auto;
-    grid-template-columns: 20px 1fr;
-    padding: 10px;
-  }
-
-  .query-form button {
+  .hd-search .go {
     grid-column: 1 / -1;
     width: 100%;
+    justify-content: center;
   }
 
   .inspection {

@@ -1,33 +1,81 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   Activity,
+  ArrowRight,
   ArrowUpRight,
   CheckCircle2,
   CircleAlert,
-  Code2,
   Database,
-  FileSearch,
   LoaderCircle,
   Route,
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { askQuestion, checkHealth, fetchCoverage } from "@/lib/api";
 import type { AnswerResponse, CoverageResponse, RetrievalCandidate } from "@/lib/types";
 
-const examples = [
-  "What could affect Example Company's operating results?",
-  "Find the table showing Example Company revenue",
-  "Compare Example Company revenue growth with management commentary",
+const exampleChips = [
+  {
+    tag: "AAPL · text",
+    label: "Supply-chain risk",
+    question: "What did Apple say about supply chain risk in its latest 10-K?",
+  },
+  {
+    tag: "MSFT · table",
+    label: "Segment revenue",
+    question: "Find the table showing Microsoft revenue by segment.",
+  },
+  {
+    tag: "abstain",
+    label: "Price forecast",
+    question: "What will NVIDIA's stock price be next quarter?",
+    abstain: true,
+  },
 ];
 
 function score(value: number | null) {
   return value === null ? "n/a" : value.toFixed(3);
+}
+
+function Wave({ cls }: { cls: string }) {
+  return (
+    <svg className={`gh-wave ${cls}`} viewBox="0 0 1200 120" preserveAspectRatio="none">
+      <path d="M0,58 C200,42 400,70 600,56 C800,42 1000,68 1200,54 L1200,120 L0,120 Z" />
+    </svg>
+  );
+}
+
+function SunsetScene() {
+  return (
+    <div className="gh-scene" aria-hidden="true">
+      <div className="gh-sky" />
+      <div className="gh-glow" />
+      <div className="gh-rays" />
+      <div className="gh-cloud c1" />
+      <div className="gh-cloud c2" />
+      <div className="gh-cloud c3" />
+      <div className="gh-sun" />
+      <div className="gh-horizon" />
+      <div className="gh-sea">
+        <div className="gh-sun-sub" />
+        <div className="gh-reflect" />
+        <div className="gh-waves">
+          <Wave cls="w1" />
+          <Wave cls="w2" />
+          <Wave cls="w3" />
+          <Wave cls="w4" />
+          <Wave cls="w5" />
+        </div>
+      </div>
+      <div className="gh-mist" />
+      <div className="gh-grain" />
+      <div className="gh-scrim" />
+    </div>
+  );
 }
 
 function Evidence({ candidate, index }: { candidate: RetrievalCandidate; index: number }) {
@@ -64,12 +112,14 @@ function Evidence({ candidate, index }: { candidate: RetrievalCandidate; index: 
 }
 
 export default function Home() {
-  const [question, setQuestion] = useState(examples[0]);
+  const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AnswerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
+  const questionRef = useRef<HTMLInputElement | null>(null);
+  const resultsRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -80,6 +130,12 @@ export default function Home() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (result || error) {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [result, error]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,94 +156,120 @@ export default function Home() {
 
   return (
     <div className="site-shell">
-      <header className="topbar">
-        <Link className="brand" href="/" aria-label="FDRE home">
-          <span className="brand-mark">
-            <FileSearch size={17} />
-          </span>
-          <span>
-            <strong>FDRE</strong>
-            <small>Financial Document Retrieval Engine</small>
-          </span>
-        </Link>
-        <nav aria-label="Project links">
-          {coverage && (
-            <span className="coverage-badge" title="Companies with embedded chunks searchable via RAG">
-              <Database size={14} aria-hidden="true" />
-              <span>
-                {coverage.indexed_count.toLocaleString()} / {coverage.catalog_count.toLocaleString()}{" "}
-                indexed
-              </span>
-              <span className="coverage-divider" aria-hidden="true">
-                |
-              </span>
-              <span>
-                S&amp;P 500: {coverage.sp500_indexed_count} / {coverage.sp500_catalog_count}
-              </span>
+      <section className="hero">
+        <SunsetScene />
+
+        <header className="hd-nav">
+          <Link className="hd-brand" href="/" aria-label="FDRE home">
+            <span className="hd-mark">F</span>
+            <span>
+              <strong>FDRE</strong>
+              <small>thefdre.com</small>
             </span>
-          )}
-          <span className={`status ${apiOnline === true ? "online" : ""}`}>
-            <Activity size={14} />
-            {apiOnline === null ? "Checking API" : apiOnline ? "API online" : "API unavailable"}
-          </span>
-          <a
-            href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="View FDRE source on GitHub"
-            title="View source"
-          >
-            <Code2 size={18} />
-          </a>
-        </nav>
-      </header>
-
-      <main>
-        <section className="workspace-intro">
-          <div>
-            <p className="eyebrow">Hybrid RAG for SEC filings</p>
-            <h1>Financial Document Retrieval Engine</h1>
-            <p>
-              FDRE batch-indexes filings into a <strong>pgvector</strong> store, then runs a
-              bounded <strong>LangGraph retrieval agent</strong> on every question: hybrid
-              embedding + keyword search, reranking, verified citations, and abstention when
-              evidence is weak — not traditional keyword search or an ungrounded chatbot.
-            </p>
+          </Link>
+          <nav className="hd-links" aria-label="Site">
+            <Link className="on" href="/">
+              Search
+            </Link>
+            <Link href="/about">About</Link>
+          </nav>
+          <div className="hd-right">
+            {coverage && (
+              <span
+                className="coverage-badge"
+                title="Companies with embedded chunks searchable via RAG"
+              >
+                <Database size={14} aria-hidden="true" />
+                <span>
+                  {coverage.indexed_count.toLocaleString()} /{" "}
+                  {coverage.catalog_count.toLocaleString()} indexed
+                </span>
+                <span className="coverage-divider" aria-hidden="true">
+                  |
+                </span>
+                <span>
+                  S&amp;P 500: {coverage.sp500_indexed_count} / {coverage.sp500_catalog_count}
+                </span>
+              </span>
+            )}
+            <span className={`hd-status ${apiOnline === true ? "online" : ""}`}>
+              <span className="dot" aria-hidden="true" />
+              {apiOnline === null ? "Checking API" : apiOnline ? "API online" : "API unavailable"}
+            </span>
+            <a
+              className="hd-pill"
+              href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
+              target="_blank"
+              rel="noreferrer"
+            >
+              View source
+            </a>
           </div>
-          <Image
-            src="/sample-filing.png"
-            width={360}
-            height={180}
-            alt="Rendered sample SEC filing with a revenue table"
-            priority
-          />
-        </section>
+        </header>
 
-        <form className="query-form" onSubmit={submit}>
-          <Search size={20} aria-hidden="true" />
-          <label className="sr-only" htmlFor="question">
-            Ask a financial filing question
-          </label>
-          <input
-            id="question"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="Ask about an SEC filing, table, risk, or financial fact"
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}
-            {loading ? "Retrieving" : "Search evidence"}
-          </button>
-        </form>
+        <div className="gh-inner">
+          <div className="gh-copy">
+            <p className="hd-eyebrow">For hedge funds &amp; research desks</p>
+            <h1>
+              Evidence you can <span className="accent">cite</span>. Answers you can trust.
+            </h1>
+            <p className="lede">
+              FDRE searches SEC filings, ranks and verifies the evidence behind every claim, and
+              abstains when it isn&apos;t strong enough — so each answer opens straight to its
+              source.
+            </p>
 
-        <div className="examples" aria-label="Example questions">
-          {examples.map((example) => (
-            <button key={example} type="button" onClick={() => setQuestion(example)}>
-              {example}
-            </button>
-          ))}
+            <form className="hd-search gh-form" onSubmit={submit}>
+              <Search size={22} aria-hidden="true" />
+              <label className="sr-only" htmlFor="question">
+                Ask a financial filing question
+              </label>
+              <input
+                id="question"
+                ref={questionRef}
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Ask about a filing, table, risk factor, or financial fact…"
+              />
+              <button className="go" type="submit" disabled={loading}>
+                {loading ? (
+                  <LoaderCircle className="spin" size={17} />
+                ) : (
+                  <ArrowRight size={17} strokeWidth={1.8} />
+                )}
+                {loading ? "Retrieving" : "Search"}
+              </button>
+            </form>
+
+            <div className="hd-chips gh-chips" aria-label="Example questions">
+              {exampleChips.map((chip) => (
+                <button
+                  key={chip.tag}
+                  type="button"
+                  className={`hd-chip${chip.abstain ? " ab" : ""}`}
+                  onClick={() => {
+                    setQuestion(chip.question);
+                    questionRef.current?.focus();
+                  }}
+                >
+                  <span className="k">{chip.tag}</span>
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="gh-trust">
+              <span>SEC EDGAR primary sources</span>
+              <span className="sep" aria-hidden="true" />
+              <span>Hybrid retrieval + reranking</span>
+              <span className="sep" aria-hidden="true" />
+              <span>Citation-verified</span>
+            </div>
+          </div>
         </div>
+      </section>
 
+      <main ref={resultsRef}>
         {error && (
           <div className="notice error" role="alert">
             <CircleAlert size={19} />
@@ -337,6 +419,12 @@ export default function Home() {
           <div>
             <p className="eyebrow">RAG stack</p>
             <h2>Index offline, retrieve live</h2>
+            <p>
+              FDRE batch-indexes filings into a <strong>pgvector</strong> store, then runs a
+              bounded <strong>LangGraph retrieval agent</strong> on every question: hybrid
+              embedding + keyword search, reranking, verified citations, and abstention when
+              evidence is weak.
+            </p>
           </div>
           <ol>
             <li>Batch ingest: parse filings, chunk text and tables</li>
