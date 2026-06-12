@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from apps.api.app.models import Chunk
+from apps.api.app.models import Chunk, Company, Document, DocumentElement
 from fdre.retrieval.query import SearchFilters, chunk_matches_filters
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
@@ -45,21 +45,39 @@ class PostgresFullTextIndexer:
         tsquery = build_sparse_tsquery(query)
         if not tsquery:
             return []
-        vector = func.to_tsvector("english", Chunk.chunk_text)
         parsed_query = func.to_tsquery("english", tsquery)
-        score = func.ts_rank_cd(vector, parsed_query).label("sparse_score")
-        rows = session.execute(
+        score = func.ts_rank_cd(Chunk.search_vector, parsed_query).label("sparse_score")
+        statement = (
             select(Chunk, score)
-            .where(vector.op("@@")(parsed_query))
-            .order_by(score.desc())
-            .limit(max(limit * 5, limit))
+            .join(Document, Document.id == Chunk.document_id)
+            .join(Company, Company.id == Document.company_id)
+            .join(DocumentElement, DocumentElement.id == Chunk.element_id)
+            .where(Chunk.search_vector.op("@@")(parsed_query))
+        )
+        if filters.tickers:
+            statement = statement.where(Company.ticker.in_(filters.tickers))
+        if filters.ciks:
+            statement = statement.where(Company.cik.in_(filters.ciks))
+        if filters.form_types:
+            statement = statement.where(Document.form_type.in_(filters.form_types))
+        if filters.filing_date_from:
+            statement = statement.where(Document.filing_date >= filters.filing_date_from)
+        if filters.filing_date_to:
+            statement = statement.where(Document.filing_date <= filters.filing_date_to)
+        if filters.sections:
+            statement = statement.where(Chunk.section.in_(filters.sections))
+        if filters.element_types:
+            statement = statement.where(DocumentElement.element_type.in_(filters.element_types))
+        if filters.chunk_types:
+            statement = statement.where(Chunk.chunk_type.in_(filters.chunk_types))
+
+        rows = session.execute(
+            statement.order_by(score.desc(), Chunk.id).limit(limit)
         ).all()
-        hits = [
+        return [
             SparseHit(chunk=chunk, score=float(row_score))
             for chunk, row_score in rows
-            if chunk_matches_filters(chunk, filters)
         ]
-        return hits[:limit]
 
     def _search_in_memory(
         self,

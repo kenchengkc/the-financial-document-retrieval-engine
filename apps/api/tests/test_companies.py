@@ -6,13 +6,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from apps.api.app.db import Base, get_db_session
 from apps.api.app.main import create_app
 from apps.api.app.models import Chunk, Company, Document, DocumentElement
+from apps.api.app.services.companies_service import clear_coverage_cache, get_coverage
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
 from fdre.ingestion.ticker_map import _load_listed_companies, _sp500_primary_tickers
 
@@ -21,9 +22,11 @@ from fdre.ingestion.ticker_map import _load_listed_companies, _sp500_primary_tic
 def clear_catalog_cache() -> Generator[None, None, None]:
     _load_listed_companies.cache_clear()
     _sp500_primary_tickers.cache_clear()
+    clear_coverage_cache()
     yield
     _load_listed_companies.cache_clear()
     _sp500_primary_tickers.cache_clear()
+    clear_coverage_cache()
 
 
 def _seed_indexed_company(session: Session, *, ticker: str, cik: str, name: str) -> None:
@@ -161,3 +164,51 @@ def test_companies_endpoint_supports_indexed_only_filter() -> None:
     assert indexed_response.status_code == 200
     assert all_response.json()["total"] == 1
     assert indexed_response.json()["total"] == 0
+
+
+def test_coverage_reuses_cached_database_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listed_path = tmp_path / "listed_companies.json"
+    listed_path.write_text(
+        json.dumps(
+            {
+                "company_count": 1,
+                "companies": [
+                    {
+                        "cik": "0000320193",
+                        "name": "Apple Inc.",
+                        "exchange": "Nasdaq",
+                        "primary_ticker": "AAPL",
+                        "tickers": ["AAPL"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sp500_path = tmp_path / "sp500_tickers.json"
+    sp500_path.write_text(
+        json.dumps({"primary_tickers": ["AAPL"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("fdre.ingestion.ticker_map.LISTED_COMPANIES_PATH", listed_path)
+    monkeypatch.setattr("fdre.ingestion.ticker_map.SP500_TICKERS_PATH", sp500_path)
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed_indexed_company(
+            session,
+            ticker="AAPL",
+            cik="0000320193",
+            name="Apple Inc.",
+        )
+
+        first = get_coverage(session)
+        session.execute(delete(Company))
+        session.commit()
+        second = get_coverage(session)
+
+    assert first == second

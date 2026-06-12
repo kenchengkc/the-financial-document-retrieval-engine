@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -286,3 +288,155 @@ def test_chunk_rebuild_preserves_run_history(tmp_path: Path) -> None:
             connection.scalar(text("SELECT citation_text FROM citations WHERE id = 1"))
             == "Competition presents an ongoing risk."
         )
+
+
+def test_postgres_retrieval_indexes_support_indexed_plans() -> None:
+    database_url = os.getenv("FDRE_POSTGRES_TEST_URL")
+    if not database_url:
+        pytest.skip("FDRE_POSTGRES_TEST_URL is not configured")
+
+    config = Config(REPO_ROOT / "alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+    vector = "[" + ",".join(["0.01"] * 512) + "]"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO companies (id, ticker, cik, name, created_at, updated_at)
+                VALUES (
+                    1001,
+                    'AAPL',
+                    '0000320193',
+                    'Apple Inc.',
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO documents
+                    (
+                        id,
+                        company_id,
+                        source_type,
+                        form_type,
+                        accession_number,
+                        created_at
+                    )
+                VALUES (
+                    1001,
+                    1001,
+                    'sec',
+                    '10-K',
+                    '0000320193-26-000100',
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO document_elements
+                    (id, document_id, element_type, reading_order, created_at)
+                VALUES (1001, 1001, 'text', 1, CURRENT_TIMESTAMP)
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO chunks
+                    (
+                        id,
+                        document_id,
+                        element_id,
+                        chunk_text,
+                        chunk_type,
+                        created_at
+                    )
+                VALUES (
+                    1001,
+                    1001,
+                    1001,
+                    'Apple data center power constraints increased operating risk.',
+                    'text',
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO embeddings
+                    (
+                        id,
+                        chunk_id,
+                        provider,
+                        model,
+                        dimensions,
+                        vector,
+                        created_at
+                    )
+                VALUES (
+                    1001,
+                    1001,
+                    'voyage',
+                    'voyage-4-large',
+                    512,
+                    CAST(:vector AS vector),
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id) DO NOTHING
+                """
+            ),
+            {"vector": vector},
+        )
+
+        connection.execute(text("SET LOCAL enable_seqscan = off"))
+        lexical_plan = "\n".join(
+            row[0]
+            for row in connection.execute(
+                text(
+                    """
+                    EXPLAIN
+                    SELECT id
+                    FROM chunks
+                    WHERE search_vector @@ plainto_tsquery('english', 'power constraints')
+                    """
+                )
+            )
+        )
+        dense_plan = "\n".join(
+            row[0]
+            for row in connection.execute(
+                text(
+                    """
+                    EXPLAIN
+                    SELECT id
+                    FROM embeddings
+                    WHERE provider = 'voyage'
+                      AND model = 'voyage-4-large'
+                      AND dimensions = 512
+                    ORDER BY (vector::halfvec(512))
+                        <=> (CAST(:vector AS vector)::halfvec(512))
+                    LIMIT 10
+                    """
+                ),
+                {"vector": vector},
+            )
+        )
+
+    assert "ix_chunks_search_vector_gin" in lexical_plan
+    assert "ix_embeddings_voyage_512_hnsw" in dense_plan

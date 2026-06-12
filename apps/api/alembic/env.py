@@ -15,6 +15,22 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+IGNORED_DATABASE_INDEXES = {"ix_embeddings_voyage_512_hnsw"}
+
+
+def include_object(
+    object_: object,
+    name: str | None,
+    type_: str,
+    reflected: bool,
+    compare_to: object | None,
+) -> bool:
+    del object_, compare_to
+    return not (
+        type_ == "index"
+        and reflected
+        and name in IGNORED_DATABASE_INDEXES
+    )
 
 
 def get_database_url() -> str:
@@ -27,6 +43,7 @@ def run_migrations_offline() -> None:
         url=get_database_url(),
         target_metadata=target_metadata,
         compare_type=True,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -43,6 +60,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_object,
             render_as_batch=connection.dialect.name == "sqlite",
         )
 

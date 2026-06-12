@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from pgvector.sqlalchemy import HALFVEC
+from sqlalchemy import cast, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
@@ -60,7 +61,16 @@ class DenseRetriever:
         filters: SearchFilters,
         limit: int,
     ) -> list[RetrievalCandidate]:
-        distance = Embedding.vector.cosine_distance(query_vector).label("distance")
+        if (
+            self.provider.name == "voyage"
+            and self.provider.model == "voyage-4-large"
+            and self.provider.dimensions == 512
+        ):
+            distance = cast(Embedding.vector, HALFVEC(512)).cosine_distance(
+                query_vector
+            ).label("distance")
+        else:
+            distance = Embedding.vector.cosine_distance(query_vector).label("distance")
         statement = (
             select(Chunk, distance)
             .join(Embedding, Embedding.chunk_id == Chunk.id)

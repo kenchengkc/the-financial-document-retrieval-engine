@@ -224,6 +224,9 @@ __marimo__/
 
 # Node/Next.js
 node_modules/
+.next/
+test-results/
+playwright-report/
 apps/web/.next/
 apps/web/out/
 apps/web/dist/

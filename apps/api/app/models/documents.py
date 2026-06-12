@@ -9,12 +9,14 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.app.db import Base
@@ -24,6 +26,14 @@ JSONDict = dict[str, Any]
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        Index(
+            "ix_documents_company_form_filing_date",
+            "company_id",
+            "form_type",
+            "filing_date",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     company_id: Mapped[int] = mapped_column(
@@ -87,6 +97,19 @@ class DocumentElement(Base):
 
 class Chunk(Base):
     __tablename__ = "chunks"
+    __table_args__ = (
+        Index(
+            "ix_chunks_document_section_type",
+            "document_id",
+            "section",
+            "chunk_type",
+        ),
+        Index(
+            "ix_chunks_search_vector_gin",
+            "search_vector",
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     document_id: Mapped[int] = mapped_column(
@@ -106,6 +129,9 @@ class Chunk(Base):
     page_end: Mapped[int | None] = mapped_column(Integer)
     token_count: Mapped[int | None] = mapped_column(Integer)
     metadata_json: Mapped[JSONDict | None] = mapped_column(JSON)
+    search_vector: Mapped[str | None] = mapped_column(
+        TSVECTOR().with_variant(Text(), "sqlite"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -128,6 +154,13 @@ class Embedding(Base):
             "provider",
             "model",
             name="uq_embeddings_chunk_provider_model",
+        ),
+        Index(
+            "ix_embeddings_provider_model_dimensions_chunk",
+            "provider",
+            "model",
+            "dimensions",
+            "chunk_id",
         ),
     )
 

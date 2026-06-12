@@ -14,6 +14,23 @@ jobs:
     name: Backend checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg16-trixie
+        env:
+          POSTGRES_DB: fdre_test
+          POSTGRES_PASSWORD: fdre
+          POSTGRES_USER: fdre
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fdre -d fdre_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      FDRE_POSTGRES_TEST_URL: postgresql+psycopg://fdre:fdre@localhost:5432/fdre_test
 
     steps:
       - name: Check out repository
@@ -46,6 +63,9 @@ jobs:
           alembic upgrade head
           alembic check
           alembic downgrade base
+
+      - name: Validate PostgreSQL retrieval indexes
+        run: pytest -q apps/api/tests/test_migrations.py -k postgres_retrieval_indexes
 
       - name: Validate Docker Compose
         run: docker compose config

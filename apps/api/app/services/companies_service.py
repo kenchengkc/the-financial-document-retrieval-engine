@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -8,9 +11,20 @@ from apps.api.app.schemas.companies import CompaniesResponse, CompanySummary, Co
 from fdre.ingestion.ticker_map import catalog_company_count, sp500_primary_tickers
 
 _DEMO_TICKERS = frozenset({"EXMPL"})
+_COVERAGE_CACHE_TTL_SECONDS = 60.0
+_coverage_cache: dict[int, tuple[float, CoverageResponse]] = {}
+_coverage_cache_lock = threading.Lock()
 
 
 def get_coverage(session: Session) -> CoverageResponse:
+    bind = session.get_bind()
+    cache_key = id(bind)
+    now = time.monotonic()
+    with _coverage_cache_lock:
+        cached = _coverage_cache.get(cache_key)
+        if cached is not None and cached[0] > now:
+            return cached[1].model_copy(deep=True)
+
     indexed_rows = _indexed_company_rows(session)
     indexed_tickers = [row.ticker for row in indexed_rows if row.ticker not in _DEMO_TICKERS]
     sp500_catalog = set(sp500_primary_tickers())
@@ -21,7 +35,7 @@ def get_coverage(session: Session) -> CoverageResponse:
         select(func.count(func.distinct(Embedding.chunk_id))).select_from(Embedding)
     ) or 0
 
-    return CoverageResponse(
+    response = CoverageResponse(
         catalog_count=catalog_company_count(),
         sp500_catalog_count=len(sp500_catalog),
         indexed_count=len(indexed_tickers),
@@ -30,6 +44,17 @@ def get_coverage(session: Session) -> CoverageResponse:
         chunk_count=chunk_count,
         indexed_tickers=indexed_tickers,
     )
+    with _coverage_cache_lock:
+        _coverage_cache[cache_key] = (
+            now + _COVERAGE_CACHE_TTL_SECONDS,
+            response.model_copy(deep=True),
+        )
+    return response
+
+
+def clear_coverage_cache() -> None:
+    with _coverage_cache_lock:
+        _coverage_cache.clear()
 
 
 def list_companies(

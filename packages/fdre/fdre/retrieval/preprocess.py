@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -60,11 +61,14 @@ def preprocess_query(
         for token in re.findall(r"\b[A-Z]{1,5}\b", cleaned)
         if token in known_tickers
     }
-    lowered = cleaned.casefold()
+    normalized_query = _normalize_company_text(cleaned)
+    alias_owners: dict[str, set[str]] = {}
     for company in company_list:
-        names = {company.name.casefold(), company.name.split()[0].casefold()}
-        if any(name and name in lowered for name in names):
-            detected_tickers.add(company.ticker.upper())
+        for alias in _company_aliases(company.name):
+            alias_owners.setdefault(alias, set()).add(company.ticker.upper())
+    for alias, owners in alias_owners.items():
+        if len(owners) == 1 and _contains_alias(normalized_query, alias):
+            detected_tickers.update(owners)
 
     detected_forms = [
         form_type for form_type, pattern in FORM_PATTERNS.items() if pattern.search(cleaned)
@@ -107,3 +111,58 @@ def preprocess_query(
         filters=merged_filters,
         routes=list(dict.fromkeys(routes)),
     )
+
+
+_COMPANY_SUFFIXES = {
+    "co",
+    "company",
+    "corp",
+    "corporation",
+    "inc",
+    "incorporated",
+    "limited",
+    "ltd",
+    "plc",
+}
+_AMBIGUOUS_SINGLE_WORD_ALIASES = {
+    "a",
+    "all",
+    "are",
+    "at",
+    "best",
+    "block",
+    "c",
+    "day",
+    "dollar",
+    "general",
+    "global",
+    "international",
+    "on",
+    "one",
+    "target",
+    "the",
+    "trade",
+    "united",
+}
+
+
+def _normalize_company_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value).casefold()
+    return " ".join(re.findall(r"[a-z0-9]+", normalized))
+
+
+def _company_aliases(name: str) -> set[str]:
+    normalized = _normalize_company_text(name)
+    tokens = normalized.split()
+    while tokens and tokens[-1] in _COMPANY_SUFFIXES:
+        tokens.pop()
+    aliases = {normalized, " ".join(tokens)}
+    if tokens:
+        first = tokens[0]
+        if len(first) >= 3 and first not in _AMBIGUOUS_SINGLE_WORD_ALIASES:
+            aliases.add(first)
+    return {alias for alias in aliases if alias}
+
+
+def _contains_alias(normalized_query: str, alias: str) -> bool:
+    return re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", normalized_query) is not None
