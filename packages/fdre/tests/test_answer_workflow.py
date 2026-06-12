@@ -205,11 +205,17 @@ def test_answer_workflow_abstains_on_weak_or_private_questions() -> None:
             _context(session),
             "What private non-public information does Apple have?",
         )
+        forecast_state = run_answer_workflow(
+            _context(session),
+            "Predict Apple's stock price and tell me whether to buy the stock.",
+        )
 
     assert weak_state["should_abstain"] is True
     assert weak_state["answer"] is None
     assert private_state["should_abstain"] is True
     assert "non-public" in (private_state["abstention_reason"] or "")
+    assert forecast_state["should_abstain"] is True
+    assert "does not forecast" in (forecast_state["abstention_reason"] or "")
 
 
 def test_answer_workflow_rejects_non_retrieved_citation() -> None:

@@ -31,8 +31,15 @@ from fdre.research.panel import (
     ResearchPanelQuery,
     ResearchPanelRow,
     build_research_panel,
+    serialize_research_panel,
     validate_point_in_time_rows,
     write_research_panel,
+)
+from fdre.research.thematic import (
+    ThematicIssuerResult,
+    ThematicScanRequest,
+    ThematicScanResponse,
+    diversify_candidates_by_issuer,
 )
 
 __all__ = [
@@ -49,15 +56,20 @@ __all__ = [
     "ResearchPanel",
     "ResearchPanelQuery",
     "ResearchPanelRow",
+    "ThematicIssuerResult",
+    "ThematicScanRequest",
+    "ThematicScanResponse",
     "build_research_panel",
     "compare_filing_to_prior",
     "diff_documents",
+    "diversify_candidates_by_issuer",
     "load_filing_events",
     "load_market_bars",
     "persist_event_study",
     "query_financial_facts",
     "run_event_study",
     "select_comparable_document",
+    "serialize_research_panel",
     "validate_event_inputs",
     "validate_point_in_time_rows",
     "write_event_study_report",

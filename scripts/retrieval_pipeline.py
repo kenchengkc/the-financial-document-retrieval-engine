@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from apps.api.app.config import get_settings
 from apps.api.app.db import create_db_engine
 from apps.api.app.models import Chunk, Company, Document, Embedding
+from apps.api.app.services.operations_service import build_data_quality_report
 from fdre.chunking import rebuild_document_chunks
 from fdre.demo import seed_demo_document
 from fdre.evals.datasets import (
@@ -143,6 +144,12 @@ def parse_args() -> argparse.Namespace:
     event_parser.add_argument("--confidence-level", type=float, default=0.95)
     event_parser.add_argument("--random-seed", type=int, default=17)
     event_parser.add_argument("--walk-forward-splits", nargs="+")
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Report corpus freshness, completeness, and indexing integrity",
+    )
+    audit_parser.add_argument("--stale-after-days", type=int, default=150)
+    audit_parser.add_argument("--fail-on-errors", action="store_true")
     eval_parser.add_argument(
         "--require-reviewed",
         action="store_true",
@@ -278,6 +285,14 @@ def main() -> None:
                     "events": report.event_count,
                 }
             )
+        elif args.command == "audit":
+            audit_report = build_data_quality_report(
+                session,
+                stale_after_days=args.stale_after_days,
+            )
+            print(audit_report.model_dump(mode="json"))
+            if args.fail_on_errors and not audit_report.healthy:
+                raise SystemExit(1)
         elif args.command == "seed-demo":
             print(seed_demo_document(session))
 

@@ -24,8 +24,8 @@ on:
         type: boolean
         default: false
   schedule:
-    # Weekly, Monday 09:00 UTC. Tune or remove as needed.
-    - cron: "0 9 * * 1"
+    # Daily incremental filing check; the post-run audit also exceeds the weekly requirement.
+    - cron: "0 9 * * *"
 
 permissions:
   contents: read
@@ -122,43 +122,23 @@ jobs:
             echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
           fi
 
-      - name: Ingest filing metadata
-        run: |
-          read -r -a ticker_args <<< "${TICKERS}"
-          read -r -a form_args <<< "${FORMS}"
-          python scripts/ingest_sec_sample.py \
-            --tickers "${ticker_args[@]}" \
-            --forms "${form_args[@]}" \
-            --limit "${LIMIT}"
+      - name: Apply database migrations
+        run: alembic upgrade head
 
-      - name: Download and parse filings
+      - name: Run incremental filing ingest
         run: |
           read -r -a ticker_args <<< "${TICKERS}"
           read -r -a form_args <<< "${FORMS}"
           force_args=()
           if [ "${FORCE_PARSE}" = "true" ]; then
-            force_args+=(--force-parse)
+            force_args+=(--force-parse --force-rechunk)
           fi
-          python -m scripts.download_filings \
+          python scripts/ingest_ticker_batch.py \
             --tickers "${ticker_args[@]}" \
             --forms "${form_args[@]}" \
-            --limit "${LIMIT}" \
-            --download \
-            --parse \
+            --filing-limit "${LIMIT}" \
             "${force_args[@]}"
 
-      - name: Chunk documents
-        run: |
-          read -r -a ticker_args <<< "${TICKERS}"
-          rechunk_args=()
-          if [ "${FORCE_PARSE}" = "true" ]; then
-            rechunk_args+=(--force-rechunk)
-          fi
-          python -m scripts.retrieval_pipeline chunk \
-            --tickers "${ticker_args[@]}" \
-            "${rechunk_args[@]}"
-
-      - name: Build missing embeddings
-        run: |
-          read -r -a ticker_args <<< "${TICKERS}"
-          python -m scripts.retrieval_pipeline index --tickers "${ticker_args[@]}"
+      - name: Publish data-quality audit
+        if: always()
+        run: python -m scripts.retrieval_pipeline audit

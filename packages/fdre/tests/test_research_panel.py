@@ -15,6 +15,7 @@ from fdre.research.panel import (
     ResearchPanelQuery,
     ResearchPanelRow,
     build_research_panel,
+    serialize_research_panel,
     validate_point_in_time_rows,
     write_research_panel,
 )
@@ -144,6 +145,9 @@ def test_research_panel_builds_reproducible_point_in_time_features(
     csv_path = write_research_panel(output_dir / "panel.csv", panel, output_format="csv")
     assert json.loads(json_path.read_text())[0]["ticker"] == "TEST"
     assert "corpus_snapshot_id" in csv_path.read_text().splitlines()[0]
+    content, media_type = serialize_research_panel(panel, output_format="csv")
+    assert media_type == "text/csv"
+    assert b"corpus_snapshot_id" in content
 
 
 def test_panel_leakage_validator_rejects_future_sources() -> None:

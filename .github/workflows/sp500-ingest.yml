@@ -126,6 +126,9 @@ jobs:
             echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
           fi
 
+      - name: Apply database migrations
+        run: alembic upgrade head
+
       - name: Run S&P 500 batch ingest
         run: |
           force_args=()
@@ -143,6 +146,10 @@ jobs:
             --filing-limit "${FILING_LIMIT}" \
             "${force_args[@]}" \
             "${index_args[@]}"
+
+      - name: Publish data-quality audit
+        if: always()
+        run: python -m scripts.retrieval_pipeline audit
 
       - name: Queue next S&P 500 batch
         if: success() && github.event.inputs.chain == 'true'

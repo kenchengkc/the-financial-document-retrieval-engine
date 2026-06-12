@@ -10,6 +10,7 @@ from apps.api.app.db import Base, get_engine
 from apps.api.app.routes.answer import router as answer_router
 from apps.api.app.routes.companies import router as companies_router
 from apps.api.app.routes.health import router as health_router
+from apps.api.app.routes.operations import router as operations_router
 from apps.api.app.routes.research import router as research_router
 from apps.api.app.routes.search import router as search_router
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(answer_router)
     app.include_router(companies_router)
     app.include_router(health_router)
+    app.include_router(operations_router)
     app.include_router(research_router)
     app.include_router(search_router)
     return app

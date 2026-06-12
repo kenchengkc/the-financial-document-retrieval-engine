@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import re
 from datetime import date, datetime
@@ -142,28 +143,42 @@ def write_research_panel(
 ) -> Path:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    content, _ = serialize_research_panel(panel, output_format=output_format)
+    destination.write_bytes(content)
+    return destination
+
+
+def serialize_research_panel(
+    panel: ResearchPanel,
+    *,
+    output_format: ExportFormat,
+) -> tuple[bytes, str]:
     records = [_export_record(row) for row in panel.rows]
     if output_format == "json":
-        destination.write_text(json.dumps(records, indent=2, default=str) + "\n")
-    elif output_format == "csv":
-        fieldnames = list(records[0]) if records else list(ResearchPanelRow.model_fields)
-        with destination.open("w", newline="", encoding="utf-8") as output:
-            writer = csv.DictWriter(output, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(records)
-    else:
-        try:
-            import pyarrow as pa
-            import pyarrow.parquet as pq
-        except ImportError as error:
-            raise RuntimeError(
-                "Parquet export requires `pip install -e '.[data]'`."
-            ) from error
-        pq.write_table(  # type: ignore[no-untyped-call]
-            pa.Table.from_pylist(records),
-            destination,
+        return (
+            (json.dumps(records, indent=2, default=str) + "\n").encode(),
+            "application/json",
         )
-    return destination
+    if output_format == "csv":
+        output = io.StringIO(newline="")
+        fieldnames = list(records[0]) if records else list(ResearchPanelRow.model_fields)
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+        return output.getvalue().encode(), "text/csv"
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError as error:
+        raise RuntimeError(
+            "Parquet export requires `pip install -e '.[data]'`."
+        ) from error
+    sink = pa.BufferOutputStream()
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(records),
+        sink,
+    )
+    return sink.getvalue().to_pybytes(), "application/vnd.apache.parquet"
 
 
 def validate_point_in_time_rows(rows: list[ResearchPanelRow]) -> None:

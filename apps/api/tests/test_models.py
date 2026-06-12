@@ -32,6 +32,7 @@ EXPECTED_TABLES = {
     "eval_questions",
     "eval_results",
     "financial_facts",
+    "ingestion_runs",
     "retrieval_results",
     "retrieval_runs",
     "research_experiments",

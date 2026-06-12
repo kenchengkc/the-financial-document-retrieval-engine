@@ -23,6 +23,12 @@ PRIVATE_INFORMATION_PATTERN = re.compile(
     r"\b(?:private|non-public|inside information|insider|confidential)\b",
     re.I,
 )
+UNSUPPORTED_FORECAST_PATTERN = re.compile(
+    r"\b(?:predict|forecast|guarantee|price target)\b"
+    r".{0,40}\b(?:stock|share price|investment return|market return)\b"
+    r"|\b(?:buy|sell|short)\s+(?:the\s+)?(?:stock|shares)\b",
+    re.I,
+)
 REQUIRES_FINANCIAL_FACTS_PATTERN = re.compile(
     r"\b(?:compare|comparison|growth|versus|vs\.?|year-over-year|yoy)\b",
     re.I,
@@ -236,6 +242,8 @@ def evaluate_retrieval_gate_node(
     reason: str | None = None
     if PRIVATE_INFORMATION_PATTERN.search(state["user_query"]):
         reason = "The question asks for unavailable or non-public information."
+    elif UNSUPPORTED_FORECAST_PATTERN.search(state["user_query"]):
+        reason = "FDRE does not forecast securities prices or provide trading recommendations."
     elif (
         "financial_facts" in state.get("route", [])
         and REQUIRES_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
