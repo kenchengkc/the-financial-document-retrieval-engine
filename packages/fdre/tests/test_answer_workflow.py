@@ -231,3 +231,25 @@ def test_answer_workflow_rejects_non_retrieved_citation() -> None:
     assert state["should_abstain"] is True
     assert state["answer"] is None
     assert "Citation chunk 999 was not retrieved" in state["errors"]
+
+
+def test_extractive_answer_preserves_decimal_financial_values() -> None:
+    answer = MockAnswerGenerator().generate(
+        "What did META report for earnings last quarter?",
+        [
+            RetrievalCandidate(
+                chunk_id=1,
+                text=(
+                    "• Net income was $26.77 billion, with diluted earnings per share "
+                    "of $10.44 for the quarter. Revenue also increased."
+                ),
+                metadata={"element_type": "text", "ticker": "META"},
+                rerank_score=0.8,
+            )
+        ],
+    )
+
+    assert answer.answer_text == (
+        "Net income was $26.77 billion, with diluted earnings per share "
+        "of $10.44 for the quarter."
+    )

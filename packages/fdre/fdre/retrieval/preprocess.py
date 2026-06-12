@@ -30,6 +30,10 @@ FACT_PATTERN = re.compile(
     r"\b(?:revenue|net income|assets|liabilities|growth|margin|cash flow|compare)\b",
     re.I,
 )
+FINANCIAL_RESULTS_PATTERN = re.compile(
+    r"\b(?:earnings|eps|financial results?|quarterly results?)\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +89,8 @@ def preprocess_query(
         element_types.append("figure")
     if FACT_PATTERN.search(cleaned):
         routes.append("financial_facts")
+    if FINANCIAL_RESULTS_PATTERN.search(cleaned):
+        routes.extend(["tables", "financial_facts"])
 
     base_filters = filters or SearchFilters()
     merged_filters = base_filters.model_copy(

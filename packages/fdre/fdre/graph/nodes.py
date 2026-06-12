@@ -57,6 +57,13 @@ class MockAnswerGenerator:
         question: str,
         evidence: list[RetrievalCandidate],
     ) -> GeneratedAnswer:
+        narrative = [
+            candidate
+            for candidate in evidence
+            if candidate.metadata.get("element_type") not in {"section_header", "title"}
+            and candidate.metadata.get("element_type") != "table"
+            and len(candidate.text.split()) >= 5
+        ]
         substantive = [
             candidate
             for candidate in evidence
@@ -64,7 +71,7 @@ class MockAnswerGenerator:
             and len(candidate.text.split()) >= 5
         ]
         selection_limit = 2 if REQUIRES_FINANCIAL_FACTS_PATTERN.search(question) else 1
-        selected = (substantive or evidence)[:selection_limit]
+        selected = (narrative or substantive or evidence)[:selection_limit]
         claims = [
             AnswerClaim(
                 claim_text=_first_sentence(candidate.text),
@@ -344,5 +351,8 @@ def _trace(
 
 
 def _first_sentence(text: str) -> str:
-    sentence = text.split(".", maxsplit=1)[0].strip()
-    return f"{sentence}." if sentence else ""
+    normalized = " ".join(text.split()).lstrip("•- ").strip()
+    sentence = re.split(r"(?<=[.!?])\s+", normalized, maxsplit=1)[0].strip()
+    if not sentence:
+        return ""
+    return sentence if sentence[-1] in ".!?" else f"{sentence}."

@@ -37,6 +37,17 @@ def test_preprocess_routes_table_and_financial_fact_queries() -> None:
     assert "financial_facts" in comparison.routes
 
 
+def test_preprocess_routes_earnings_queries_without_forcing_table_filter() -> None:
+    result = preprocess_query(
+        "What did META report for earnings last quarter?",
+        companies=[*COMPANIES, CompanyReference(ticker="META", name="Meta Platforms, Inc.")],
+    )
+
+    assert result.filters.tickers == ["META"]
+    assert result.filters.element_types == []
+    assert result.routes == ["text", "tables", "financial_facts"]
+
+
 def test_preprocess_does_not_match_company_names_inside_words() -> None:
     result = preprocess_query(
         "What did Apple say about supply chain risk in its latest 10-K?",
