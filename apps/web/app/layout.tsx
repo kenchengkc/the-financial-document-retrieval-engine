@@ -42,12 +42,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body
-        className={`${newsreader.variable} ${libreFranklin.variable} ${publicSans.variable}`}
-      >
-        {children}
-      </body>
+    <html
+      lang="en"
+      className={`${newsreader.variable} ${libreFranklin.variable} ${publicSans.variable}`}
+    >
+      <body>{children}</body>
     </html>
   );
 }
