@@ -14,11 +14,11 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Production Corpus
 
-Measured from production on June 12, 2026:
+Measured from production on June 13, 2026:
 
 | Metric | Value |
 | --- | ---: |
-| S&P 500 primary tickers indexed | 499 / 499 |
+| S&P 500 primary tickers indexed | 495 / 499 |
 | SEC filings | 997 |
 | Parsed chunks | 1,072,194 |
 | Embedded chunks | 1,065,227 |

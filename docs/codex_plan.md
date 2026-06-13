@@ -90,7 +90,8 @@ The reviewed 120-question dataset and holdout run remain unpublished until revie
 3. Review and freeze 120 benchmark questions; run the untouched holdout.
 4. Backfill 3 annual and 8 quarterly filings for the fixed research universe.
 5. Ingest Company Facts for the production corpus.
-6. Publish benchmark and operational numbers only after verification.
+6. Complete the S&P coverage gap: embed AWK, AXON, and AXP; ingest FDXF when an eligible filing is available.
+7. Publish benchmark and operational numbers only after verification.
 
 ## Deferred
 

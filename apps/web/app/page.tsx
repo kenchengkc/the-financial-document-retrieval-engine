@@ -306,7 +306,11 @@ export default function Home() {
             </div>
 
             <div className="gh-trust">
-              <span>499 S&amp;P 500 names</span>
+              <span>
+                {coverage
+                  ? `${coverage.sp500_indexed_count} / ${coverage.sp500_catalog_count} S&P 500 names`
+                  : "Production SEC corpus"}
+              </span>
               <span className="sep" aria-hidden="true" />
               <span>1,065,227 embedded chunks</span>
               <span className="sep" aria-hidden="true" />

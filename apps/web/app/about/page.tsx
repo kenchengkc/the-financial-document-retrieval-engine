@@ -144,13 +144,13 @@ export default function About() {
             <p className="eyebrow">Verified production corpus</p>
             <h2 id="verified-scale">Measured scale, not projected scale</h2>
             <p>
-              Counts were read from the production database on June 12, 2026. The S&amp;P 500
+              Counts were read from the production database on June 13, 2026. The S&amp;P 500
               universe uses current constituents and is therefore survivorship-biased.
             </p>
           </div>
           <dl className="proof-metrics">
             <div>
-              <dt>499 / 499</dt>
+              <dt>495 / 499</dt>
               <dd>S&amp;P 500 primary tickers indexed</dd>
             </div>
             <div>

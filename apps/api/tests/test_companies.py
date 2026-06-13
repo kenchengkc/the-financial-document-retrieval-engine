@@ -108,6 +108,36 @@ def test_coverage_reports_catalog_and_indexed_counts(
             cik="0000320193",
             name="Apple Inc.",
         )
+        company = Company(
+            ticker="GOOG",
+            cik="0001652044",
+            name="Alphabet Inc.",
+            exchange="Nasdaq",
+        )
+        document = Document(
+            company=company,
+            source_type="sec",
+            form_type="10-K",
+            accession_number="0001652044-25-000001",
+        )
+        element = DocumentElement(
+            document=document,
+            element_type="text",
+            section="Business",
+            text="Alphabet revenue grew year over year.",
+            reading_order=1,
+        )
+        document.chunks.append(
+            Chunk(
+                element=element,
+                chunk_text=element.text or "",
+                chunk_type="text",
+                section="Business",
+                token_count=6,
+            )
+        )
+        session.add(company)
+        session.commit()
 
     def override_session() -> Generator[Session, None, None]:
         with Session(engine) as session:
@@ -126,7 +156,7 @@ def test_coverage_reports_catalog_and_indexed_counts(
     assert payload["indexed_count"] == 1
     assert payload["sp500_indexed_count"] == 1
     assert payload["indexed_tickers"] == ["AAPL"]
-    assert payload["document_count"] == 1
+    assert payload["document_count"] == 2
     assert payload["chunk_count"] == 1
 
 

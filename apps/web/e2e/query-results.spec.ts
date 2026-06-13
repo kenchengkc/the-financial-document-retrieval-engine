@@ -164,7 +164,7 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
 
   await expect(page.getByRole("heading", { name: "Research infrastructure that shows its work" }))
     .toBeVisible();
-  await expect(page.getByText("499 / 499")).toBeVisible();
+  await expect(page.getByText("495 / 499")).toBeVisible();
   await expect(page.getByText("Five public demonstrations")).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({

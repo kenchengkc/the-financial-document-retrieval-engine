@@ -25,8 +25,9 @@ def get_coverage(session: Session) -> CoverageResponse:
         if cached is not None and cached[0] > now:
             return cached[1].model_copy(deep=True)
 
-    indexed_rows = _indexed_company_rows(session)
-    indexed_tickers = [row.ticker for row in indexed_rows if row.ticker not in _DEMO_TICKERS]
+    indexed_tickers = [
+        ticker for ticker in _indexed_company_tickers(session) if ticker not in _DEMO_TICKERS
+    ]
     sp500_catalog = set(sp500_primary_tickers())
     sp500_indexed = [ticker for ticker in indexed_tickers if ticker in sp500_catalog]
 
@@ -55,6 +56,28 @@ def get_coverage(session: Session) -> CoverageResponse:
 def clear_coverage_cache() -> None:
     with _coverage_cache_lock:
         _coverage_cache.clear()
+
+
+def _indexed_company_tickers(session: Session) -> list[str]:
+    embedded_chunk_exists = (
+        select(1)
+        .select_from(Chunk)
+        .join(Embedding, Embedding.chunk_id == Chunk.id)
+        .where(Chunk.document_id == Document.id)
+        .exists()
+    )
+    indexed_company_ids = (
+        select(Document.company_id)
+        .where(embedded_chunk_exists)
+        .distinct()
+        .subquery()
+    )
+    statement = (
+        select(Company.ticker)
+        .join(indexed_company_ids, indexed_company_ids.c.company_id == Company.id)
+        .order_by(Company.ticker)
+    )
+    return list(session.scalars(statement))
 
 
 def list_companies(
