@@ -45,3 +45,5 @@ def test_railway_runs_migrations_before_starting_the_api() -> None:
     assert config["deploy"]["preDeployCommand"] == "alembic upgrade head"
     assert "alembic" not in config["deploy"]["startCommand"]
     assert "uvicorn" in config["deploy"]["startCommand"]
+    assert config["deploy"]["startCommand"].startswith("sh -c ")
+    assert "${PORT:-8000}" in config["deploy"]["startCommand"]
