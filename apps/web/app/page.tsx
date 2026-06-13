@@ -6,12 +6,16 @@ import {
   ArrowRight,
   ArrowUpRight,
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
+  Code2,
   Database,
+  FileText,
   LoaderCircle,
   Route,
   Search,
   ShieldCheck,
+  Timer,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
@@ -25,9 +29,9 @@ const exampleChips = [
     question: "What did Apple say about supply chain risk in its latest 10-K?",
   },
   {
-    tag: "MSFT · table",
-    label: "Segment revenue",
-    question: "Find the table showing Microsoft revenue by segment.",
+    tag: "META · earnings",
+    label: "Latest quarter",
+    question: "What did META report for earnings last quarter?",
   },
   {
     tag: "abstain",
@@ -39,6 +43,14 @@ const exampleChips = [
 
 function score(value: number | null) {
   return value === null ? "n/a" : value.toFixed(3);
+}
+
+function metadataValue(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function formatLatency(latencyMs: number) {
+  return latencyMs < 1000 ? `${latencyMs} ms` : `${(latencyMs / 1000).toFixed(1)} s`;
 }
 
 function Wave({ cls }: { cls: string }) {
@@ -80,34 +92,47 @@ function SunsetScene() {
 
 function Evidence({ candidate, index }: { candidate: RetrievalCandidate; index: number }) {
   const metadata = candidate.metadata;
+  const ticker = metadataValue(metadata.ticker, "Document");
+  const formType = metadataValue(metadata.form_type, "Filing");
+  const section = metadataValue(metadata.section, "Unsectioned");
+  const filingDate = metadataValue(metadata.filing_date, "Date unavailable");
+
   return (
-    <article className="evidence">
-      <header className="evidence-header">
-        <span className="rank">#{index + 1}</span>
-        <strong>{String(metadata.ticker ?? "Document")}</strong>
-        <span>{String(metadata.form_type ?? "Filing")}</span>
-        <span>{String(metadata.section ?? "Unsectioned")}</span>
-      </header>
-      <p>{candidate.text}</p>
-      <dl className="scores">
-        <div>
-          <dt>Dense</dt>
-          <dd>{score(candidate.dense_score)}</dd>
-        </div>
-        <div>
-          <dt>Sparse</dt>
-          <dd>{score(candidate.sparse_score)}</dd>
-        </div>
-        <div>
-          <dt>Hybrid</dt>
-          <dd>{score(candidate.hybrid_score)}</dd>
-        </div>
-        <div>
-          <dt>Rerank</dt>
-          <dd>{score(candidate.rerank_score)}</dd>
-        </div>
-      </dl>
-    </article>
+    <details className="evidence" open={index === 0 ? true : undefined}>
+      <summary>
+        <span className="evidence-rank">{String(index + 1).padStart(2, "0")}</span>
+        <span className="evidence-source">
+          <strong>{ticker}</strong>
+          <span>
+            {formType} · {filingDate}
+          </span>
+        </span>
+        <span className="evidence-section">{section}</span>
+        <span className="evidence-score">{score(candidate.rerank_score)} rerank</span>
+        <ChevronDown size={16} aria-hidden="true" />
+      </summary>
+      <div className="evidence-body">
+        <p>{candidate.text}</p>
+        <dl className="scores">
+          <div>
+            <dt>Dense</dt>
+            <dd>{score(candidate.dense_score)}</dd>
+          </div>
+          <div>
+            <dt>Sparse</dt>
+            <dd>{score(candidate.sparse_score)}</dd>
+          </div>
+          <div>
+            <dt>Hybrid</dt>
+            <dd>{score(candidate.hybrid_score)}</dd>
+          </div>
+          <div>
+            <dt>Rerank</dt>
+            <dd>{score(candidate.rerank_score)}</dd>
+          </div>
+        </dl>
+      </div>
+    </details>
   );
 }
 
@@ -116,6 +141,7 @@ export default function Home() {
   const [result, setResult] = useState<AnswerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState(0);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const questionRef = useRef<HTMLInputElement | null>(null);
@@ -132,15 +158,25 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (result || error) {
+    if (loading || result || error) {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [result, error]);
+  }, [loading, result, error]);
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setInterval(() => {
+      setLoadingStage((stage) => Math.min(stage + 1, 3));
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!question.trim() || loading) return;
+    setLoadingStage(0);
     setLoading(true);
+    setResult(null);
     setError(null);
     try {
       setResult(await askQuestion(question.trim()));
@@ -153,6 +189,19 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  const citedChunkIds = new Set(result?.citations.map((citation) => citation.chunk_id) ?? []);
+  const displayEvidence = result
+    ? [...result.evidence].sort(
+        (left, right) =>
+          Number(citedChunkIds.has(right.chunk_id)) - Number(citedChunkIds.has(left.chunk_id)),
+      )
+    : [];
+  const primaryMetadata =
+    result?.citations[0]?.metadata ?? result?.evidence[0]?.metadata ?? {};
+  const primaryTicker = metadataValue(primaryMetadata.ticker, "SEC filing");
+  const primaryForm = metadataValue(primaryMetadata.form_type, "Filing");
+  const primaryDate = metadataValue(primaryMetadata.filing_date, "Date unavailable");
 
   return (
     <div className="site-shell">
@@ -202,21 +251,19 @@ export default function Home() {
               target="_blank"
               rel="noreferrer"
             >
-              View source
+              <Code2 size={16} aria-hidden="true" />
+              <span className="hd-pill-label">View source</span>
             </a>
           </div>
         </header>
 
         <div className="gh-inner">
           <div className="gh-copy">
-            <p className="hd-eyebrow">For hedge funds &amp; research desks</p>
-            <h1>
-              Evidence you can <span className="accent">cite</span>. Answers you can trust.
-            </h1>
+            <p className="hd-eyebrow">Research infrastructure for funds and trading firms</p>
+            <h1>Financial Document Retrieval Engine</h1>
             <p className="lede">
-              FDRE searches SEC filings, ranks and verifies the evidence behind every claim, and
-              abstains when it isn&apos;t strong enough — so each answer opens straight to its
-              source.
+              Point-in-time SEC filing retrieval, structured XBRL facts, filing-change analysis,
+              and reproducible research exports with evidence behind every result.
             </p>
 
             <form className="hd-search gh-form" onSubmit={submit}>
@@ -259,11 +306,11 @@ export default function Home() {
             </div>
 
             <div className="gh-trust">
-              <span>SEC EDGAR primary sources</span>
+              <span>499 S&amp;P 500 names</span>
               <span className="sep" aria-hidden="true" />
-              <span>Hybrid retrieval + reranking</span>
+              <span>1,065,227 embedded chunks</span>
               <span className="sep" aria-hidden="true" />
-              <span>Citation-verified</span>
+              <span>Point-in-time and citation-audited</span>
             </div>
           </div>
         </div>
@@ -280,26 +327,59 @@ export default function Home() {
           </div>
         )}
 
-        <div className="result-grid">
+        <div className={`result-grid${result ? " has-result" : ""}`}>
           <section className="result-column" aria-live="polite">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Answer</p>
-                <h2>{result ? "Grounded response" : "Ready for a query"}</h2>
+                <p className="eyebrow">{result ? "Research answer" : "Search workspace"}</p>
+                <h2>
+                  {result
+                    ? result.question
+                    : loading
+                      ? "Retrieving evidence"
+                      : "Ready for a query"}
+                </h2>
               </div>
               {result && (
-                <span className="run-id">Run #{result.answer_run_id}</span>
+                <span className="run-id">Run {result.answer_run_id}</span>
               )}
             </div>
 
-            {!result && !error && (
+            {loading && (
+              <div className="loading-state" role="status">
+                <LoaderCircle className="spin" size={24} />
+                <div>
+                  <h3>Searching indexed SEC filings</h3>
+                  <p>{question}</p>
+                </div>
+                <ol aria-label="Retrieval stages">
+                  {["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"].map(
+                    (stage, index) => (
+                      <li
+                        key={stage}
+                        className={
+                          index === loadingStage
+                            ? "active"
+                            : index < loadingStage
+                              ? "complete"
+                              : undefined
+                        }
+                        aria-current={index === loadingStage ? "step" : undefined}
+                      >
+                        {stage}
+                      </li>
+                    ),
+                  )}
+                </ol>
+              </div>
+            )}
+
+            {!result && !error && !loading && (
               <div className="empty-state">
                 <Database size={28} />
-                <h3>Live RAG retrieval over indexed filings</h3>
+                <h3>Ask a filing question above</h3>
                 <p>
-                  Queries hit pre-built vector and FTS indexes in PostgreSQL, then the agent
-                  reranks evidence, verifies citations, and returns a full graph trace — dense,
-                  sparse, hybrid, and rerank scores for every chunk.
+                  Search a company, filing period, disclosure, table, or financial result.
                 </p>
               </div>
             )}
@@ -318,10 +398,20 @@ export default function Home() {
               <div className="answer">
                 <div className="answer-meta">
                   <CheckCircle2 size={17} />
-                  <span>Verified citations</span>
-                  <span>{Math.round((result.confidence ?? 0) * 100)}% confidence</span>
+                  <span>Citation verified</span>
+                  <span>{Math.round((result.confidence ?? 0) * 100)}% retrieval confidence</span>
                 </div>
                 <p>{result.answer}</p>
+                <footer>
+                  <span>
+                    <FileText size={14} aria-hidden="true" />
+                    {primaryTicker} · {primaryForm} · {primaryDate}
+                  </span>
+                  <span>
+                    <Timer size={14} aria-hidden="true" />
+                    {formatLatency(result.latency_ms)}
+                  </span>
+                </footer>
               </div>
             )}
 
@@ -329,13 +419,13 @@ export default function Home() {
               <>
                 <div className="section-heading evidence-title">
                   <div>
-                    <p className="eyebrow">Ranked context</p>
-                    <h2>Retrieved evidence</h2>
+                    <p className="eyebrow">Primary sources</p>
+                    <h2>Sources supporting this answer</h2>
                   </div>
-                  <span>{result.evidence.length} chunks</span>
+                  <span>{result.evidence.length} sources</span>
                 </div>
                 <div className="evidence-list">
-                  {result.evidence.map((candidate, index) => (
+                  {displayEvidence.map((candidate, index) => (
                     <Evidence key={candidate.chunk_id} candidate={candidate} index={index} />
                   ))}
                   {result.evidence.length === 0 && (
@@ -346,73 +436,84 @@ export default function Home() {
             )}
           </section>
 
-          <aside className="inspection">
-            <section>
-              <div className="aside-title">
-                <Route size={17} />
-                <h2>Agent route</h2>
-              </div>
-              <div className="route-list">
-                {(result?.route ?? ["text", "tables", "financial facts"]).map((route) => (
-                  <span key={route}>{route.replaceAll("_", " ")}</span>
-                ))}
-              </div>
-              {result && (
+          {result && (
+            <aside className="inspection">
+              <section>
+                <div className="aside-title">
+                  <Route size={17} />
+                  <h2>Run summary</h2>
+                </div>
+                <div className="route-list">
+                  {result.route.map((route) => (
+                    <span key={route}>{route.replaceAll("_", " ")}</span>
+                  ))}
+                </div>
                 <dl className="gate">
                   <div>
-                    <dt>Gate</dt>
-                    <dd>{result.retrieval_gate.passed ? "passed" : "abstained"}</dd>
+                    <dt>Evidence gate</dt>
+                    <dd>{result.retrieval_gate.passed ? "Passed" : "Abstained"}</dd>
                   </div>
                   <div>
-                    <dt>Max score</dt>
+                    <dt>Top score</dt>
                     <dd>{Number(result.retrieval_gate.max_score ?? 0).toFixed(3)}</dd>
                   </div>
+                  <div>
+                    <dt>Sources</dt>
+                    <dd>{result.evidence.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Latency</dt>
+                    <dd>{formatLatency(result.latency_ms)}</dd>
+                  </div>
                 </dl>
-              )}
-            </section>
+              </section>
 
-            <section>
-              <div className="aside-title">
-                <ShieldCheck size={17} />
-                <h2>Citations</h2>
-              </div>
-              {result?.citations.length ? (
-                <ol className="citations">
-                  {result.citations.map((citation) => (
-                    <li key={`${citation.chunk_id}-${citation.claim_text}`}>
-                      <strong>Chunk {citation.chunk_id}</strong>
-                      <p>{citation.claim_text}</p>
-                      <span>{Math.round(citation.confidence * 100)}% text overlap</span>
+              <section>
+                <div className="aside-title">
+                  <ShieldCheck size={17} />
+                  <h2>Citations</h2>
+                </div>
+                {result.citations.length ? (
+                  <ol className="citations">
+                    {result.citations.map((citation) => (
+                      <li key={`${citation.chunk_id}-${citation.claim_text}`}>
+                        <strong>
+                          {metadataValue(citation.metadata.ticker, "SEC")} ·{" "}
+                          {metadataValue(citation.metadata.form_type, "Filing")}
+                        </strong>
+                        <p>{citation.claim_text}</p>
+                        <span>{Math.round(citation.confidence * 100)}% text overlap</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="muted">No citations were returned.</p>
+                )}
+              </section>
+
+              <details className="trace-disclosure">
+                <summary>
+                  <span className="aside-title">
+                    <Activity size={17} />
+                    <strong>Workflow trace</strong>
+                  </span>
+                  <span>{result.trace.length} steps</span>
+                  <ChevronDown size={15} aria-hidden="true" />
+                </summary>
+                <ol className="trace">
+                  {result.trace.map((step, index) => (
+                    <li key={`${step.node}-${index}`}>
+                      <span>{index + 1}</span>
+                      <div>
+                        <strong>{step.node.replaceAll("_", " ")}</strong>
+                        <small>{JSON.stringify(step.details)}</small>
+                      </div>
                     </li>
                   ))}
                 </ol>
-              ) : (
-                <p className="muted">Verified sources appear after a successful answer.</p>
-              )}
-            </section>
-
-            <section>
-              <div className="aside-title">
-                <Activity size={17} />
-                <h2>Graph trace</h2>
-              </div>
-              <ol className="trace">
-                {(result?.trace ?? [
-                  { node: "preprocess_query", details: {} },
-                  { node: "hybrid_retrieve", details: {} },
-                  { node: "verify_citations", details: {} },
-                ]).map((step, index) => (
-                  <li key={`${step.node}-${index}`}>
-                    <span>{index + 1}</span>
-                    <div>
-                      <strong>{step.node.replaceAll("_", " ")}</strong>
-                      {result && <small>{JSON.stringify(step.details)}</small>}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          </aside>
+              </details>
+            </aside>
+          )}
         </div>
 
         <section className="architecture">
@@ -420,18 +521,17 @@ export default function Home() {
             <p className="eyebrow">RAG stack</p>
             <h2>Index offline, retrieve live</h2>
             <p>
-              FDRE batch-indexes filings into a <strong>pgvector</strong> store, then runs a
-              bounded <strong>LangGraph retrieval agent</strong> on every question: hybrid
-              embedding + keyword search, reranking, verified citations, and abstention when
-              evidence is weak.
+              FDRE converts SEC filings into auditable research data: hybrid retrieval for
+              evidence discovery, typed XBRL facts, point-in-time feature panels, and persisted
+              experiment manifests.
             </p>
           </div>
           <ol>
-            <li>Batch ingest: parse filings, chunk text and tables</li>
-            <li>Vector index: embed chunks into pgvector (Voyage)</li>
-            <li>Live query: hybrid RAG + rerank via LangGraph agent</li>
-            <li>Citation verification on every claim</li>
-            <li>Answer or abstention — no hallucination fallback</li>
+            <li>Single-name risk retrieval with stable evidence</li>
+            <li>Table and XBRL fact extraction</li>
+            <li>Comparable-period filing differences</li>
+            <li>Issuer-diversified thematic scans</li>
+            <li>Point-in-time panel export and event studies</li>
           </ol>
           <a
             href="https://github.com/kenchengkc/the-financial-document-retrieval-engine#architecture"

@@ -20,13 +20,13 @@ const publicSans = Public_Sans({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://thefdre.com"),
-  title: "FDRE — Financial RAG for SEC Filings",
+  title: "FDRE — SEC Research Infrastructure",
   description:
-    "Hybrid RAG over SEC filings: pgvector embeddings, PostgreSQL full-text search, LangGraph retrieval agent, reranking, verified citations, and abstention. Built for research teams, not generic chat.",
+    "Point-in-time SEC filing retrieval, structured financial facts, filing comparisons, and reproducible research exports with verified evidence.",
   openGraph: {
-    title: "FDRE — Financial RAG for SEC Filings",
+    title: "FDRE — SEC Research Infrastructure",
     description:
-      "Vector + keyword RAG, bounded retrieval agent, and citation verification over SEC filings.",
+      "Auditable SEC retrieval, typed facts, filing changes, and point-in-time research data.",
     url: "https://thefdre.com",
     siteName: "FDRE",
     type: "website",

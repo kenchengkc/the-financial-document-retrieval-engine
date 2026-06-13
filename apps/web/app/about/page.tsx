@@ -1,13 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowDown, ArrowUpRight } from "lucide-react";
-
-import { LoopVideo } from "./loop-video";
+import {
+  ArrowDown,
+  ArrowUpRight,
+  BarChart3,
+  CheckCircle2,
+  Clock3,
+  Code2,
+  DatabaseZap,
+  FileText,
+  GitCompareArrows,
+  ScanSearch,
+  TableProperties,
+} from "lucide-react";
 
 export const metadata: Metadata = {
   title: "About — FDRE",
   description:
-    "Why FDRE was built: layout-aware retrieval, citation verification, and calibrated abstention over SEC filings.",
+    "Measured engineering evidence for FDRE's point-in-time SEC research infrastructure.",
 };
 
 export default function About() {
@@ -35,70 +45,232 @@ export default function About() {
               target="_blank"
               rel="noreferrer"
             >
-              View source
+              <Code2 size={16} aria-hidden="true" />
+              <span className="hd-pill-label">View source</span>
             </a>
           </div>
         </header>
 
         <div className="ih-stage">
-          <div className="ih-panel left">
-            <LoopVideo src="/about/panel-left.mp4" poster="/about/panel-left.png" />
-            <div className="ih-motion" aria-hidden="true" />
-            <div className="ih-tag">
-              <span className="lv" aria-hidden="true" /> loops · 10s
+          <div className="ih-panel artifact-panel filing-artifact">
+            <div className="artifact-heading">
+              <span>
+                <FileText size={15} aria-hidden="true" />
+                SEC 10-Q
+              </span>
+              <strong>META</strong>
             </div>
+            <div className="artifact-primary">
+              <small>Net income</small>
+              <strong>$26.77B</strong>
+              <span>Three months ended March 31, 2026</span>
+            </div>
+            <dl className="artifact-facts">
+              <div>
+                <dt>Revenue</dt>
+                <dd>$56.31B</dd>
+              </div>
+              <div>
+                <dt>Diluted EPS</dt>
+                <dd>$10.44</dd>
+              </div>
+            </dl>
+            <p className="artifact-foot">Accepted April 30, 2026</p>
           </div>
 
           <div className="ih-card">
             <p className="hd-eyebrow">About FDRE</p>
             <h1>
-              Built so every answer <span className="accent">shows its work</span>
+              Research infrastructure that <span className="accent">shows its work</span>
             </h1>
             <p className="lede">
-              Most financial search tools hand you a passage and hope. FDRE was built the other
-              way around — retrieval, verification, and the willingness to say &ldquo;not enough
-              evidence&rdquo; came first.
+              FDRE converts SEC filings into auditable retrieval results, structured facts,
+              point-in-time feature data, and reproducible event-study inputs for research teams.
             </p>
             <div className="ih-meta">
-              <span>Layout-aware retrieval</span>
+              <span>Research and data engineering</span>
               <span className="sep" aria-hidden="true" />
-              <span>Citation verification</span>
+              <span>Quant research engineering</span>
               <span className="sep" aria-hidden="true" />
-              <span>Calibrated abstention</span>
+              <span>No trading-strategy claims</span>
             </div>
             <a className="ih-down" href="#methodology" aria-label="Scroll to methodology">
               <ArrowDown size={18} strokeWidth={1.8} />
             </a>
           </div>
 
-          <div className="ih-panel right">
-            <LoopVideo src="/about/panel-right.mp4" poster="/about/panel-right.png" />
-            <div className="ih-motion" aria-hidden="true" />
-            <div className="ih-tag">
-              <span className="lv" aria-hidden="true" /> loops · 10s
+          <div className="ih-panel artifact-panel retrieval-artifact">
+            <div className="artifact-heading">
+              <span>
+                <CheckCircle2 size={15} aria-hidden="true" />
+                Retrieval run
+              </span>
+              <strong>Verified</strong>
+            </div>
+            <ol className="artifact-steps">
+              <li>
+                <span>01</span>
+                <div>
+                  <strong>Resolve issuer</strong>
+                  <small>META only</small>
+                </div>
+              </li>
+              <li>
+                <span>02</span>
+                <div>
+                  <strong>Hybrid retrieve</strong>
+                  <small>Text · tables · facts</small>
+                </div>
+              </li>
+              <li>
+                <span>03</span>
+                <div>
+                  <strong>Verify citation</strong>
+                  <small>100% text overlap</small>
+                </div>
+              </li>
+            </ol>
+            <div className="artifact-score">
+              <span>Top rerank score</span>
+              <strong>0.648</strong>
             </div>
           </div>
         </div>
       </section>
 
       <main>
+        <section className="proof-band" aria-labelledby="verified-scale">
+          <div className="proof-heading">
+            <p className="eyebrow">Verified production corpus</p>
+            <h2 id="verified-scale">Measured scale, not projected scale</h2>
+            <p>
+              Counts were read from the production database on June 12, 2026. The S&amp;P 500
+              universe uses current constituents and is therefore survivorship-biased.
+            </p>
+          </div>
+          <dl className="proof-metrics">
+            <div>
+              <dt>499 / 499</dt>
+              <dd>S&amp;P 500 primary tickers indexed</dd>
+            </div>
+            <div>
+              <dt>997</dt>
+              <dd>SEC filings parsed and chunked</dd>
+            </div>
+            <div>
+              <dt>1,065,227</dt>
+              <dd>Chunks with stored embeddings</dd>
+            </div>
+            <div>
+              <dt>512</dt>
+              <dd>Voyage embedding dimensions</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="proof-band" aria-labelledby="engineering-evidence">
+          <div className="proof-heading">
+            <p className="eyebrow">Engineering evidence</p>
+            <h2 id="engineering-evidence">Built for reproducible research</h2>
+            <p>
+              The public service is research infrastructure, not a low-latency trading system or
+              a portfolio backtest.
+            </p>
+          </div>
+          <div className="proof-grid">
+            <article>
+              <DatabaseZap size={20} aria-hidden="true" />
+              <h3>Indexed retrieval</h3>
+              <p>PostgreSQL GIN full-text search and partial HNSW cosine search over pgvector.</p>
+            </article>
+            <article>
+              <Clock3 size={20} aria-hidden="true" />
+              <h3>Point-in-time controls</h3>
+              <p>SEC acceptance timestamps, availability boundaries, amendments, and as-of filtering.</p>
+            </article>
+            <article>
+              <TableProperties size={20} aria-hidden="true" />
+              <h3>Structured facts</h3>
+              <p>Raw Company Facts plus canonical revenue, margins, cash flow, debt, and EPS.</p>
+            </article>
+            <article>
+              <GitCompareArrows size={20} aria-hidden="true" />
+              <h3>Filing differences</h3>
+              <p>Comparable periods with added, removed, and materially changed passages.</p>
+            </article>
+            <article>
+              <BarChart3 size={20} aria-hidden="true" />
+              <h3>Research panel</h3>
+              <p>Versioned JSON, CSV, and Parquet issuer-period features with leakage checks.</p>
+            </article>
+            <article>
+              <ScanSearch size={20} aria-hidden="true" />
+              <h3>Auditable operations</h3>
+              <p>Ingestion manifests, recovery metrics, data-quality audits, and experiment IDs.</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="workflow-band" aria-labelledby="research-workflows">
+          <div className="proof-heading">
+            <p className="eyebrow">Research workflows</p>
+            <h2 id="research-workflows">Five public demonstrations</h2>
+          </div>
+          <ol>
+            <li>
+              <span>01</span>
+              <div>
+                <strong>Single-name risk retrieval</strong>
+                <p>Find section-aware evidence and inspect every retrieval score and citation.</p>
+              </div>
+            </li>
+            <li>
+              <span>02</span>
+              <div>
+                <strong>Table and XBRL extraction</strong>
+                <p>Query typed financial facts with the linked filing and narrative evidence.</p>
+              </div>
+            </li>
+            <li>
+              <span>03</span>
+              <div>
+                <strong>Filing change detection</strong>
+                <p>Compare the latest filing with its deterministic comparable period.</p>
+              </div>
+            </li>
+            <li>
+              <span>04</span>
+              <div>
+                <strong>Cross-sectional thematic research</strong>
+                <p>Scan broad themes while capping evidence per issuer for diversified results.</p>
+              </div>
+            </li>
+            <li>
+              <span>05</span>
+              <div>
+                <strong>Panel export and event study</strong>
+                <p>Export point-in-time features and run benchmark-adjusted statistical tests.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
         <section className="architecture" id="methodology">
           <div>
             <p className="eyebrow">Methodology</p>
             <h2>Index offline, retrieve live</h2>
             <p>
-              FDRE batch-indexes filings into a <strong>pgvector</strong> store, then runs a
-              bounded <strong>LangGraph retrieval agent</strong> on every question: hybrid
-              embedding + keyword search, reranking, verified citations, and abstention when
-              evidence is weak.
+              The bounded <strong>LangGraph retrieval workflow</strong> preprocesses the query,
+              routes text, tables, and structured facts, reranks evidence, applies an evidence
+              gate, and verifies every citation before returning an answer.
             </p>
           </div>
           <ol>
-            <li>Batch ingest: parse filings, chunk text and tables</li>
-            <li>Vector index: embed chunks into pgvector (Voyage)</li>
-            <li>Live query: hybrid RAG + rerank via LangGraph agent</li>
-            <li>Citation verification on every claim</li>
-            <li>Answer or abstention — no hallucination fallback</li>
+            <li>Cached SEC ingest with acceptance timestamps</li>
+            <li>Layout-aware text and table parsing</li>
+            <li>Hybrid sparse and dense retrieval</li>
+            <li>Typed facts, diffs, panels, and experiments</li>
+            <li>Verified answer or deliberate abstention</li>
           </ol>
           <a
             href="https://github.com/kenchengkc/the-financial-document-retrieval-engine#architecture"
