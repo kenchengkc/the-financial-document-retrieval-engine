@@ -1,33 +1,26 @@
-# Retrieval Benchmark and Research Report
+# Retrieval Benchmark
 
-FDRE evaluates sparse, dense, hybrid, and hybrid-plus-reranker retrieval against a
-reviewed 120-question dataset. Evidence labels are stable across rechunking because
-they use SEC accession number, section, normalized quotation, and a content
-fingerprint instead of database chunk IDs.
+The benchmark runner and dataset contract are implemented. The reviewed question set is not yet
+committed or published, so FDRE does not claim holdout quality scores.
 
-## Dataset contract
+## Dataset Contract
 
-- 80 development questions and 40 untouched holdout questions
-- narrative, table, legal, guidance, temporal, cross-sectional, filter, and
-  abstention categories
-- reviewer identity on every question
-- stable evidence for supported questions
-- explicit `should_abstain` labels for unsupported questions
+- 120 human-reviewed questions: 80 development and 40 untouched holdout.
+- Narrative, table, legal, guidance, temporal, cross-sectional, filter, and abstention categories.
+- Reviewer identity and explicit abstention labels on every question.
+- Stable evidence labels based on accession, section, normalized quotation, and content fingerprint.
 
-Run the contract check and benchmark with:
+Run a reviewed dataset with:
 
 ```bash
-python -m scripts.retrieval_pipeline eval data/sample/retrieval_benchmark.jsonl \
+python3 -m scripts.retrieval_pipeline eval path/to/retrieval_benchmark.jsonl \
   --require-reviewed --split development --k 10
 ```
 
-The JSON report records the corpus snapshot, Git SHA, parser version, embedding and
-reranker configuration, question split, latency, and configured provider cost. The
-Markdown report summarizes Recall@10, MRR, nDCG@10, table recall, citation
-precision, abstention macro-F1, entity-resolution accuracy, p95 latency, and cost
-per query.
+Reports record corpus snapshot, Git SHA, parser version, embedding and reranker configuration,
+retrieval settings, latency, and configured provider cost.
 
-## Release gates
+## Release Gates
 
 | Metric | Target |
 | --- | ---: |
@@ -40,6 +33,4 @@ per query.
 | Cross-sectional search p95 | < 5 s |
 | ANN Recall@10 delta from exact | <= 0.02 |
 
-Numbers are published only after the holdout run completes against an identified
-corpus snapshot. Generated questions or development-set results are not presented
-as holdout performance.
+Generated questions and development results must not be reported as holdout performance.

@@ -1,26 +1,84 @@
 # Architecture
 
-FDRE is being implemented in phases. Phases 1 and 2 establish the API, Docker foundation, database model, and migration baseline. Phases 3 through 5 add cached SEC metadata ingestion, deterministic filing downloads, and layout-aware HTML parsing into database-backed document elements.
+FDRE uses a deliberately small production stack: FastAPI, Next.js, PostgreSQL, pgvector, Voyage
+embeddings, and GitHub Actions. PostgreSQL owns retrieval, metadata, structured facts, traces,
+operations, and research experiments.
 
-Later phases will add chunking, indexing, hybrid retrieval, reranking, citation verification, abstention, LangGraph orchestration, structured financial facts, observability, and the frontend evidence viewer.
+## Boundaries
 
-## Ingestion Boundary
+### SEC ingestion
 
-- `SECClient` owns user-agent enforcement, local HTTP caching, and request pacing.
-- Filing metadata is upserted idempotently before raw content is downloaded.
-- Filing HTML uses a stable CIK/accession path and SHA-256 content identity.
-- The HTML parser emits ordered typed elements and preserves tables as Markdown.
-- Downloaded files and cached responses remain outside version control.
+- Cached, rate-limited SEC client with descriptive user-agent enforcement.
+- Idempotent metadata upserts keyed by company and accession.
+- SEC acceptance timestamp promoted to indexed `accepted_at` and `available_at` fields.
+- Amendment status and original-accession lineage stored explicitly.
+- SHA-256 file identity and deterministic CIK/accession storage paths.
+- Form-specific depth controls support three annual and eight quarterly filings.
+
+### Parsing and indexing
+
+- HTML parser emits ordered text, section-header, title, and table elements.
+- Text chunks never cross source-element boundaries.
+- Tables retain Markdown and a compact summary representation.
+- Embeddings are incremental and resumable.
+- PostgreSQL uses a generated-maintained `tsvector` GIN index for lexical retrieval.
+- Voyage 512-dimensional embeddings use a partial half-vector HNSW cosine index.
+- Metadata indexes cover company, form, period, availability, section, and embedding model.
+
+### Retrieval and answer workflow
+
+- Exact ticker boundaries and unique normalized company aliases prevent substring inference.
+- Broad thematic questions do not infer accidental ticker filters.
+- Dense and sparse filters are applied in SQL before ranking.
+- Hybrid retrieval uses reciprocal-rank fusion and optional reranking.
+- The bounded LangGraph workflow routes text, table, and typed financial-fact retrieval.
+- Evidence gates abstain for weak support, private information, unsupported forecasts, missing
+  facts, or invalid citations.
+
+### Research interfaces
+
+- Filing differences use deterministic comparable periods and classify added, removed, and changed
+  passages.
+- Company Facts preserve raw facts and map restrained canonical metrics.
+- Research panels include feature provenance, corpus snapshot, calculation version, and leakage
+  validation.
+- Event studies consume provider-neutral adjusted bars and persist configuration, dataset version,
+  feature version, code SHA, statistics, and observations.
+- Thematic scans cap evidence per issuer.
+
+### Operations
+
+- Every batch ingest creates a manifest with configuration, stage latency/status, before/after
+  counts, provider usage, estimated cost, failures, and completion state.
+- Quality audits report stale companies, missing forms, duplicate accessions, documents without
+  chunks, chunks without embeddings, facts without documents, freshness, and coverage.
+- GitHub Actions applies Alembic before production ingestion and runs daily incremental checks.
+- Railway applies Alembic in `preDeployCommand`; the runtime command launches uvicorn only, so
+  index construction does not consume the healthcheck window.
+
+## Point-in-Time Model
+
+`available_at` is the visibility boundary. Retrieval requires `document.available_at <= as_of`.
+Panel generation requires every source document and XBRL fact to be available no later than the
+row timestamp. Event features carry their maximum source timestamp and fail before analysis if it
+exceeds event availability.
+
+Amendments compare to their original accession. Non-amended 10-K filings compare with the prior
+annual filing; 10-Q filings prefer the same quarter one year earlier.
 
 ## Cost Model
 
-The MVP architecture should stay local-first and cheap:
+- One PostgreSQL service replaces separate vector, lexical, trace, fact, and experiment stores.
+- SEC responses are cached.
+- Embeddings are missing-only, batched, concurrent, rate-limited, and retryable.
+- The default answer generator is deterministic and free.
+- Market data is supplied as CSV or Parquet rather than coupled to a paid provider.
+- OpenSearch, Kafka, distributed queues, portfolio simulation, and paid generation remain deferred.
 
-- PostgreSQL is the primary database, sparse retrieval engine, metadata store, trace store, and financial facts store.
-- `pgvector` is optional. The system must have a local deterministic embedding fallback.
-- OpenSearch, external embedding APIs, hosted rerankers, and LLM generation are optional extensions behind provider interfaces.
-- SEC requests should use local caching and rate limiting.
-- Tests must be offline and must not require paid providers.
-- Extra services such as queues, distributed workers, and search clusters should be added only after a concrete bottleneck appears.
+## Known Constraints
 
-The strongest portfolio signal should come from retrieval engineering: parsing quality, chunk metadata, hybrid ranking, eval methodology, citation verification, abstention policy, and auditable traces.
+- The current S&P 500 universe is current-constituent and survivorship-biased.
+- The reviewed 120-question holdout report is not yet published.
+- Production latency must be remeasured after the GIN/HNSW migration completes.
+- 8-K ingestion remains gated on point-in-time benchmark results.
+- PDF parsing is optional; the production corpus is SEC filing HTML.
