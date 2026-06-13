@@ -33,6 +33,15 @@ REQUIRES_FINANCIAL_FACTS_PATTERN = re.compile(
     r"\b(?:compare|comparison|growth|versus|vs\.?|year-over-year|yoy)\b",
     re.I,
 )
+EARNINGS_QUERY_PATTERN = re.compile(
+    r"\b(?:earnings|eps|financial results?|quarterly results?)\b",
+    re.I,
+)
+EARNINGS_EVIDENCE_PATTERN = re.compile(
+    r"\b(?:net income|earnings per share|diluted eps|revenue)\b"
+    r".{0,100}(?:\$|%|\d)",
+    re.I,
+)
 
 
 class GeneratedAnswer(BaseModel):
@@ -71,7 +80,16 @@ class MockAnswerGenerator:
             and len(candidate.text.split()) >= 5
         ]
         selection_limit = 2 if REQUIRES_FINANCIAL_FACTS_PATTERN.search(question) else 1
-        selected = (narrative or substantive or evidence)[:selection_limit]
+        answer_pool = narrative or substantive or evidence
+        if EARNINGS_QUERY_PATTERN.search(question):
+            answer_pool = sorted(
+                answer_pool,
+                key=lambda candidate: (
+                    not bool(EARNINGS_EVIDENCE_PATTERN.search(candidate.text)),
+                    -_candidate_score(candidate),
+                ),
+            )
+        selected = answer_pool[:selection_limit]
         claims = [
             AnswerClaim(
                 claim_text=_first_sentence(candidate.text),

@@ -44,6 +44,7 @@ def test_preprocess_routes_earnings_queries_without_forcing_table_filter() -> No
     )
 
     assert result.filters.tickers == ["META"]
+    assert result.filters.form_types == ["10-Q"]
     assert result.filters.element_types == []
     assert result.routes == ["text", "tables", "financial_facts"]
 

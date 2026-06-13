@@ -242,6 +242,15 @@ def test_extractive_answer_preserves_decimal_financial_values() -> None:
         "What did META report for earnings last quarter?",
         [
             RetrievalCandidate(
+                chunk_id=2,
+                text=(
+                    "Our Quarterly Reports on Form 10-Q are filed with the U.S. "
+                    "Securities and Exchange Commission."
+                ),
+                metadata={"element_type": "text", "ticker": "META"},
+                rerank_score=0.9,
+            ),
+            RetrievalCandidate(
                 chunk_id=1,
                 text=(
                     "• Net income was $26.77 billion, with diluted earnings per share "

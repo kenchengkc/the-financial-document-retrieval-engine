@@ -13,7 +13,10 @@ from fdre.retrieval.query import PreprocessedQuery, RouteName, SearchFilters
 
 FORM_PATTERNS = {
     "10-K": re.compile(r"\b(?:10-k|annual report)\b", re.I),
-    "10-Q": re.compile(r"\b(?:10-q|quarterly report)\b", re.I),
+    "10-Q": re.compile(
+        r"\b(?:10-q|quarterly report|last quarter|latest quarter)\b",
+        re.I,
+    ),
     "8-K": re.compile(r"\b8-k\b", re.I),
 }
 SECTION_PATTERNS = {
