@@ -44,10 +44,10 @@ flowchart LR
   ingest --> pg[(PostgreSQL + pgvector)]
   pg --> sparse[GIN full-text]
   pg --> dense[HNSW vector search]
-  sparse --> graph[Bounded LangGraph workflow]
-  dense --> graph
+  sparse --> workflow[Bounded LangGraph workflow]
+  dense --> workflow
   pg --> facts[Typed facts and research panels]
-  graph --> verify[Citation verification]
+  workflow --> verify[Citation verification]
   verify --> api[FastAPI]
   facts --> api
   api --> web[Next.js research UI]
