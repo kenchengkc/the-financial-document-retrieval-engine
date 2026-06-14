@@ -1,4 +1,12 @@
-import type { AnswerResponse, CoverageResponse } from "@/lib/types";
+import type {
+  AnswerResponse,
+  CompaniesResponse,
+  CoverageResponse,
+  OperationsQuality,
+  SearchFilters,
+  SearchResponse,
+  ThematicScanResponse,
+} from "@/lib/types";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(
   /\/$/,
@@ -52,4 +60,66 @@ export async function askQuestion(question: string): Promise<AnswerResponse> {
     throw new Error(await parseError(response));
   }
   return (await response.json()) as AnswerResponse;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(
+      "The FDRE backend is not reachable. Set NEXT_PUBLIC_API_URL to the deployed API URL.",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as T;
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+  } catch {
+    throw new Error(
+      "The FDRE backend is not reachable. Set NEXT_PUBLIC_API_URL to the deployed API URL.",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as T;
+}
+
+export function runSearch(
+  query: string,
+  filters: SearchFilters,
+  topK = 8,
+): Promise<SearchResponse> {
+  return postJson<SearchResponse>("/search", { query, filters, top_k: topK });
+}
+
+export function runThematicScan(
+  query: string,
+  issuers: number,
+  resultsPerIssuer: number,
+): Promise<ThematicScanResponse> {
+  return postJson<ThematicScanResponse>("/research/thematic-scan", {
+    query,
+    issuers,
+    results_per_issuer: resultsPerIssuer,
+  });
+}
+
+export function fetchCompanies(): Promise<CompaniesResponse> {
+  return getJson<CompaniesResponse>("/companies?indexed_only=true&limit=500");
+}
+
+export function fetchOperationsQuality(): Promise<OperationsQuality> {
+  return getJson<OperationsQuality>("/operations/quality");
 }

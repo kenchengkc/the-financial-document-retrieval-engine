@@ -48,3 +48,68 @@ export type AnswerResponse = {
   trace: TraceStep[];
   latency_ms: number;
 };
+
+export type SearchFilters = {
+  tickers?: string[];
+  form_types?: string[];
+  sections?: string[];
+  as_of?: string | null;
+  amendment_policy?: "include" | "exclude" | "only";
+};
+
+export type SearchResponse = {
+  query: string;
+  rewritten_queries: string[];
+  filters: Record<string, unknown>;
+  results: RetrievalCandidate[];
+  latency_ms: number;
+};
+
+export type IssuerEvidence = {
+  ticker: string;
+  company_name: string;
+  evidence: RetrievalCandidate[];
+};
+
+export type ThematicScanResponse = {
+  query: string;
+  filters: Record<string, unknown>;
+  issuer_count: number;
+  issuers: IssuerEvidence[];
+  latency_ms: number;
+};
+
+export type Company = {
+  ticker: string;
+  cik: string;
+  name: string;
+  exchange: string | null;
+  document_count: number;
+  chunk_count: number;
+  indexed: boolean;
+};
+
+export type CompaniesResponse = {
+  total: number;
+  companies: Company[];
+};
+
+export type OperationsQuality = {
+  generated_at: string;
+  company_count: number;
+  document_count: number;
+  chunk_count: number;
+  embedding_count: number;
+  stale_after_days: number;
+  stale_tickers: string[];
+  missing_expected_filings: string[];
+  duplicate_accession_groups: number;
+  documents_without_chunks: number;
+  chunks_without_embeddings: number;
+  facts_without_documents: number;
+  freshness_ratio: number;
+  document_chunk_coverage: number;
+  embedding_coverage: number;
+  recent_ingestion_success_rate: number;
+  latest_ingestion_completed_at: string | null;
+};

@@ -5,6 +5,8 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
+  Building2,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
@@ -12,24 +14,35 @@ import {
   Database,
   FileText,
   Filter,
+  GaugeCircle,
   Layers,
   LoaderCircle,
+  MessageSquareText,
   Route,
+  ScanSearch,
   Search,
   ShieldCheck,
   Timer,
 } from "lucide-react";
-import {
-  CSSProperties,
-  FormEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { OperationsPanel } from "@/components/operations-panel";
+import { RetrievePanel } from "@/components/retrieve-panel";
+import { ScreenPanel } from "@/components/screen-panel";
+import { UniversePanel } from "@/components/universe-panel";
+import {
+  ConfidenceRing,
+  EvidenceCard,
+  RetrievalFunnel,
+  SessionTelemetry,
+  formatLatency,
+  metadataValue,
+  resolvedScope,
+  traceCount,
+  type SessionRun,
+} from "@/components/instruments";
 import { askQuestion, checkHealth, fetchCoverage } from "@/lib/api";
-import type { AnswerResponse, CoverageResponse, RetrievalCandidate } from "@/lib/types";
+import type { AnswerResponse, CoverageResponse } from "@/lib/types";
 
 const exampleChips = [
   {
@@ -50,47 +63,15 @@ const exampleChips = [
   },
 ];
 
-function score(value: number | null) {
-  return value === null ? "n/a" : value.toFixed(3);
-}
+type ModeId = "ask" | "retrieve" | "screen" | "universe" | "operations";
 
-function metadataValue(value: unknown, fallback: string) {
-  return typeof value === "string" && value.trim() ? value : fallback;
-}
-
-function formatLatency(latencyMs: number) {
-  return latencyMs < 1000 ? `${latencyMs} ms` : `${(latencyMs / 1000).toFixed(1)} s`;
-}
-
-function traceCount(trace: AnswerResponse["trace"], node: string): number | null {
-  const step = trace.find((entry) => entry.node === node);
-  const value = step?.details?.count;
-  return typeof value === "number" ? value : null;
-}
-
-function resolvedScope(trace: AnswerResponse["trace"]) {
-  const step = trace.find((entry) => entry.node === "preprocess_query");
-  const filters = (step?.details?.filters ?? {}) as Record<string, unknown>;
-  const tickers = Array.isArray(filters.tickers) ? (filters.tickers as string[]) : [];
-  const forms = Array.isArray(filters.form_types) ? (filters.form_types as string[]) : [];
-  const asOf = typeof filters.as_of === "string" ? filters.as_of : null;
-  return { tickers, forms, asOf };
-}
-
-function median(values: number[]) {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-}
-
-type SessionRun = {
-  latencyMs: number;
-  grounded: boolean;
-  abstained: boolean;
-  topScore: number;
-  confidence: number;
-};
+const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] = [
+  { id: "ask", label: "Ask", hint: "Cited answers", icon: MessageSquareText },
+  { id: "retrieve", label: "Retrieve", hint: "Point-in-time search", icon: CalendarClock },
+  { id: "screen", label: "Screen", hint: "Cross-sectional scan", icon: ScanSearch },
+  { id: "universe", label: "Universe", hint: "Coverage explorer", icon: Building2 },
+  { id: "operations", label: "Operations", hint: "Data quality", icon: GaugeCircle },
+];
 
 function Wave({ cls }: { cls: string }) {
   return (
@@ -129,157 +110,8 @@ function SunsetScene() {
   );
 }
 
-function Evidence({ candidate, index }: { candidate: RetrievalCandidate; index: number }) {
-  const metadata = candidate.metadata;
-  const ticker = metadataValue(metadata.ticker, "Document");
-  const formType = metadataValue(metadata.form_type, "Filing");
-  const section = metadataValue(metadata.section, "Unsectioned");
-  const filingDate = metadataValue(metadata.filing_date, "Date unavailable");
-
-  return (
-    <details className="evidence" open={index === 0 ? true : undefined}>
-      <summary>
-        <span className="evidence-rank">{String(index + 1).padStart(2, "0")}</span>
-        <span className="evidence-source">
-          <strong>{ticker}</strong>
-          <span>
-            {formType} · {filingDate}
-          </span>
-        </span>
-        <span className="evidence-section">{section}</span>
-        <span className="evidence-score">{score(candidate.rerank_score)} rerank</span>
-        <ChevronDown size={16} aria-hidden="true" />
-      </summary>
-      <div className="evidence-body">
-        <p>{candidate.text}</p>
-        <div className="scores">
-          <ScoreGauge label="Dense" hint="cosine" value={candidate.dense_score} />
-          <ScoreGauge label="Sparse" hint="lexical" value={candidate.sparse_score} />
-          <ScoreGauge label="Hybrid" hint="fused" value={candidate.hybrid_score} />
-          <ScoreGauge label="Rerank" hint="cross-enc" value={candidate.rerank_score} accent />
-        </div>
-      </div>
-    </details>
-  );
-}
-
-function ScoreGauge({
-  label,
-  hint,
-  value,
-  accent = false,
-}: {
-  label: string;
-  hint: string;
-  value: number | null;
-  accent?: boolean;
-}) {
-  const pct = value === null ? 0 : Math.max(0, Math.min(1, value)) * 100;
-  return (
-    <div className={`gauge${accent ? " accent" : ""}`}>
-      <span className="gauge-head">
-        <span className="gauge-label">{label}</span>
-        <span className="gauge-hint">{hint}</span>
-      </span>
-      <span className="gauge-track" aria-hidden="true">
-        <span className="gauge-fill" style={{ width: `${pct}%` }} />
-      </span>
-      <span className="gauge-value">{score(value)}</span>
-    </div>
-  );
-}
-
-function ConfidenceRing({ value }: { value: number }) {
-  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
-  return (
-    <div
-      className="conf-ring"
-      style={{ "--p": pct } as CSSProperties}
-      role="img"
-      aria-label={`${pct} percent retrieval confidence`}
-    >
-      <span className="conf-num">{pct}</span>
-      <span className="conf-unit">%</span>
-    </div>
-  );
-}
-
-function RetrievalFunnel({
-  retrieved,
-  reranked,
-  gatePassed,
-  cited,
-}: {
-  retrieved: number;
-  reranked: number;
-  gatePassed: boolean;
-  cited: number;
-}) {
-  const max = Math.max(retrieved, reranked, cited, 1);
-  const stages: { label: string; sub: string; count: number; bar: number; tone?: string }[] = [
-    { label: "Retrieved", sub: "hybrid candidates", count: retrieved, bar: retrieved },
-    { label: "Reranked", sub: "cross-encoder kept", count: reranked, bar: reranked },
-    {
-      label: gatePassed ? "Gate passed" : "Gate held",
-      sub: "evidence threshold",
-      count: gatePassed ? reranked : 0,
-      bar: gatePassed ? reranked : 0,
-      tone: gatePassed ? undefined : "hold",
-    },
-    { label: "Cited", sub: "citation-verified", count: cited, bar: cited, tone: "cited" },
-  ];
-  return (
-    <ol className="funnel" aria-label="Retrieval pipeline">
-      {stages.map((stage) => (
-        <li key={stage.label} className={stage.tone ? `fn-${stage.tone}` : undefined}>
-          <span className="fn-label">
-            {stage.label}
-            <small>{stage.sub}</small>
-          </span>
-          <span className="fn-track" aria-hidden="true">
-            <span className="fn-fill" style={{ width: `${(stage.bar / max) * 100}%` }} />
-          </span>
-          <span className="fn-count">{stage.count}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function SessionTelemetry({ runs }: { runs: SessionRun[] }) {
-  const grounded = runs.filter((run) => run.grounded).length;
-  const abstained = runs.filter((run) => run.abstained).length;
-  const groundedPct = runs.length ? Math.round((grounded / runs.length) * 100) : 0;
-  const medianLatency = Math.round(median(runs.map((run) => run.latencyMs)));
-  const avgTop = runs.length
-    ? runs.reduce((sum, run) => sum + run.topScore, 0) / runs.length
-    : 0;
-  const cells = [
-    { k: "Queries", v: String(runs.length) },
-    { k: "Grounded", v: `${groundedPct}%` },
-    { k: "Abstained", v: String(abstained) },
-    { k: "Median latency", v: formatLatency(medianLatency) },
-    { k: "Avg top rerank", v: avgTop.toFixed(3) },
-  ];
-  return (
-    <div className="telemetry" aria-label="Session telemetry">
-      <span className="tm-title">
-        <span className="tm-dot" aria-hidden="true" />
-        Session telemetry
-      </span>
-      <dl className="tm-cells">
-        {cells.map((cell) => (
-          <div key={cell.k}>
-            <dt>{cell.k}</dt>
-            <dd>{cell.v}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
 export default function Home() {
+  const [mode, setMode] = useState<ModeId>("ask");
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AnswerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -289,7 +121,7 @@ export default function Home() {
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
   const questionRef = useRef<HTMLInputElement | null>(null);
-  const resultsRef = useRef<HTMLElement | null>(null);
+  const consoleRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -303,7 +135,7 @@ export default function Home() {
 
   useEffect(() => {
     if (loading || result || error) {
-      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      consoleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [loading, result, error]);
 
@@ -315,9 +147,23 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [loading]);
 
+  function pushRun(run: SessionRun) {
+    setHistory((previous) => [...previous, run]);
+  }
+
+  function selectMode(next: ModeId) {
+    setMode(next);
+    if (next !== "ask") {
+      window.requestAnimationFrame(() =>
+        consoleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!question.trim() || loading) return;
+    setMode("ask");
     setLoadingStage(0);
     setLoading(true);
     setResult(null);
@@ -326,16 +172,14 @@ export default function Home() {
       const response = await askQuestion(question.trim());
       setResult(response);
       setApiOnline(true);
-      setHistory((previous) => [
-        ...previous,
-        {
-          latencyMs: response.latency_ms,
-          grounded: Boolean(response.answer) && !response.abstained,
-          abstained: response.abstained,
-          topScore: Number(response.retrieval_gate.max_score ?? 0),
-          confidence: response.confidence ?? 0,
-        },
-      ]);
+      pushRun({
+        mode: "ask",
+        latencyMs: response.latency_ms,
+        grounded: Boolean(response.answer) && !response.abstained,
+        abstained: response.abstained,
+        topScore: Number(response.retrieval_gate.max_score ?? 0),
+        confidence: response.confidence ?? 0,
+      });
     } catch (cause) {
       setResult(null);
       setApiOnline(false);
@@ -389,7 +233,7 @@ export default function Home() {
           </Link>
           <nav className="hd-links" aria-label="Site">
             <Link className="on" href="/">
-              Search
+              Console
             </Link>
             <Link href="/about">About</Link>
           </nav>
@@ -433,8 +277,8 @@ export default function Home() {
             <p className="hd-eyebrow">Research infrastructure for funds and trading firms</p>
             <h1>Financial Document Retrieval Engine</h1>
             <p className="lede">
-              Point-in-time SEC filing retrieval, structured XBRL facts, filing-change analysis,
-              and reproducible research exports with evidence behind every result.
+              A research console over SEC filings: cited answers, point-in-time retrieval,
+              cross-sectional scans, coverage, and live data-quality — evidence behind every result.
             </p>
 
             <form className="hd-search gh-form" onSubmit={submit}>
@@ -491,247 +335,53 @@ export default function Home() {
         </div>
       </section>
 
-      <main ref={resultsRef}>
+      <main>
         {history.length > 0 && <SessionTelemetry runs={history} />}
 
-        {error && (
-          <div className="notice error" role="alert">
-            <CircleAlert size={19} />
-            <div>
-              <strong>The API could not answer this request.</strong>
-              <p>{error}</p>
-            </div>
+        <div className="console" ref={consoleRef}>
+          <div className="console-rail" role="tablist" aria-label="Research modes">
+            {MODES.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === item.id}
+                  className={`console-tab${mode === item.id ? " on" : ""}`}
+                  onClick={() => selectMode(item.id)}
+                >
+                  <Icon size={17} aria-hidden="true" />
+                  <span>
+                    <strong>{item.label}</strong>
+                    <small>{item.hint}</small>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        )}
 
-        <div className={`result-grid${result ? " has-result" : ""}`}>
-          <section className="result-column" aria-live="polite">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">{result ? "Research answer" : "Search workspace"}</p>
-                <h2>
-                  {result
-                    ? result.question
-                    : loading
-                      ? "Retrieving evidence"
-                      : "Ready for a query"}
-                </h2>
-              </div>
-              {result && (
-                <span className="run-id">Run {result.answer_run_id}</span>
-              )}
-            </div>
-
-            {loading && (
-              <div className="loading-state" role="status">
-                <LoaderCircle className="spin" size={24} />
-                <div>
-                  <h3>Searching indexed SEC filings</h3>
-                  <p>{question}</p>
-                </div>
-                <ol aria-label="Retrieval stages">
-                  {["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"].map(
-                    (stage, index) => (
-                      <li
-                        key={stage}
-                        className={
-                          index === loadingStage
-                            ? "active"
-                            : index < loadingStage
-                              ? "complete"
-                              : undefined
-                        }
-                        aria-current={index === loadingStage ? "step" : undefined}
-                      >
-                        {stage}
-                      </li>
-                    ),
-                  )}
-                </ol>
-              </div>
+          <div className="console-body">
+            {mode === "ask" && (
+              <AskWorkspace
+                question={question}
+                result={result}
+                error={error}
+                loading={loading}
+                loadingStage={loadingStage}
+                displayEvidence={displayEvidence}
+                funnel={funnel}
+                scope={scope}
+                primaryTicker={primaryTicker}
+                primaryForm={primaryForm}
+                primaryDate={primaryDate}
+              />
             )}
-
-            {!result && !error && !loading && (
-              <div className="empty-state">
-                <Database size={28} />
-                <h3>Ask a filing question above</h3>
-                <p>
-                  Search a company, filing period, disclosure, table, or financial result.
-                </p>
-              </div>
-            )}
-
-            {result?.abstained && (
-              <div className="notice abstain">
-                <ShieldCheck size={20} />
-                <div>
-                  <strong>FDRE abstained</strong>
-                  <p>{result.abstention_reason}</p>
-                </div>
-              </div>
-            )}
-
-            {result?.answer && (
-              <div className="answer">
-                <div className="answer-meta">
-                  <CheckCircle2 size={17} />
-                  <span>Citation verified</span>
-                  <span>{Math.round((result.confidence ?? 0) * 100)}% retrieval confidence</span>
-                </div>
-                <p>{result.answer}</p>
-                <footer>
-                  <span>
-                    <FileText size={14} aria-hidden="true" />
-                    {primaryTicker} · {primaryForm} · {primaryDate}
-                  </span>
-                  <span>
-                    <Timer size={14} aria-hidden="true" />
-                    {formatLatency(result.latency_ms)}
-                  </span>
-                </footer>
-              </div>
-            )}
-
-            {result && (
-              <>
-                <div className="section-heading evidence-title">
-                  <div>
-                    <p className="eyebrow">Primary sources</p>
-                    <h2>Sources supporting this answer</h2>
-                  </div>
-                  <span>{result.evidence.length} sources</span>
-                </div>
-                <div className="evidence-list">
-                  {displayEvidence.map((candidate, index) => (
-                    <Evidence key={candidate.chunk_id} candidate={candidate} index={index} />
-                  ))}
-                  {result.evidence.length === 0 && (
-                    <p className="muted">No evidence passed the retrieval gate.</p>
-                  )}
-                </div>
-              </>
-            )}
-          </section>
-
-          {result && (
-            <aside className="inspection">
-              <section>
-                <div className="aside-title">
-                  <Route size={17} />
-                  <h2>Run summary</h2>
-                </div>
-                <div className="run-dash">
-                  <div className="conf-block">
-                    <ConfidenceRing value={result.confidence ?? 0} />
-                    <span className="conf-caption">retrieval confidence</span>
-                  </div>
-                  <dl className="run-stats">
-                    <div>
-                      <dt>Evidence gate</dt>
-                      <dd className={result.retrieval_gate.passed ? "ok" : "hold"}>
-                        {result.retrieval_gate.passed ? "Passed" : "Held"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Top rerank</dt>
-                      <dd>{Number(result.retrieval_gate.max_score ?? 0).toFixed(3)}</dd>
-                    </div>
-                    <div>
-                      <dt>Latency</dt>
-                      <dd>{formatLatency(result.latency_ms)}</dd>
-                    </div>
-                  </dl>
-                </div>
-                {funnel && (
-                  <RetrievalFunnel
-                    retrieved={funnel.retrieved}
-                    reranked={funnel.reranked}
-                    gatePassed={funnel.gatePassed}
-                    cited={funnel.cited}
-                  />
-                )}
-                <div className="scope-row">
-                  <span className="scope-head">
-                    <Layers size={13} aria-hidden="true" />
-                    Routes
-                  </span>
-                  <div className="route-list">
-                    {result.route.map((route) => (
-                      <span key={route}>{route.replaceAll("_", " ")}</span>
-                    ))}
-                  </div>
-                </div>
-                {scope && (scope.tickers.length > 0 || scope.forms.length > 0) && (
-                  <div className="scope-row">
-                    <span className="scope-head">
-                      <Filter size={13} aria-hidden="true" />
-                      Resolved scope
-                    </span>
-                    <div className="scope-list">
-                      {scope.tickers.map((ticker) => (
-                        <span key={`t-${ticker}`} className="scope-tag">
-                          {ticker}
-                        </span>
-                      ))}
-                      {scope.forms.map((form) => (
-                        <span key={`f-${form}`} className="scope-tag form">
-                          {form}
-                        </span>
-                      ))}
-                      <span className="scope-tag pit">
-                        {scope.asOf ? `as-of ${scope.asOf.slice(0, 10)}` : "latest available"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </section>
-
-              <section>
-                <div className="aside-title">
-                  <ShieldCheck size={17} />
-                  <h2>Citations</h2>
-                </div>
-                {result.citations.length ? (
-                  <ol className="citations">
-                    {result.citations.map((citation) => (
-                      <li key={`${citation.chunk_id}-${citation.claim_text}`}>
-                        <strong>
-                          {metadataValue(citation.metadata.ticker, "SEC")} ·{" "}
-                          {metadataValue(citation.metadata.form_type, "Filing")}
-                        </strong>
-                        <p>{citation.claim_text}</p>
-                        <span>{Math.round(citation.confidence * 100)}% text overlap</span>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="muted">No citations were returned.</p>
-                )}
-              </section>
-
-              <details className="trace-disclosure">
-                <summary>
-                  <span className="aside-title">
-                    <Activity size={17} />
-                    <strong>Workflow trace</strong>
-                  </span>
-                  <span>{result.trace.length} steps</span>
-                  <ChevronDown size={15} aria-hidden="true" />
-                </summary>
-                <ol className="trace">
-                  {result.trace.map((step, index) => (
-                    <li key={`${step.node}-${index}`}>
-                      <span>{index + 1}</span>
-                      <div>
-                        <strong>{step.node.replaceAll("_", " ")}</strong>
-                        <small>{JSON.stringify(step.details)}</small>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </details>
-            </aside>
-          )}
+            {mode === "retrieve" && <RetrievePanel onRun={pushRun} />}
+            {mode === "screen" && <ScreenPanel onRun={pushRun} />}
+            {mode === "universe" && <UniversePanel />}
+            {mode === "operations" && <OperationsPanel />}
+          </div>
         </div>
 
         <section className="architecture">
@@ -760,6 +410,273 @@ export default function Home() {
           </a>
         </section>
       </main>
+    </div>
+  );
+}
+
+function AskWorkspace({
+  question,
+  result,
+  error,
+  loading,
+  loadingStage,
+  displayEvidence,
+  funnel,
+  scope,
+  primaryTicker,
+  primaryForm,
+  primaryDate,
+}: {
+  question: string;
+  result: AnswerResponse | null;
+  error: string | null;
+  loading: boolean;
+  loadingStage: number;
+  displayEvidence: AnswerResponse["evidence"];
+  funnel: { retrieved: number; reranked: number; gatePassed: boolean; cited: number } | null;
+  scope: { tickers: string[]; forms: string[]; asOf: string | null } | null;
+  primaryTicker: string;
+  primaryForm: string;
+  primaryDate: string;
+}) {
+  return (
+    <div aria-live="polite">
+      {error && (
+        <div className="notice error" role="alert">
+          <CircleAlert size={19} />
+          <div>
+            <strong>The API could not answer this request.</strong>
+            <p>{error}</p>
+          </div>
+        </div>
+      )}
+
+      <div className={`result-grid${result ? " has-result" : ""}`}>
+        <section className="result-column">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">{result ? "Research answer" : "Ask workspace"}</p>
+              <h2>
+                {result ? result.question : loading ? "Retrieving evidence" : "Ready for a query"}
+              </h2>
+            </div>
+            {result && <span className="run-id">Run {result.answer_run_id}</span>}
+          </div>
+
+          {loading && (
+            <div className="loading-state" role="status">
+              <LoaderCircle className="spin" size={24} />
+              <div>
+                <h3>Searching indexed SEC filings</h3>
+                <p>{question}</p>
+              </div>
+              <ol aria-label="Retrieval stages">
+                {["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"].map(
+                  (stage, index) => (
+                    <li
+                      key={stage}
+                      className={
+                        index === loadingStage
+                          ? "active"
+                          : index < loadingStage
+                            ? "complete"
+                            : undefined
+                      }
+                      aria-current={index === loadingStage ? "step" : undefined}
+                    >
+                      {stage}
+                    </li>
+                  ),
+                )}
+              </ol>
+            </div>
+          )}
+
+          {!result && !error && !loading && (
+            <div className="empty-state">
+              <Database size={28} />
+              <h3>Ask a filing question above</h3>
+              <p>Search a company, filing period, disclosure, table, or financial result.</p>
+            </div>
+          )}
+
+          {result?.abstained && (
+            <div className="notice abstain">
+              <ShieldCheck size={20} />
+              <div>
+                <strong>FDRE abstained</strong>
+                <p>{result.abstention_reason}</p>
+              </div>
+            </div>
+          )}
+
+          {result?.answer && (
+            <div className="answer">
+              <div className="answer-meta">
+                <CheckCircle2 size={17} />
+                <span>Citation verified</span>
+                <span>{Math.round((result.confidence ?? 0) * 100)}% retrieval confidence</span>
+              </div>
+              <p>{result.answer}</p>
+              <footer>
+                <span>
+                  <FileText size={14} aria-hidden="true" />
+                  {primaryTicker} · {primaryForm} · {primaryDate}
+                </span>
+                <span>
+                  <Timer size={14} aria-hidden="true" />
+                  {formatLatency(result.latency_ms)}
+                </span>
+              </footer>
+            </div>
+          )}
+
+          {result && (
+            <>
+              <div className="section-heading evidence-title">
+                <div>
+                  <p className="eyebrow">Primary sources</p>
+                  <h2>Sources supporting this answer</h2>
+                </div>
+                <span>{result.evidence.length} sources</span>
+              </div>
+              <div className="evidence-list">
+                {displayEvidence.map((candidate, index) => (
+                  <EvidenceCard
+                    key={candidate.chunk_id}
+                    candidate={candidate}
+                    index={index}
+                    defaultOpen={index === 0}
+                  />
+                ))}
+                {result.evidence.length === 0 && (
+                  <p className="muted">No evidence passed the retrieval gate.</p>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+
+        {result && (
+          <aside className="inspection">
+            <section>
+              <div className="aside-title">
+                <Route size={17} />
+                <h2>Run summary</h2>
+              </div>
+              <div className="run-dash">
+                <div className="conf-block">
+                  <ConfidenceRing value={result.confidence ?? 0} />
+                  <span className="conf-caption">retrieval confidence</span>
+                </div>
+                <dl className="run-stats">
+                  <div>
+                    <dt>Evidence gate</dt>
+                    <dd className={result.retrieval_gate.passed ? "ok" : "hold"}>
+                      {result.retrieval_gate.passed ? "Passed" : "Held"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Top rerank</dt>
+                    <dd>{Number(result.retrieval_gate.max_score ?? 0).toFixed(3)}</dd>
+                  </div>
+                  <div>
+                    <dt>Latency</dt>
+                    <dd>{formatLatency(result.latency_ms)}</dd>
+                  </div>
+                </dl>
+              </div>
+              {funnel && (
+                <RetrievalFunnel
+                  retrieved={funnel.retrieved}
+                  reranked={funnel.reranked}
+                  gatePassed={funnel.gatePassed}
+                  cited={funnel.cited}
+                />
+              )}
+              <div className="scope-row">
+                <span className="scope-head">
+                  <Layers size={13} aria-hidden="true" />
+                  Routes
+                </span>
+                <div className="route-list">
+                  {result.route.map((route) => (
+                    <span key={route}>{route.replaceAll("_", " ")}</span>
+                  ))}
+                </div>
+              </div>
+              {scope && (scope.tickers.length > 0 || scope.forms.length > 0) && (
+                <div className="scope-row">
+                  <span className="scope-head">
+                    <Filter size={13} aria-hidden="true" />
+                    Resolved scope
+                  </span>
+                  <div className="scope-list">
+                    {scope.tickers.map((ticker) => (
+                      <span key={`t-${ticker}`} className="scope-tag">
+                        {ticker}
+                      </span>
+                    ))}
+                    {scope.forms.map((form) => (
+                      <span key={`f-${form}`} className="scope-tag form">
+                        {form}
+                      </span>
+                    ))}
+                    <span className="scope-tag pit">
+                      {scope.asOf ? `as-of ${scope.asOf.slice(0, 10)}` : "latest available"}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section>
+              <div className="aside-title">
+                <ShieldCheck size={17} />
+                <h2>Citations</h2>
+              </div>
+              {result.citations.length ? (
+                <ol className="citations">
+                  {result.citations.map((citation) => (
+                    <li key={`${citation.chunk_id}-${citation.claim_text}`}>
+                      <strong>
+                        {metadataValue(citation.metadata.ticker, "SEC")} ·{" "}
+                        {metadataValue(citation.metadata.form_type, "Filing")}
+                      </strong>
+                      <p>{citation.claim_text}</p>
+                      <span>{Math.round(citation.confidence * 100)}% text overlap</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="muted">No citations were returned.</p>
+              )}
+            </section>
+
+            <details className="trace-disclosure">
+              <summary>
+                <span className="aside-title">
+                  <Activity size={17} />
+                  <strong>Workflow trace</strong>
+                </span>
+                <span>{result.trace.length} steps</span>
+                <ChevronDown size={15} aria-hidden="true" />
+              </summary>
+              <ol className="trace">
+                {result.trace.map((step, index) => (
+                  <li key={`${step.node}-${index}`}>
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{step.node.replaceAll("_", " ")}</strong>
+                      <small>{JSON.stringify(step.details)}</small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

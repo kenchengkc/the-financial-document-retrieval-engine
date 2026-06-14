@@ -33,7 +33,7 @@ export default function About() {
             </span>
           </Link>
           <nav className="hd-links" aria-label="Site">
-            <Link href="/">Search</Link>
+            <Link href="/">Console</Link>
             <Link className="on" href="/about">
               About
             </Link>
