@@ -14,6 +14,9 @@ import {
   TableProperties,
 } from "lucide-react";
 
+import { LoopVideo } from "./loop-video";
+import { SearchDemo } from "./search-demo";
+
 export const metadata: Metadata = {
   title: "About — FDRE",
   description:
@@ -52,30 +55,12 @@ export default function About() {
         </header>
 
         <div className="ih-stage">
-          <div className="ih-panel artifact-panel filing-artifact">
-            <div className="artifact-heading">
-              <span>
-                <FileText size={15} aria-hidden="true" />
-                SEC 10-Q
-              </span>
-              <strong>META</strong>
+          <div className="ih-panel left">
+            <LoopVideo src="/about/panel-left.mp4" poster="/about/panel-left.png" />
+            <div className="ih-motion" aria-hidden="true" />
+            <div className="ih-tag">
+              <span className="lv" aria-hidden="true" /> loops · 10s
             </div>
-            <div className="artifact-primary">
-              <small>Net income</small>
-              <strong>$26.77B</strong>
-              <span>Three months ended March 31, 2026</span>
-            </div>
-            <dl className="artifact-facts">
-              <div>
-                <dt>Revenue</dt>
-                <dd>$56.31B</dd>
-              </div>
-              <div>
-                <dt>Diluted EPS</dt>
-                <dd>$10.44</dd>
-              </div>
-            </dl>
-            <p className="artifact-foot">Accepted April 30, 2026</p>
           </div>
 
           <div className="ih-card">
@@ -94,51 +79,37 @@ export default function About() {
               <span className="sep" aria-hidden="true" />
               <span>No trading-strategy claims</span>
             </div>
-            <a className="ih-down" href="#methodology" aria-label="Scroll to methodology">
+            <a className="ih-down" href="#see-it-work" aria-label="Scroll to the live demo">
               <ArrowDown size={18} strokeWidth={1.8} />
             </a>
           </div>
 
-          <div className="ih-panel artifact-panel retrieval-artifact">
-            <div className="artifact-heading">
-              <span>
-                <CheckCircle2 size={15} aria-hidden="true" />
-                Retrieval run
-              </span>
-              <strong>Verified</strong>
-            </div>
-            <ol className="artifact-steps">
-              <li>
-                <span>01</span>
-                <div>
-                  <strong>Resolve issuer</strong>
-                  <small>META only</small>
-                </div>
-              </li>
-              <li>
-                <span>02</span>
-                <div>
-                  <strong>Hybrid retrieve</strong>
-                  <small>Text · tables · facts</small>
-                </div>
-              </li>
-              <li>
-                <span>03</span>
-                <div>
-                  <strong>Verify citation</strong>
-                  <small>100% text overlap</small>
-                </div>
-              </li>
-            </ol>
-            <div className="artifact-score">
-              <span>Top rerank score</span>
-              <strong>0.648</strong>
+          <div className="ih-panel right">
+            <LoopVideo src="/about/panel-right.mp4" poster="/about/panel-right.png" />
+            <div className="ih-motion" aria-hidden="true" />
+            <div className="ih-tag">
+              <span className="lv" aria-hidden="true" /> loops · 10s
             </div>
           </div>
         </div>
       </section>
 
       <main>
+        <section className="demo-band" id="see-it-work" aria-labelledby="see-it-work-title">
+          <div className="proof-heading">
+            <p className="eyebrow">See it work</p>
+            <h2 id="see-it-work-title">A question in, audited evidence out</h2>
+            <p>
+              Every answer carries its citations, retrieval scores, and the discipline to abstain
+              when the filings do not support a claim. This is the live console, replayed.
+            </p>
+          </div>
+          <SearchDemo />
+          <p className="demo-foot">
+            <Link href="/">Open the live console →</Link>
+          </p>
+        </section>
+
         <section className="proof-band" aria-labelledby="verified-scale">
           <div className="proof-heading">
             <p className="eyebrow">Verified production corpus</p>
@@ -166,6 +137,81 @@ export default function About() {
               <dd>Voyage embedding dimensions</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="specimen-band" aria-labelledby="specimen-title">
+          <div className="proof-heading">
+            <p className="eyebrow">Specimen outputs</p>
+            <h2 id="specimen-title">What a single result looks like</h2>
+            <p>
+              A typed financial fact resolved to its filing, and the bounded retrieval run that
+              produced a verified answer — the artifacts behind every console response.
+            </p>
+          </div>
+          <div className="specimen-grid">
+            <div className="ih-panel artifact-panel filing-artifact">
+              <div className="artifact-heading">
+                <span>
+                  <FileText size={15} aria-hidden="true" />
+                  SEC 10-Q
+                </span>
+                <strong>META</strong>
+              </div>
+              <div className="artifact-primary">
+                <small>Net income</small>
+                <strong>$26.77B</strong>
+                <span>Three months ended March 31, 2026</span>
+              </div>
+              <dl className="artifact-facts">
+                <div>
+                  <dt>Revenue</dt>
+                  <dd>$56.31B</dd>
+                </div>
+                <div>
+                  <dt>Diluted EPS</dt>
+                  <dd>$10.44</dd>
+                </div>
+              </dl>
+              <p className="artifact-foot">Accepted April 30, 2026</p>
+            </div>
+
+            <div className="ih-panel artifact-panel retrieval-artifact">
+              <div className="artifact-heading">
+                <span>
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  Retrieval run
+                </span>
+                <strong>Verified</strong>
+              </div>
+              <ol className="artifact-steps">
+                <li>
+                  <span>01</span>
+                  <div>
+                    <strong>Resolve issuer</strong>
+                    <small>META only</small>
+                  </div>
+                </li>
+                <li>
+                  <span>02</span>
+                  <div>
+                    <strong>Hybrid retrieve</strong>
+                    <small>Text · tables · facts</small>
+                  </div>
+                </li>
+                <li>
+                  <span>03</span>
+                  <div>
+                    <strong>Verify citation</strong>
+                    <small>100% text overlap</small>
+                  </div>
+                </li>
+              </ol>
+              <div className="artifact-score">
+                <span>Top rerank score</span>
+                <strong>0.648</strong>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="proof-band" aria-labelledby="engineering-evidence">
