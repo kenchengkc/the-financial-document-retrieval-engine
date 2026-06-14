@@ -58,9 +58,6 @@ export default function About() {
           <div className="ih-panel left">
             <LoopVideo src="/about/panel-left.mp4" poster="/about/panel-left.png" />
             <div className="ih-motion" aria-hidden="true" />
-            <div className="ih-tag">
-              <span className="lv" aria-hidden="true" /> loops · 10s
-            </div>
           </div>
 
           <div className="ih-card">
@@ -87,9 +84,6 @@ export default function About() {
           <div className="ih-panel right">
             <LoopVideo src="/about/panel-right.mp4" poster="/about/panel-right.png" />
             <div className="ih-motion" aria-hidden="true" />
-            <div className="ih-tag">
-              <span className="lv" aria-hidden="true" /> loops · 10s
-            </div>
           </div>
         </div>
       </section>

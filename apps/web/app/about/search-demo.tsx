@@ -6,6 +6,7 @@ import {
   FileText,
   LoaderCircle,
   Lock,
+  MousePointer2,
   Search,
 } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -22,7 +23,7 @@ function usePrefersReducedMotion() {
   );
 }
 
-type Phase = "typing" | "thinking" | "answer";
+type Phase = "typing" | "clicking" | "thinking" | "answer";
 
 type Source = { ticker: string; form: string; section: string; score: string };
 
@@ -87,21 +88,28 @@ export function SearchDemo() {
   const current = SCENES[scene];
   const abstained = current.sources.length === 0;
 
-  // type the query out, then move to thinking
+  // type the query out, then move the cursor to the button
   useEffect(() => {
     if (reduced || phase !== "typing") return;
     if (typed >= current.query.length) {
-      const hold = window.setTimeout(() => setPhase("thinking"), 600);
+      const hold = window.setTimeout(() => setPhase("clicking"), 500);
       return () => window.clearTimeout(hold);
     }
     const tick = window.setTimeout(() => setTyped((value) => value + 1), 40);
     return () => window.clearTimeout(tick);
   }, [reduced, phase, typed, current.query.length]);
 
+  // cursor glides to the button and clicks -> thinking
+  useEffect(() => {
+    if (reduced || phase !== "clicking") return;
+    const timer = window.setTimeout(() => setPhase("thinking"), 1050);
+    return () => window.clearTimeout(timer);
+  }, [reduced, phase]);
+
   // thinking -> answer
   useEffect(() => {
     if (reduced || phase !== "thinking") return;
-    const timer = window.setTimeout(() => setPhase("answer"), 1700);
+    const timer = window.setTimeout(() => setPhase("answer"), 1500);
     return () => window.clearTimeout(timer);
   }, [reduced, phase]);
 
@@ -119,9 +127,10 @@ export function SearchDemo() {
   const shownQuery = reduced ? current.query : current.query.slice(0, typed);
   const showAnswer = reduced || phase === "answer";
   const showThinking = !reduced && phase === "thinking";
+  const clicking = phase === "clicking";
 
   return (
-    <div className="bdemo" aria-hidden="true">
+    <div className={`bdemo${clicking ? " clicking" : ""}`} aria-hidden="true">
       <div className="bdemo-bar">
         <span className="bdemo-dots">
           <i />
@@ -148,6 +157,11 @@ export function SearchDemo() {
           <span className={`bdemo-go${showThinking ? " busy" : ""}`}>
             {showThinking ? <LoaderCircle className="spin" size={14} /> : <ArrowRight size={14} />}
           </span>
+          {clicking && (
+            <span className="bdemo-cursor" key={scene}>
+              <MousePointer2 size={18} aria-hidden="true" />
+            </span>
+          )}
         </div>
 
         {showThinking && (

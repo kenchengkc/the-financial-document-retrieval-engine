@@ -862,45 +862,6 @@ a {
   }
 }
 
-.ih-tag {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(8, 22, 18, 0.5);
-  backdrop-filter: blur(6px);
-  color: rgba(238, 246, 242, 0.92);
-  font: 600 10px var(--sans);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.ih-tag .lv {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 3px rgba(58, 138, 112, 0.3);
-  animation: ihBlink 2.4s ease-in-out infinite;
-}
-
-@keyframes ihBlink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
 .artifact-panel {
   display: flex;
   flex-direction: column;
@@ -3249,6 +3210,7 @@ main {
 }
 
 .bdemo-search {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3256,6 +3218,55 @@ main {
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface-muted);
+}
+
+.bdemo-cursor {
+  position: absolute;
+  top: 17px;
+  right: 28px;
+  z-index: 6;
+  color: var(--forest);
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1.5px rgba(255, 255, 255, 0.95));
+  animation: cursorClick 1s ease forwards;
+}
+
+@keyframes cursorClick {
+  0% {
+    transform: translate(-190px, 30px);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  66% {
+    transform: translate(0, 0) scale(1);
+  }
+  76% {
+    transform: translate(0, 0) scale(0.76);
+  }
+  86% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+.bdemo.clicking .bdemo-go {
+  animation: goPress 0.5s ease 0.64s;
+}
+
+@keyframes goPress {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(0.84);
+    background: var(--green-deep);
+  }
 }
 
 .bdemo-search > svg {
