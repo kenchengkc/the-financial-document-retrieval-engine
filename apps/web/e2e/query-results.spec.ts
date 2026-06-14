@@ -111,7 +111,11 @@ async function mockApi(page: import("@playwright/test").Page) {
         financial_facts: [],
         retrieval_gate: { evidence_count: 2, max_score: 0.82, passed: true },
         trace: [
-          { node: "preprocess_query", details: { tickers: ["META"] } },
+          {
+            node: "preprocess_query",
+            details: { filters: { tickers: ["META"], form_types: ["10-Q"], as_of: null } },
+          },
+          { node: "merge_candidates", details: { count: 3 } },
           { node: "rerank", details: { count: 2 } },
           { node: "verify_citations", details: { valid: true } },
         ],
@@ -138,6 +142,12 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
   await expect(evidence.first()).toContainText("$26.77 billion");
   await expect(evidence.nth(1)).not.toHaveAttribute("open", "");
   await expect(page.getByText("preprocess query")).not.toBeVisible();
+
+  // Instrument panel: retrieval funnel, resolved scope, and session telemetry.
+  await expect(page.getByText("Session telemetry")).toBeVisible();
+  await expect(page.locator(".funnel")).toContainText("Retrieved");
+  await expect(page.locator(".funnel")).toContainText("Cited");
+  await expect(page.locator(".scope-list")).toContainText("10-Q");
 
   await page.getByText("Workflow trace").click();
   await expect(page.getByText("preprocess query")).toBeVisible();

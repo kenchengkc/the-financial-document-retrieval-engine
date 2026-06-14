@@ -24,8 +24,16 @@ PRIVATE_INFORMATION_PATTERN = re.compile(
     re.I,
 )
 UNSUPPORTED_FORECAST_PATTERN = re.compile(
+    # explicit forecast verbs near a security price or return
     r"\b(?:predict|forecast|guarantee|price target)\b"
     r".{0,40}\b(?:stock|share price|investment return|market return)\b"
+    # future-tense price questions: "what will <co>'s stock price be ..."
+    r"|\bwill\b.{0,40}\b(?:stock|share)\s+price\b"
+    # a security price tied to a forward period, in either order
+    r"|\b(?:stock|share)\s+price\b.{0,30}\bnext\s+(?:quarter|year|month|week|day|few)\b"
+    r"|\bnext\s+(?:quarter|year|month|week|day|few)\b.{0,30}\b(?:stock|share)\s+price\b"
+    r"|\bfuture\b.{0,25}\b(?:stock|share)\s+price\b"
+    # trading recommendations
     r"|\b(?:buy|sell|short)\s+(?:the\s+)?(?:stock|shares)\b",
     re.I,
 )

@@ -10,7 +10,12 @@ from apps.api.app.config import Settings
 from apps.api.app.db import Base
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, FinancialFact
 from fdre.citations.verifier import AnswerClaim, CitationVerifier
-from fdre.graph.nodes import GeneratedAnswer, MockAnswerGenerator, WorkflowContext
+from fdre.graph.nodes import (
+    UNSUPPORTED_FORECAST_PATTERN,
+    GeneratedAnswer,
+    MockAnswerGenerator,
+    WorkflowContext,
+)
 from fdre.graph.workflow import run_answer_workflow
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
 from fdre.retrieval.query import RetrievalCandidate
@@ -220,6 +225,27 @@ def test_answer_workflow_abstains_on_weak_or_private_questions() -> None:
     assert "non-public" in (private_state["abstention_reason"] or "")
     assert forecast_state["should_abstain"] is True
     assert "does not forecast" in (forecast_state["abstention_reason"] or "")
+
+
+def test_forecast_guard_flags_future_price_questions_without_false_positives() -> None:
+    forecast_questions = [
+        "What will NVIDIA's stock price be next quarter?",
+        "Predict Apple's stock price and tell me whether to buy the stock.",
+        "Where is the share price headed next year?",
+        "Should I buy the stock?",
+        "Give me a price target for the stock.",
+    ]
+    for question in forecast_questions:
+        assert UNSUPPORTED_FORECAST_PATTERN.search(question), question
+
+    grounded_questions = [
+        "How did Apple's stock price perform over the past five years?",
+        "What did the company disclose about stock-based compensation?",
+        "What did META report for earnings last quarter?",
+        "What did Apple say about supply chain risk in its latest 10-K?",
+    ]
+    for question in grounded_questions:
+        assert not UNSUPPORTED_FORECAST_PATTERN.search(question), question
 
 
 def test_answer_workflow_rejects_non_retrieved_citation() -> None:

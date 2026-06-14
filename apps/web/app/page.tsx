@@ -11,13 +11,22 @@ import {
   Code2,
   Database,
   FileText,
+  Filter,
+  Layers,
   LoaderCircle,
   Route,
   Search,
   ShieldCheck,
   Timer,
 } from "lucide-react";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  CSSProperties,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { askQuestion, checkHealth, fetchCoverage } from "@/lib/api";
 import type { AnswerResponse, CoverageResponse, RetrievalCandidate } from "@/lib/types";
@@ -52,6 +61,36 @@ function metadataValue(value: unknown, fallback: string) {
 function formatLatency(latencyMs: number) {
   return latencyMs < 1000 ? `${latencyMs} ms` : `${(latencyMs / 1000).toFixed(1)} s`;
 }
+
+function traceCount(trace: AnswerResponse["trace"], node: string): number | null {
+  const step = trace.find((entry) => entry.node === node);
+  const value = step?.details?.count;
+  return typeof value === "number" ? value : null;
+}
+
+function resolvedScope(trace: AnswerResponse["trace"]) {
+  const step = trace.find((entry) => entry.node === "preprocess_query");
+  const filters = (step?.details?.filters ?? {}) as Record<string, unknown>;
+  const tickers = Array.isArray(filters.tickers) ? (filters.tickers as string[]) : [];
+  const forms = Array.isArray(filters.form_types) ? (filters.form_types as string[]) : [];
+  const asOf = typeof filters.as_of === "string" ? filters.as_of : null;
+  return { tickers, forms, asOf };
+}
+
+function median(values: number[]) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+type SessionRun = {
+  latencyMs: number;
+  grounded: boolean;
+  abstained: boolean;
+  topScore: number;
+  confidence: number;
+};
 
 function Wave({ cls }: { cls: string }) {
   return (
@@ -113,26 +152,130 @@ function Evidence({ candidate, index }: { candidate: RetrievalCandidate; index: 
       </summary>
       <div className="evidence-body">
         <p>{candidate.text}</p>
-        <dl className="scores">
-          <div>
-            <dt>Dense</dt>
-            <dd>{score(candidate.dense_score)}</dd>
-          </div>
-          <div>
-            <dt>Sparse</dt>
-            <dd>{score(candidate.sparse_score)}</dd>
-          </div>
-          <div>
-            <dt>Hybrid</dt>
-            <dd>{score(candidate.hybrid_score)}</dd>
-          </div>
-          <div>
-            <dt>Rerank</dt>
-            <dd>{score(candidate.rerank_score)}</dd>
-          </div>
-        </dl>
+        <div className="scores">
+          <ScoreGauge label="Dense" hint="cosine" value={candidate.dense_score} />
+          <ScoreGauge label="Sparse" hint="lexical" value={candidate.sparse_score} />
+          <ScoreGauge label="Hybrid" hint="fused" value={candidate.hybrid_score} />
+          <ScoreGauge label="Rerank" hint="cross-enc" value={candidate.rerank_score} accent />
+        </div>
       </div>
     </details>
+  );
+}
+
+function ScoreGauge({
+  label,
+  hint,
+  value,
+  accent = false,
+}: {
+  label: string;
+  hint: string;
+  value: number | null;
+  accent?: boolean;
+}) {
+  const pct = value === null ? 0 : Math.max(0, Math.min(1, value)) * 100;
+  return (
+    <div className={`gauge${accent ? " accent" : ""}`}>
+      <span className="gauge-head">
+        <span className="gauge-label">{label}</span>
+        <span className="gauge-hint">{hint}</span>
+      </span>
+      <span className="gauge-track" aria-hidden="true">
+        <span className="gauge-fill" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="gauge-value">{score(value)}</span>
+    </div>
+  );
+}
+
+function ConfidenceRing({ value }: { value: number }) {
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  return (
+    <div
+      className="conf-ring"
+      style={{ "--p": pct } as CSSProperties}
+      role="img"
+      aria-label={`${pct} percent retrieval confidence`}
+    >
+      <span className="conf-num">{pct}</span>
+      <span className="conf-unit">%</span>
+    </div>
+  );
+}
+
+function RetrievalFunnel({
+  retrieved,
+  reranked,
+  gatePassed,
+  cited,
+}: {
+  retrieved: number;
+  reranked: number;
+  gatePassed: boolean;
+  cited: number;
+}) {
+  const max = Math.max(retrieved, reranked, cited, 1);
+  const stages: { label: string; sub: string; count: number; bar: number; tone?: string }[] = [
+    { label: "Retrieved", sub: "hybrid candidates", count: retrieved, bar: retrieved },
+    { label: "Reranked", sub: "cross-encoder kept", count: reranked, bar: reranked },
+    {
+      label: gatePassed ? "Gate passed" : "Gate held",
+      sub: "evidence threshold",
+      count: gatePassed ? reranked : 0,
+      bar: gatePassed ? reranked : 0,
+      tone: gatePassed ? undefined : "hold",
+    },
+    { label: "Cited", sub: "citation-verified", count: cited, bar: cited, tone: "cited" },
+  ];
+  return (
+    <ol className="funnel" aria-label="Retrieval pipeline">
+      {stages.map((stage) => (
+        <li key={stage.label} className={stage.tone ? `fn-${stage.tone}` : undefined}>
+          <span className="fn-label">
+            {stage.label}
+            <small>{stage.sub}</small>
+          </span>
+          <span className="fn-track" aria-hidden="true">
+            <span className="fn-fill" style={{ width: `${(stage.bar / max) * 100}%` }} />
+          </span>
+          <span className="fn-count">{stage.count}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function SessionTelemetry({ runs }: { runs: SessionRun[] }) {
+  const grounded = runs.filter((run) => run.grounded).length;
+  const abstained = runs.filter((run) => run.abstained).length;
+  const groundedPct = runs.length ? Math.round((grounded / runs.length) * 100) : 0;
+  const medianLatency = Math.round(median(runs.map((run) => run.latencyMs)));
+  const avgTop = runs.length
+    ? runs.reduce((sum, run) => sum + run.topScore, 0) / runs.length
+    : 0;
+  const cells = [
+    { k: "Queries", v: String(runs.length) },
+    { k: "Grounded", v: `${groundedPct}%` },
+    { k: "Abstained", v: String(abstained) },
+    { k: "Median latency", v: formatLatency(medianLatency) },
+    { k: "Avg top rerank", v: avgTop.toFixed(3) },
+  ];
+  return (
+    <div className="telemetry" aria-label="Session telemetry">
+      <span className="tm-title">
+        <span className="tm-dot" aria-hidden="true" />
+        Session telemetry
+      </span>
+      <dl className="tm-cells">
+        {cells.map((cell) => (
+          <div key={cell.k}>
+            <dt>{cell.k}</dt>
+            <dd>{cell.v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -144,6 +287,7 @@ export default function Home() {
   const [loadingStage, setLoadingStage] = useState(0);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
+  const [history, setHistory] = useState<SessionRun[]>([]);
   const questionRef = useRef<HTMLInputElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
 
@@ -179,8 +323,19 @@ export default function Home() {
     setResult(null);
     setError(null);
     try {
-      setResult(await askQuestion(question.trim()));
+      const response = await askQuestion(question.trim());
+      setResult(response);
       setApiOnline(true);
+      setHistory((previous) => [
+        ...previous,
+        {
+          latencyMs: response.latency_ms,
+          grounded: Boolean(response.answer) && !response.abstained,
+          abstained: response.abstained,
+          topScore: Number(response.retrieval_gate.max_score ?? 0),
+          confidence: response.confidence ?? 0,
+        },
+      ]);
     } catch (cause) {
       setResult(null);
       setApiOnline(false);
@@ -202,6 +357,22 @@ export default function Home() {
   const primaryTicker = metadataValue(primaryMetadata.ticker, "SEC filing");
   const primaryForm = metadataValue(primaryMetadata.form_type, "Filing");
   const primaryDate = metadataValue(primaryMetadata.filing_date, "Date unavailable");
+
+  const funnel = useMemo(() => {
+    if (!result) return null;
+    const retrieved =
+      traceCount(result.trace, "merge_candidates") ??
+      traceCount(result.trace, "retrieve_text") ??
+      result.evidence.length;
+    const reranked = traceCount(result.trace, "rerank") ?? result.evidence.length;
+    return {
+      retrieved,
+      reranked,
+      gatePassed: Boolean(result.retrieval_gate.passed),
+      cited: result.citations.length,
+    };
+  }, [result]);
+  const scope = result ? resolvedScope(result.trace) : null;
 
   return (
     <div className="site-shell">
@@ -321,6 +492,8 @@ export default function Home() {
       </section>
 
       <main ref={resultsRef}>
+        {history.length > 0 && <SessionTelemetry runs={history} />}
+
         {error && (
           <div className="notice error" role="alert">
             <CircleAlert size={19} />
@@ -447,29 +620,70 @@ export default function Home() {
                   <Route size={17} />
                   <h2>Run summary</h2>
                 </div>
-                <div className="route-list">
-                  {result.route.map((route) => (
-                    <span key={route}>{route.replaceAll("_", " ")}</span>
-                  ))}
+                <div className="run-dash">
+                  <div className="conf-block">
+                    <ConfidenceRing value={result.confidence ?? 0} />
+                    <span className="conf-caption">retrieval confidence</span>
+                  </div>
+                  <dl className="run-stats">
+                    <div>
+                      <dt>Evidence gate</dt>
+                      <dd className={result.retrieval_gate.passed ? "ok" : "hold"}>
+                        {result.retrieval_gate.passed ? "Passed" : "Held"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Top rerank</dt>
+                      <dd>{Number(result.retrieval_gate.max_score ?? 0).toFixed(3)}</dd>
+                    </div>
+                    <div>
+                      <dt>Latency</dt>
+                      <dd>{formatLatency(result.latency_ms)}</dd>
+                    </div>
+                  </dl>
                 </div>
-                <dl className="gate">
-                  <div>
-                    <dt>Evidence gate</dt>
-                    <dd>{result.retrieval_gate.passed ? "Passed" : "Abstained"}</dd>
+                {funnel && (
+                  <RetrievalFunnel
+                    retrieved={funnel.retrieved}
+                    reranked={funnel.reranked}
+                    gatePassed={funnel.gatePassed}
+                    cited={funnel.cited}
+                  />
+                )}
+                <div className="scope-row">
+                  <span className="scope-head">
+                    <Layers size={13} aria-hidden="true" />
+                    Routes
+                  </span>
+                  <div className="route-list">
+                    {result.route.map((route) => (
+                      <span key={route}>{route.replaceAll("_", " ")}</span>
+                    ))}
                   </div>
-                  <div>
-                    <dt>Top score</dt>
-                    <dd>{Number(result.retrieval_gate.max_score ?? 0).toFixed(3)}</dd>
+                </div>
+                {scope && (scope.tickers.length > 0 || scope.forms.length > 0) && (
+                  <div className="scope-row">
+                    <span className="scope-head">
+                      <Filter size={13} aria-hidden="true" />
+                      Resolved scope
+                    </span>
+                    <div className="scope-list">
+                      {scope.tickers.map((ticker) => (
+                        <span key={`t-${ticker}`} className="scope-tag">
+                          {ticker}
+                        </span>
+                      ))}
+                      {scope.forms.map((form) => (
+                        <span key={`f-${form}`} className="scope-tag form">
+                          {form}
+                        </span>
+                      ))}
+                      <span className="scope-tag pit">
+                        {scope.asOf ? `as-of ${scope.asOf.slice(0, 10)}` : "latest available"}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <dt>Sources</dt>
-                    <dd>{result.evidence.length}</dd>
-                  </div>
-                  <div>
-                    <dt>Latency</dt>
-                    <dd>{formatLatency(result.latency_ms)}</dd>
-                  </div>
-                </dl>
+                )}
               </section>
 
               <section>
