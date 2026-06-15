@@ -75,7 +75,10 @@ jobs:
     needs: prerequisites
     if: needs.prerequisites.outputs.enabled == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # Heavy batches (utilities/financials with very large 10-Ks) can exceed
+    # 3h; give generous headroom so a batch can't be cancelled mid-embed and
+    # break the self-chaining walk. Pair with a small per-batch `limit`.
+    timeout-minutes: 330
     env:
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
