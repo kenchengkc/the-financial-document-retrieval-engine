@@ -327,7 +327,11 @@ export default function Home() {
                   : "Production SEC corpus"}
               </span>
               <span className="sep" aria-hidden="true" />
-              <span>1,065,227 embedded chunks</span>
+              <span>
+                {coverage
+                  ? `${coverage.chunk_count.toLocaleString()} embedded chunks`
+                  : "1M+ embedded chunks"}
+              </span>
               <span className="sep" aria-hidden="true" />
               <span>Point-in-time and citation-audited</span>
             </div>

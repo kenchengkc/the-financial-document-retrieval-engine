@@ -23,7 +23,27 @@ export const metadata: Metadata = {
     "Measured engineering evidence for FDRE's point-in-time SEC research infrastructure.",
 };
 
-export default function About() {
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+
+type Coverage = {
+  sp500_indexed_count: number;
+  sp500_catalog_count: number;
+  document_count: number;
+  chunk_count: number;
+};
+
+async function getCoverage(): Promise<Coverage | null> {
+  try {
+    const response = await fetch(`${API_URL}/coverage`, { next: { revalidate: 1800 } });
+    if (!response.ok) return null;
+    return (await response.json()) as Coverage;
+  } catch {
+    return null;
+  }
+}
+
+export default async function About() {
+  const coverage = await getCoverage();
   return (
     <div className="site-shell">
       <section className="about-hero">
@@ -109,21 +129,25 @@ export default function About() {
             <p className="eyebrow">Verified production corpus</p>
             <h2 id="verified-scale">Measured scale, not projected scale</h2>
             <p>
-              Counts were read from the production database on June 13, 2026. The S&amp;P 500
-              universe uses current constituents and is therefore survivorship-biased.
+              These counts are read live from the production database. The S&amp;P 500 universe
+              uses current constituents and is therefore survivorship-biased.
             </p>
           </div>
           <dl className="proof-metrics">
             <div>
-              <dt>495 / 499</dt>
+              <dt>
+                {coverage
+                  ? `${coverage.sp500_indexed_count} / ${coverage.sp500_catalog_count}`
+                  : "495 / 499"}
+              </dt>
               <dd>S&amp;P 500 primary tickers indexed</dd>
             </div>
             <div>
-              <dt>997</dt>
+              <dt>{coverage ? coverage.document_count.toLocaleString() : "997"}</dt>
               <dd>SEC filings parsed and chunked</dd>
             </div>
             <div>
-              <dt>1,065,227</dt>
+              <dt>{coverage ? coverage.chunk_count.toLocaleString() : "1,065,227"}</dt>
               <dd>Chunks with stored embeddings</dd>
             </div>
             <div>
