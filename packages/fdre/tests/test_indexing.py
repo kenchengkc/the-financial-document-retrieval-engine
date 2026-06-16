@@ -13,6 +13,7 @@ from fdre.indexing.embeddings import (
     EmbeddingRateLimiter,
     LocalHashEmbeddingProvider,
     VoyageEmbeddingProvider,
+    _chunk_select_statement,
     rebuild_embeddings,
 )
 from fdre.indexing.sparse_index import PostgresFullTextIndexer, build_sparse_tsquery
@@ -102,6 +103,27 @@ def test_incremental_indexing_replaces_wrong_dimensions() -> None:
         embeddings = list(session.scalars(select(Embedding)))
         assert len(embeddings) == 1
         assert embeddings[0].dimensions == 16
+
+
+def test_missing_embedding_query_uses_correlated_exists() -> None:
+    provider = LocalHashEmbeddingProvider(dimensions=16)
+
+    statement = _chunk_select_statement(
+        chunk_ids=None,
+        document_ids=None,
+        tickers=["AAPL"],
+        missing_only=True,
+        provider=provider,
+    )
+    compiled = str(
+        statement.compile(
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "EXISTS" in compiled
+    assert "embeddings.chunk_id = chunks.id" in compiled
+    assert "NOT IN" not in compiled
 
 
 @respx.mock

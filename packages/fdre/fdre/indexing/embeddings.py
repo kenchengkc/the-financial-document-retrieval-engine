@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Literal, Protocol
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -310,12 +310,13 @@ def _chunk_select_statement(
     if chunk_ids is not None:
         statement = statement.where(Chunk.id.in_(chunk_ids))
     if missing_only:
-        existing_chunk_ids = select(Embedding.chunk_id).where(
+        matching_embedding = exists().where(
+            Embedding.chunk_id == Chunk.id,
             Embedding.provider == provider.name,
             Embedding.model == provider.model,
             Embedding.dimensions == provider.dimensions,
         )
-        statement = statement.where(~Chunk.id.in_(existing_chunk_ids))
+        statement = statement.where(~matching_embedding)
     return statement
 
 
