@@ -35,7 +35,9 @@ permissions:
   actions: write
 
 concurrency:
-  group: fdre-ingestion
+  # Queue S&P 500 batches independently; scripts/ingest_ticker_batch.py holds
+  # the database advisory lock that serializes actual ingestion across workflows.
+  group: fdre-sp500-ingestion
   cancel-in-progress: false
 
 jobs:

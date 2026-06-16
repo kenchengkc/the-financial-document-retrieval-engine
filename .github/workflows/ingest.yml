@@ -31,7 +31,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: fdre-ingestion
+  # Keep scheduled/manual incremental checks from evicting queued S&P batches.
+  # scripts/ingest_ticker_batch.py serializes database ingestion across workflows.
+  group: fdre-scheduled-ingestion
   cancel-in-progress: false
 
 jobs:
@@ -133,11 +135,16 @@ jobs:
           if [ "${FORCE_PARSE}" = "true" ]; then
             force_args+=(--force-parse --force-rechunk)
           fi
+          lock_args=()
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+            lock_args+=(--skip-if-locked)
+          fi
           python scripts/ingest_ticker_batch.py \
             --tickers "${ticker_args[@]}" \
             --forms "${form_args[@]}" \
             --filing-limit "${LIMIT}" \
-            "${force_args[@]}"
+            "${force_args[@]}" \
+            "${lock_args[@]}"
 
       - name: Publish data-quality audit
         if: always()
