@@ -248,7 +248,7 @@ def _pearson(left: list[float], right: list[float]) -> float | None:
     var_right = sum((b - mean_right) ** 2 for b in right)
     if var_left == 0 or var_right == 0:
         return None
-    return numerator / (var_left * var_right) ** 0.5
+    return float(numerator / (var_left * var_right) ** 0.5)
 
 
 def _bootstrap_difference(

@@ -63,8 +63,12 @@ def test_signal_study_recovers_a_monotonic_signal() -> None:
     window = report.results[0]
     assert window.sample_size == n
     assert window.information_coefficient is not None and window.information_coefficient > 0.95
-    means = [q.mean_abnormal_return for q in window.quantiles]
-    assert all(m is not None for m in means)
+    means = [
+        q.mean_abnormal_return
+        for q in window.quantiles
+        if q.mean_abnormal_return is not None
+    ]
+    assert len(means) == len(window.quantiles)
     assert means == sorted(means)  # quantile returns increase with the signal
     assert window.long_short_mean is not None and window.long_short_mean > 0
     assert window.long_short_p_value is not None and window.long_short_p_value < 0.05

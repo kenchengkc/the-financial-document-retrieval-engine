@@ -76,7 +76,7 @@ def fetch_ticker_bars(
             return _parse_chart(ticker, json.loads(cache_path.read_text()))
 
     http = session or requests
-    params: dict[str, object] = {
+    params: dict[str, str | int] = {
         "period1": _epoch(start),
         "period2": _epoch(end),
         "interval": "1d",
