@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings, get_settings
 from apps.api.app.db import get_db_session
+from apps.api.app.models import ResearchExperiment
 from apps.api.app.services.retrieval_service import search_documents
 from fdre.research.filing_diffs import FilingDifference, compare_filing_to_prior
 from fdre.research.financial_facts import (
@@ -143,6 +145,27 @@ def export_research_panel(
             )
         },
     )
+
+
+@router.get("/signal-study")
+def signal_study(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, Any]:
+    experiment = session.scalar(
+        select(ResearchExperiment)
+        .where(ResearchExperiment.experiment_type == "signal_study")
+        .order_by(ResearchExperiment.created_at.desc(), ResearchExperiment.id.desc())
+        .limit(1)
+    )
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="No signal study has been published yet.")
+    return {
+        "experiment_id": experiment.id,
+        "experiment_key": experiment.experiment_key,
+        "code_sha": experiment.code_sha,
+        "created_at": experiment.created_at.isoformat(),
+        "report": experiment.results_json,
+    }
 
 
 @router.post("/thematic-scan", response_model=ThematicScanResponse)

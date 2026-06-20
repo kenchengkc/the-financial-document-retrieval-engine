@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import subprocess
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -33,16 +35,23 @@ from fdre.ingestion.xbrl import ingest_company_facts
 from fdre.research.event_study import (
     EventStudyConfig,
     EventWindow,
+    FilingEvent,
     load_filing_events,
     load_market_bars,
     persist_event_study,
     run_event_study,
     write_event_study_report,
 )
+from fdre.research.market_data import fetch_market_bars
 from fdre.research.panel import (
     ResearchPanelQuery,
     build_research_panel,
     write_research_panel,
+)
+from fdre.research.signal_study import (
+    SignalStudyReport,
+    persist_signal_study,
+    run_signal_study,
 )
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
@@ -144,6 +153,19 @@ def parse_args() -> argparse.Namespace:
     event_parser.add_argument("--confidence-level", type=float, default=0.95)
     event_parser.add_argument("--random-seed", type=int, default=17)
     event_parser.add_argument("--walk-forward-splits", nargs="+")
+    signal_parser = subparsers.add_parser(
+        "signal-study",
+        help="Run the point-in-time disclosure-change (Lazy Prices) signal study",
+    )
+    signal_parser.add_argument("--output", required=True)
+    signal_parser.add_argument("--tickers", nargs="+")
+    signal_parser.add_argument("--max-tickers", type=int, default=50)
+    signal_parser.add_argument("--min-documents", type=int, default=4)
+    signal_parser.add_argument("--benchmark", default="SPY")
+    signal_parser.add_argument("--n-quantiles", type=int, default=5)
+    signal_parser.add_argument("--windows", nargs="+", default=["0:1", "1:21", "1:63"])
+    signal_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
+    signal_parser.add_argument("--forward-buffer-days", type=int, default=130)
     audit_parser = subparsers.add_parser(
         "audit",
         help="Report corpus freshness, completeness, and indexing integrity",
@@ -285,6 +307,8 @@ def main() -> None:
                     "events": report.event_count,
                 }
             )
+        elif args.command == "signal-study":
+            print(_run_signal_study(session, args))
         elif args.command == "audit":
             audit_report = build_data_quality_report(
                 session,
@@ -442,6 +466,75 @@ def _git_sha() -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
+    if args.tickers:
+        tickers = [ticker.upper() for ticker in args.tickers]
+    else:
+        rows = session.execute(
+            select(Company.ticker, func.count(Document.id))
+            .join(Document, Document.company_id == Company.id)
+            .group_by(Company.ticker)
+            .having(func.count(Document.id) >= args.min_documents)
+            .order_by(func.count(Document.id).desc(), Company.ticker)
+            .limit(args.max_tickers)
+        ).all()
+        tickers = [row[0] for row in rows]
+    panel = build_research_panel(
+        session,
+        ResearchPanelQuery(
+            tickers=tickers,
+            features=["disclosure_similarity"],
+            limit=10_000,
+        ),
+    )
+    events = [
+        FilingEvent(
+            ticker=row.ticker,
+            accession_number=row.accession_number,
+            available_at=row.available_at,
+            max_source_available_at=row.max_source_available_at,
+            feature_value=row.disclosure_similarity,
+        )
+        for row in panel.rows
+    ]
+    scored = [event for event in events if event.feature_value is not None]
+    if len(scored) < args.n_quantiles * 4:
+        raise SystemExit(f"Only {len(scored)} scored events; ingest more filing history first.")
+    event_dates = [event.available_at.date() for event in scored]
+    start = min(event_dates) - timedelta(days=10)
+    end = max(event_dates) + timedelta(days=args.forward_buffer_days)
+    bars, missing = fetch_market_bars(tickers, start, end, benchmark=args.benchmark)
+    config = EventStudyConfig(
+        benchmark_ticker=args.benchmark,
+        windows=[_event_window(value) for value in args.windows],
+        bootstrap_iterations=args.bootstrap_iterations,
+    )
+    report: SignalStudyReport = run_signal_study(
+        scored,
+        bars,
+        config,
+        signal_name="disclosure_similarity",
+        n_quantiles=args.n_quantiles,
+        dataset_version=panel.corpus_snapshot_id,
+        feature_version=panel.feature_version,
+        code_sha=_git_sha(),
+    )
+    experiment = persist_signal_study(session, report)
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    )
+    return {
+        "output": str(output_path),
+        "experiment_id": experiment.id,
+        "experiment_key": report.experiment_key,
+        "tickers": len(tickers),
+        "events": report.event_count,
+        "missing_market_data": missing,
+    }
 
 
 if __name__ == "__main__":
