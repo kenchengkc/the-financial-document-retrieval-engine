@@ -3,15 +3,13 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings, get_settings
@@ -26,9 +24,7 @@ from fdre.ingestion.ticker_map import (
     RESEARCH_UNIVERSE_TICKERS,
     sp500_batch_tickers,
 )
-
-INGESTION_LOCK_NAMESPACE = 0x46445245  # FDRE
-INGESTION_LOCK_ID = 0x494E4754  # INGT
+from scripts.ingestion_lock import serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:
@@ -84,51 +80,6 @@ def _run(command: list[str]) -> int:
     return round((perf_counter() - started) * 1000)
 
 
-@contextmanager
-def _serialized_ingestion(engine: Engine, *, skip_if_locked: bool) -> Iterator[bool]:
-    if engine.dialect.name != "postgresql":
-        yield True
-        return
-
-    params = {
-        "namespace": INGESTION_LOCK_NAMESPACE,
-        "lock_id": INGESTION_LOCK_ID,
-    }
-    with engine.connect() as connection:
-        if skip_if_locked:
-            acquired = bool(
-                connection.scalar(
-                    text("SELECT pg_try_advisory_lock(:namespace, :lock_id)"),
-                    params,
-                )
-            )
-            if not acquired:
-                print({"status": "skipped_ingestion_lock_busy"}, flush=True)
-                yield False
-                return
-        else:
-            print({"status": "waiting_for_ingestion_lock"}, flush=True)
-            connection.execute(
-                text("SELECT pg_advisory_lock(:namespace, :lock_id)"),
-                params,
-            )
-        print({"status": "acquired_ingestion_lock"}, flush=True)
-        try:
-            yield True
-        finally:
-            released = connection.scalar(
-                text("SELECT pg_advisory_unlock(:namespace, :lock_id)"),
-                params,
-            )
-            print(
-                {
-                    "status": "released_ingestion_lock",
-                    "released": bool(released),
-                },
-                flush=True,
-            )
-
-
 def main() -> None:
     args = parse_args()
     tickers = _selected_tickers(args)
@@ -138,7 +89,7 @@ def main() -> None:
 
     settings = get_settings()
     engine = create_db_engine()
-    with _serialized_ingestion(engine, skip_if_locked=args.skip_if_locked) as acquired:
+    with serialized_ingestion(engine, skip_if_locked=args.skip_if_locked) as acquired:
         if not acquired:
             return
         _run_ingestion(args, tickers, settings, engine)

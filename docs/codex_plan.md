@@ -73,6 +73,8 @@ The reviewed 120-question dataset and holdout run remain unpublished until revie
   estimated cost.
 - Freshness, expected-form, duplicate, chunk, embedding, and fact integrity audits.
 - Daily incremental checks, migration-before-ingest, and post-run audits in GitHub Actions.
+- Serialized production ingestion across scheduled, S&P 500, research backfill, and Company Facts
+  workflows with bounded batch controls.
 
 ### Phase 27: Recruiter-facing evidence
 
@@ -88,8 +90,8 @@ The reviewed 120-question dataset and holdout run remain unpublished until revie
 1. Remeasure single-name/cross-sectional latency and coverage response time.
 2. Measure exact-versus-ANN Recall@10.
 3. Review and freeze 120 benchmark questions; run the untouched holdout.
-4. Backfill 3 annual and 8 quarterly filings for the fixed research universe.
-5. Ingest Company Facts for the production corpus.
+4. Run and monitor the Research 50 backfill workflow for 3 annual and 8 quarterly filings.
+5. Run and monitor the Company Facts workflow across the production corpus.
 6. Complete the S&P coverage gap: embed AWK, AXON, and AXP; ingest FDXF when an eligible filing is available.
 7. Publish benchmark and operational numbers only after verification.
 

@@ -1,0 +1,197 @@
+name: Company Facts ingestion
+
+# Ingests SEC Company Facts into the production fact table for bounded ticker
+# batches. Company Facts are serialized with filing ingestion through the shared
+# database advisory lock.
+
+on:
+  workflow_dispatch:
+    inputs:
+      universe:
+        description: "Ticker universe"
+        type: choice
+        options:
+          - research50
+          - sp500
+          - indexed
+          - megacap
+        default: research50
+      tickers:
+        description: "Optional space-separated tickers; disables chaining"
+        default: ""
+      offset:
+        description: "Batch offset"
+        default: "0"
+      limit:
+        description: "Batch size (tickers per run)"
+        default: "10"
+      chain:
+        description: "On success, automatically queue the next offset+limit batch"
+        type: boolean
+        default: false
+      skip_if_locked:
+        description: "Exit successfully instead of waiting when ingestion is locked"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: fdre-company-facts
+  cancel-in-progress: false
+
+jobs:
+  prerequisites:
+    name: Check Company Facts prerequisites
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+    steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          if { [ -n "${DATABASE_URL_DIRECT}" ] || [ -n "${DATABASE_URL_POOLED}" ]; } \
+            && [ -n "${SEC_USER_AGENT}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Skipping Company Facts ingestion until database and SEC credentials are configured."
+          fi
+
+  company-facts:
+    name: Ingest Company Facts batch
+    needs: prerequisites
+    if: needs.prerequisites.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      PYTHONPATH: .
+      UNIVERSE: ${{ github.event.inputs.universe || 'research50' }}
+      TICKERS: ${{ github.event.inputs.tickers || '' }}
+      OFFSET: ${{ github.event.inputs.offset || '0' }}
+      LIMIT: ${{ github.event.inputs.limit || '10' }}
+      SKIP_IF_LOCKED: ${{ github.event.inputs.skip_if_locked || 'false' }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "${UNIVERSE}" =~ ^(research50|sp500|indexed|megacap)$ ]]
+          [[ "${OFFSET}" =~ ^[0-9]+$ ]]
+          [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${SKIP_IF_LOCKED}" =~ ^(true|false)$ ]]
+          if [ -n "${TICKERS}" ]; then
+            [[ "${TICKERS}" =~ ^[A-Z0-9.-]+([[:space:]]+[A-Z0-9.-]+)*$ ]]
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Use direct database URL for ingest
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "::notice::Using DATABASE_URL_DIRECT for Company Facts ingest."
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "::notice::DATABASE_URL_DIRECT not set; using DATABASE_URL."
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Determine universe size
+        id: universe-size
+        run: |
+          python - <<'PY' >> "${GITHUB_OUTPUT}"
+          import os
+          from sqlalchemy import func, select
+          from sqlalchemy.orm import Session
+
+          from apps.api.app.db import create_db_engine
+          from apps.api.app.models import Company
+          from fdre.ingestion.ticker_map import (
+              DEFAULT_SAMPLE_TICKERS,
+              RESEARCH_UNIVERSE_TICKERS,
+              sp500_primary_tickers,
+          )
+
+          universe = os.environ["UNIVERSE"]
+          if universe == "research50":
+              count = len(RESEARCH_UNIVERSE_TICKERS)
+          elif universe == "sp500":
+              count = len(sp500_primary_tickers())
+          elif universe == "megacap":
+              count = len(DEFAULT_SAMPLE_TICKERS)
+          else:
+              with Session(create_db_engine()) as session:
+                  count = session.scalar(
+                      select(func.count())
+                      .select_from(Company)
+                      .where(Company.documents.any())
+                  ) or 0
+          print(f"count={count}")
+          PY
+
+      - name: Run Company Facts ingest
+        run: |
+          ticker_args=()
+          if [ -n "${TICKERS}" ]; then
+            read -r -a selected_tickers <<< "${TICKERS}"
+            ticker_args=(--tickers "${selected_tickers[@]}")
+          fi
+          lock_args=()
+          if [ "${SKIP_IF_LOCKED}" = "true" ]; then
+            lock_args+=(--skip-if-locked)
+          fi
+          python scripts/ingest_company_facts_batch.py \
+            --universe "${UNIVERSE}" \
+            --offset "${OFFSET}" \
+            --limit "${LIMIT}" \
+            "${ticker_args[@]}" \
+            "${lock_args[@]}"
+
+      - name: Publish data-quality audit
+        if: always()
+        run: python -m scripts.retrieval_pipeline audit
+
+      - name: Queue next Company Facts batch
+        if: success() && github.event.inputs.chain == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UNIVERSE_COUNT: ${{ steps.universe-size.outputs.count }}
+        run: |
+          if [ -n "${TICKERS}" ]; then
+            echo "::notice::Explicit ticker Company Facts batch complete; not chaining."
+            exit 0
+          fi
+          next_offset=$((OFFSET + LIMIT))
+          if [ "${next_offset}" -lt "${UNIVERSE_COUNT}" ]; then
+            echo "::notice::Queueing next Company Facts batch at offset ${next_offset}"
+            gh workflow run "Company Facts ingestion" \
+              -f universe="${UNIVERSE}" \
+              -f offset="${next_offset}" \
+              -f limit="${LIMIT}" \
+              -f skip_if_locked="${SKIP_IF_LOCKED}" \
+              -f chain=true
+          else
+            echo "::notice::Company Facts chain complete (offset ${OFFSET})."
+          fi

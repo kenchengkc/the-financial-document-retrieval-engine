@@ -19,6 +19,12 @@ on:
       limit:
         description: "Latest N filings per form per company"
         default: "1"
+      annual_limit:
+        description: "Latest N 10-K filings per company (optional override)"
+        default: ""
+      quarterly_limit:
+        description: "Latest N 10-Q filings per company (optional override)"
+        default: ""
       force_parse:
         description: "Reparse unchanged filings after parser updates"
         type: boolean
@@ -91,6 +97,8 @@ jobs:
       TICKERS: ${{ github.event.inputs.tickers || 'AAPL MSFT NVDA AMZN GOOGL' }}
       FORMS: ${{ github.event.inputs.forms || '10-K 10-Q' }}
       LIMIT: ${{ github.event.inputs.limit || '1' }}
+      ANNUAL_LIMIT: ${{ github.event.inputs.annual_limit || '' }}
+      QUARTERLY_LIMIT: ${{ github.event.inputs.quarterly_limit || '' }}
       FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
     steps:
       - name: Validate inputs
@@ -98,6 +106,8 @@ jobs:
           [[ "${TICKERS}" =~ ^[A-Z0-9.-]+([[:space:]]+[A-Z0-9.-]+)*$ ]]
           [[ "${FORMS}" =~ ^[0-9A-Z-]+([[:space:]]+[0-9A-Z-]+)*$ ]]
           [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${ANNUAL_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
+          [[ "${QUARTERLY_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
           [[ "${FORCE_PARSE}" =~ ^(true|false)$ ]]
 
       - name: Check out repository
@@ -139,10 +149,17 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
             lock_args+=(--skip-if-locked)
           fi
+          history_args=(--filing-limit "${LIMIT}")
+          if [ -n "${ANNUAL_LIMIT}" ]; then
+            history_args+=(--annual-limit "${ANNUAL_LIMIT}")
+          fi
+          if [ -n "${QUARTERLY_LIMIT}" ]; then
+            history_args+=(--quarterly-limit "${QUARTERLY_LIMIT}")
+          fi
           python scripts/ingest_ticker_batch.py \
             --tickers "${ticker_args[@]}" \
             --forms "${form_args[@]}" \
-            --filing-limit "${LIMIT}" \
+            "${history_args[@]}" \
             "${force_args[@]}" \
             "${lock_args[@]}"
 
