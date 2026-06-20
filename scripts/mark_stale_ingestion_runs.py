@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
 from apps.api.app.models import IngestionRun
-from scripts.ingestion_lock import ingestion_lock_is_busy
+
+try:
+    from scripts.ingestion_lock import ingestion_lock_is_busy
+except ModuleNotFoundError:  # pragma: no cover - supports direct script execution
+    from ingestion_lock import ingestion_lock_is_busy
 
 
 def parse_args() -> argparse.Namespace:

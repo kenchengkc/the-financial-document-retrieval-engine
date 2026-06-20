@@ -24,7 +24,11 @@ from fdre.ingestion.ticker_map import (
     RESEARCH_UNIVERSE_TICKERS,
     sp500_batch_tickers,
 )
-from scripts.ingestion_lock import serialized_ingestion
+
+try:
+    from scripts.ingestion_lock import serialized_ingestion
+except ModuleNotFoundError:  # pragma: no cover - supports direct script execution
+    from ingestion_lock import serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:
