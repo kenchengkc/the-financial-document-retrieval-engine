@@ -73,11 +73,11 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Point-in-time retrieval</p>
-        <h2>Hybrid search with a knowable-as-of boundary</h2>
+        <p className="eyebrow">Point-in-time RAG retrieval</p>
+        <h2>Hybrid RAG search with a knowable-as-of boundary</h2>
         <p className="panel-lede">
-          Lexical and vector retrieval over SEC filings with acceptance-time filtering. Set an
-          as-of date to constrain evidence to what was public on that day — no lookahead.
+          Dense vectors, lexical search, reranking, and citation-aware metadata over SEC filings.
+          Set an as-of date to constrain evidence to what was public on that day.
         </p>
       </div>
 
@@ -121,7 +121,6 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
               type="date"
               value={asOf}
               onChange={(event) => setAsOf(event.target.value)}
-              max="2026-06-14"
             />
           </label>
           <div className="rf-field rf-forms">

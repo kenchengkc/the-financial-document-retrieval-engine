@@ -34,6 +34,29 @@ function candidate(date: string, form: string, chunkId: number) {
   };
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const dimensions = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
+}
+
+async function expectNoBoxOverlap(page: Page, leftSelector: string, rightSelector: string) {
+  const overlap = await page.evaluate(
+    ([left, right]) => {
+      const first = document.querySelector(left);
+      const second = document.querySelector(right);
+      if (!first || !second) return true;
+      const a = first.getBoundingClientRect();
+      const b = second.getBoundingClientRect();
+      return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+    },
+    [leftSelector, rightSelector],
+  );
+  expect(overlap).toBe(false);
+}
+
 test("runs a point-in-time retrieval and forwards the as-of filter", async ({ page }) => {
   await mockBase(page);
   let sentBody: { filters?: { as_of?: string } } = {};
@@ -65,6 +88,40 @@ test("runs a point-in-time retrieval and forwards the as-of filter", async ({ pa
   expect(sentBody.filters?.as_of).toBe("2026-01-01T00:00:00+00:00");
 });
 
+test("keeps AAPL search controls from overlapping on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockBase(page);
+  await page.route("**/search", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        query: "What is AAPL's current product line",
+        rewritten_queries: ["What is AAPL's current product line"],
+        filters: {},
+        results: [candidate("2025-10-31", "10-K", 1)],
+        latency_ms: 900,
+      }),
+    }),
+  );
+
+  await page.goto("/");
+  await page
+    .getByRole("textbox", { name: "Ask a financial filing question" })
+    .fill("What is AAPL's current product line");
+  await expectNoBoxOverlap(page, "#question", ".hd-search .go");
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByRole("tab", { name: /Retrieve/ }).click();
+  await page.getByLabel("Search query").fill("What is AAPL's current product line");
+  await expectNoBoxOverlap(page, ".rf-query input", ".rf-query button");
+  await expectNoHorizontalOverflow(page);
+
+  await page.locator(".retrieve-form button[type=submit]").click();
+  await expect(page.locator(".retrieve-results .evidence").first()).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("renders the coverage universe", async ({ page }) => {
   await mockBase(page);
   await page.route("**/companies**", (route) =>
@@ -89,41 +146,61 @@ test("renders the coverage universe", async ({ page }) => {
 
 test("renders the published signal study", async ({ page }) => {
   await mockBase(page);
-  await page.route("**/research/signal-study**", (route) =>
+  const disclosureStudy = {
+    experiment_id: 1,
+    experiment_key: "abc",
+    code_sha: "deadbeef",
+    created_at: "2026-06-20T06:12:36Z",
+    report: {
+      signal_name: "disclosure_similarity",
+      outcome_name: "abnormal_return",
+      n_quantiles: 5,
+      event_count: 241,
+      config: { benchmark_ticker: "SPY", confidence_level: 0.95 },
+      results: [
+        {
+          window: "0:1",
+          sample_size: 241,
+          information_coefficient: 0.0771,
+          ic_t_stat: 1.2,
+          quantiles: [
+            { quantile: 1, sample_size: 48, mean_abnormal_return: -0.0005 },
+            { quantile: 2, sample_size: 48, mean_abnormal_return: -0.0016 },
+            { quantile: 3, sample_size: 48, mean_abnormal_return: -0.0051 },
+            { quantile: 4, sample_size: 48, mean_abnormal_return: 0.0003 },
+            { quantile: 5, sample_size: 49, mean_abnormal_return: 0.0016 },
+          ],
+          long_short_mean: 0.0021,
+          long_short_ci_low: -0.0083,
+          long_short_ci_high: 0.0121,
+          long_short_p_value: 0.686,
+        },
+      ],
+    },
+  };
+  const riskStudy = {
+    ...disclosureStudy,
+    experiment_id: 2,
+    experiment_key: "risk",
+    report: {
+      ...disclosureStudy.report,
+      signal_name: "risk_factor_expansion",
+      outcome_name: "realized_volatility",
+      event_count: 188,
+    },
+  };
+  await page.route("**/research/signal-studies", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        experiment_id: 1,
-        experiment_key: "abc",
-        code_sha: "deadbeef",
-        created_at: "2026-06-20T06:12:36Z",
-        report: {
-          signal_name: "disclosure_similarity",
-          n_quantiles: 5,
-          event_count: 241,
-          config: { benchmark_ticker: "SPY", confidence_level: 0.95 },
-          results: [
-            {
-              window: "0:1",
-              sample_size: 241,
-              information_coefficient: 0.0771,
-              ic_t_stat: 1.2,
-              quantiles: [
-                { quantile: 1, sample_size: 48, mean_abnormal_return: -0.0005 },
-                { quantile: 2, sample_size: 48, mean_abnormal_return: -0.0016 },
-                { quantile: 3, sample_size: 48, mean_abnormal_return: -0.0051 },
-                { quantile: 4, sample_size: 48, mean_abnormal_return: 0.0003 },
-                { quantile: 5, sample_size: 49, mean_abnormal_return: 0.0016 },
-              ],
-              long_short_mean: 0.0021,
-              long_short_ci_low: -0.0083,
-              long_short_ci_high: 0.0121,
-              long_short_p_value: 0.686,
-            },
-          ],
-        },
-      }),
+      body: JSON.stringify({ studies: [disclosureStudy, riskStudy] }),
+    }),
+  );
+  await page.route("**/research/signal-study", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(disclosureStudy),
     }),
   );
 
@@ -132,6 +209,9 @@ test("renders the published signal study", async ({ page }) => {
   await expect(page.locator(".sig-stats")).toContainText("Filing events");
   await expect(page.locator(".sig-card").first()).toContainText("Filing day");
   await expect(page.locator(".sig-card").first()).toContainText("not significant");
+  await page.getByRole("tab", { name: /Risk expansion/ }).click();
+  await expect(page.locator(".panel-intro")).toContainText("higher volatility");
+  await expect(page.locator(".sig-stats")).toContainText("Volatility");
 });
 
 test("renders the live data-quality dashboard", async ({ page }) => {

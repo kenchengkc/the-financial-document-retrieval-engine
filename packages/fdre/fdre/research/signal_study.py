@@ -14,6 +14,7 @@ import hashlib
 import json
 import random
 from collections import defaultdict
+from math import sqrt
 from statistics import mean
 
 from pydantic import BaseModel
@@ -25,7 +26,9 @@ from fdre.research.event_study import (
     EventStudyConfig,
     FilingEvent,
     MarketBar,
+    _event_session_index,
     run_event_study,
+    validate_event_inputs,
 )
 
 
@@ -54,6 +57,7 @@ class SignalStudyReport(BaseModel):
     dataset_version: str
     feature_version: str
     code_sha: str
+    outcome_name: str = "abnormal_return"
     config: EventStudyConfig
     event_count: int
     results: list[SignalWindowResult]
@@ -69,6 +73,7 @@ def run_signal_study(
     dataset_version: str,
     feature_version: str,
     code_sha: str,
+    outcome_name: str = "abnormal_return",
 ) -> SignalStudyReport:
     scored = [event for event in events if event.feature_value is not None]
     base = run_event_study(
@@ -87,14 +92,106 @@ def run_signal_study(
         if feature is not None:
             by_window[observation.window].append((feature, observation.abnormal_return))
 
+    return _build_signal_report(
+        scored,
+        by_window,
+        config,
+        signal_name=signal_name,
+        outcome_name=outcome_name,
+        n_quantiles=n_quantiles,
+        dataset_version=dataset_version,
+        feature_version=feature_version,
+        code_sha=code_sha,
+        event_count=base.event_count,
+    )
+
+
+def run_realized_volatility_signal_study(
+    events: list[FilingEvent],
+    bars: list[MarketBar],
+    config: EventStudyConfig,
+    *,
+    signal_name: str,
+    n_quantiles: int,
+    dataset_version: str,
+    feature_version: str,
+    code_sha: str,
+) -> SignalStudyReport:
+    scored = [event for event in events if event.feature_value is not None]
+    validate_event_inputs(scored)
+    bars_by_ticker: dict[str, list[MarketBar]] = defaultdict(list)
+    for bar in bars:
+        bars_by_ticker[bar.ticker.upper()].append(bar)
+    for ticker_bars in bars_by_ticker.values():
+        ticker_bars.sort(key=lambda bar: bar.date)
+
+    by_window: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for event in scored:
+        feature = event.feature_value
+        if feature is None:
+            continue
+        ticker_bars = bars_by_ticker.get(event.ticker.upper(), [])
+        event_index = _event_session_index(event.available_at, ticker_bars, config)
+        if event_index is None:
+            continue
+        for window in config.windows:
+            start_index = event_index + window.start
+            end_index = event_index + window.end
+            if start_index < 0 or end_index >= len(ticker_bars):
+                continue
+            daily_returns = [
+                ticker_bars[index].adjusted_close / ticker_bars[index - 1].adjusted_close
+                - 1
+                for index in range(start_index + 1, end_index + 1)
+            ]
+            if not daily_returns:
+                continue
+            realized_volatility = sqrt(mean(value * value for value in daily_returns))
+            by_window[window.label].append((feature, realized_volatility))
+
+    return _build_signal_report(
+        scored,
+        by_window,
+        config,
+        signal_name=signal_name,
+        outcome_name="realized_volatility",
+        n_quantiles=n_quantiles,
+        dataset_version=dataset_version,
+        feature_version=feature_version,
+        code_sha=code_sha,
+        event_count=len(scored),
+    )
+
+
+def _build_signal_report(
+    scored: list[FilingEvent],
+    by_window: dict[str, list[tuple[float, float]]],
+    config: EventStudyConfig,
+    *,
+    signal_name: str,
+    outcome_name: str,
+    n_quantiles: int,
+    dataset_version: str,
+    feature_version: str,
+    code_sha: str,
+    event_count: int,
+) -> SignalStudyReport:
+    feature_by_accession = {event.accession_number: event.feature_value for event in scored}
     rng = random.Random(config.random_seed)
-    results: list[SignalWindowResult] = []
-    for window in config.windows:
-        pairs = by_window.get(window.label, [])
-        results.append(_summarize_window(window.label, pairs, n_quantiles, config, rng))
+    results = [
+        _summarize_window(
+            window.label,
+            by_window.get(window.label, []),
+            n_quantiles,
+            config,
+            rng,
+        )
+        for window in config.windows
+    ]
 
     manifest = {
         "signal_name": signal_name,
+        "outcome_name": outcome_name,
         "n_quantiles": n_quantiles,
         "dataset_version": dataset_version,
         "feature_version": feature_version,
@@ -108,12 +205,13 @@ def run_signal_study(
     return SignalStudyReport(
         experiment_key=experiment_key,
         signal_name=signal_name,
+        outcome_name=outcome_name,
         n_quantiles=n_quantiles,
         dataset_version=dataset_version,
         feature_version=feature_version,
         code_sha=code_sha,
         config=config,
-        event_count=base.event_count,
+        event_count=event_count,
         results=results,
     )
 

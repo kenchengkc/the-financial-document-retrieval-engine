@@ -17,6 +17,12 @@ on:
       filing_limit:
         description: "Latest N filings per form per company"
         default: "1"
+      annual_limit:
+        description: "Latest N 10-K filings per company (optional override)"
+        default: ""
+      quarterly_limit:
+        description: "Latest N 10-Q filings per company (optional override)"
+        default: ""
       force_parse:
         description: "Reparse unchanged filings after parser updates"
         type: boolean
@@ -98,6 +104,8 @@ jobs:
       OFFSET: ${{ github.event.inputs.offset || '0' }}
       LIMIT: ${{ github.event.inputs.limit || '10' }}
       FILING_LIMIT: ${{ github.event.inputs.filing_limit || '1' }}
+      ANNUAL_LIMIT: ${{ github.event.inputs.annual_limit || '' }}
+      QUARTERLY_LIMIT: ${{ github.event.inputs.quarterly_limit || '' }}
       FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
       INDEX_ONLY: ${{ github.event.inputs.index_only || 'false' }}
     steps:
@@ -106,6 +114,8 @@ jobs:
           [[ "${OFFSET}" =~ ^[0-9]+$ ]]
           [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
           [[ "${FILING_LIMIT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${ANNUAL_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
+          [[ "${QUARTERLY_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
           [[ "${FORCE_PARSE}" =~ ^(true|false)$ ]]
           [[ "${INDEX_ONLY}" =~ ^(true|false)$ ]]
 
@@ -146,11 +156,18 @@ jobs:
           if [ "${INDEX_ONLY}" = "true" ]; then
             index_args+=(--index-only)
           fi
+          history_args=(--filing-limit "${FILING_LIMIT}")
+          if [ -n "${ANNUAL_LIMIT}" ]; then
+            history_args+=(--annual-limit "${ANNUAL_LIMIT}")
+          fi
+          if [ -n "${QUARTERLY_LIMIT}" ]; then
+            history_args+=(--quarterly-limit "${QUARTERLY_LIMIT}")
+          fi
           python scripts/ingest_ticker_batch.py \
             --universe sp500 \
             --offset "${OFFSET}" \
             --limit "${LIMIT}" \
-            --filing-limit "${FILING_LIMIT}" \
+            "${history_args[@]}" \
             "${force_args[@]}" \
             "${index_args[@]}"
 
@@ -170,6 +187,8 @@ jobs:
               -f offset="${next_offset}" \
               -f limit="${LIMIT}" \
               -f filing_limit="${FILING_LIMIT}" \
+              -f annual_limit="${ANNUAL_LIMIT}" \
+              -f quarterly_limit="${QUARTERLY_LIMIT}" \
               -f force_parse="${FORCE_PARSE}" \
               -f index_only="${INDEX_ONLY}" \
               -f chain=true

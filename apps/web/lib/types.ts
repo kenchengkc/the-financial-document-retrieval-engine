@@ -119,11 +119,16 @@ export type SignalStudyResponse = {
   created_at: string;
   report: {
     signal_name: string;
+    outcome_name?: string;
     n_quantiles: number;
     event_count: number;
     config: { benchmark_ticker?: string; confidence_level?: number };
     results: SignalWindow[];
   };
+};
+
+export type SignalStudiesResponse = {
+  studies: SignalStudyResponse[];
 };
 
 export type OperationsQuality = {

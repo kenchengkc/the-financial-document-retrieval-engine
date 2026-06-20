@@ -69,7 +69,7 @@ type ModeId = "ask" | "retrieve" | "screen" | "signals" | "universe" | "operatio
 
 const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] = [
   { id: "ask", label: "Ask", hint: "Cited answers", icon: MessageSquareText },
-  { id: "retrieve", label: "Retrieve", hint: "Point-in-time search", icon: CalendarClock },
+  { id: "retrieve", label: "Retrieve", hint: "Hybrid RAG search", icon: CalendarClock },
   { id: "screen", label: "Screen", hint: "Cross-sectional scan", icon: ScanSearch },
   { id: "signals", label: "Signals", hint: "Event-study backtest", icon: LineChart },
   { id: "universe", label: "Universe", hint: "Coverage explorer", icon: Building2 },
@@ -277,11 +277,12 @@ export default function Home() {
 
         <div className="gh-inner">
           <div className="gh-copy">
-            <p className="hd-eyebrow">Research infrastructure for funds and trading firms</p>
+            <p className="hd-eyebrow">Production RAG for SEC search</p>
             <h1>Financial Document Retrieval Engine</h1>
             <p className="lede">
-              A research console over SEC filings: cited answers, point-in-time retrieval,
-              cross-sectional scans, coverage, and live data-quality — evidence behind every result.
+              A research console over SEC filings: hybrid RAG, citation verification,
+              point-in-time retrieval, cross-sectional scans, and live data quality behind every
+              result.
             </p>
 
             <form className="hd-search gh-form" onSubmit={submit}>
@@ -336,7 +337,7 @@ export default function Home() {
                   : "1M+ embedded chunks"}
               </span>
               <span className="sep" aria-hidden="true" />
-              <span>Point-in-time and citation-audited</span>
+              <span>Hybrid RAG with citation audit</span>
             </div>
           </div>
         </div>
@@ -394,20 +395,19 @@ export default function Home() {
 
         <section className="architecture">
           <div>
-            <p className="eyebrow">RAG stack</p>
-            <h2>Index offline, retrieve live</h2>
+            <p className="eyebrow">RAG search stack</p>
+            <h2>Ground retrieval before generation</h2>
             <p>
-              FDRE converts SEC filings into auditable research data: hybrid retrieval for
-              evidence discovery, typed XBRL facts, point-in-time feature panels, and persisted
-              experiment manifests.
+              FDRE resolves issuers and dates, searches dense and lexical indexes, reranks
+              evidence, verifies citations, and abstains when support is weak.
             </p>
           </div>
           <ol>
-            <li>Single-name risk retrieval with stable evidence</li>
-            <li>Table and XBRL fact extraction</li>
-            <li>Comparable-period filing differences</li>
-            <li>Issuer-diversified thematic scans</li>
-            <li>Point-in-time panel export and event studies</li>
+            <li>Issuer and date-aware query routing</li>
+            <li>Dense plus lexical SEC retrieval</li>
+            <li>Rerank and evidence-gate candidates</li>
+            <li>Citation verification before answers</li>
+            <li>Point-in-time panels and signal studies</li>
           </ol>
           <a
             href="https://github.com/kenchengkc/the-financial-document-retrieval-engine#architecture"

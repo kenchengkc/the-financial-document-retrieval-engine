@@ -14,16 +14,18 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Production Corpus
 
-Measured from production on June 13, 2026:
+Measured from production on June 20, 2026:
 
 | Metric | Value |
 | --- | ---: |
-| S&P 500 primary tickers indexed | 495 / 499 |
-| SEC filings | 997 |
-| Parsed chunks | 1,072,194 |
-| Embedded chunks | 1,065,227 |
+| S&P 500 primary tickers indexed | 498 / 499 |
+| SEC filings | 1,542 |
+| Parsed chunks | 1,536,043 |
+| Embedded chunks | 1,535,651 |
 | Embeddings | Voyage `voyage-4-large`, 512 dimensions |
 
+The corpus is deepened to several years of 10-K/10-Q history per issuer (chained
+`sp500-ingest` runs), enabling multi-year point-in-time retrieval and event studies.
 The constituent list is current and therefore survivorship-biased.
 
 ## What It Does
@@ -34,6 +36,9 @@ The constituent list is current and therefore survivorship-biased.
 - Typed Company Facts queries for a restrained canonical metric set.
 - Point-in-time issuer-period panels in JSON, CSV, or Parquet.
 - Provider-neutral filing event studies with leakage checks and persisted experiment manifests.
+- Point-in-time disclosure-change signal studies (a "Lazy Prices" replication and a
+  risk-expansion-to-volatility study) with quantile portfolios, information coefficients,
+  and bootstrap inference — published at `GET /research/signal-studies`.
 - Incremental ingestion, provider backoff, run manifests, and corpus quality audits.
 
 ## Architecture

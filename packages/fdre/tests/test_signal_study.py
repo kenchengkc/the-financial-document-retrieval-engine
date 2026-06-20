@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent, MarketBar
-from fdre.research.signal_study import run_signal_study
+from fdre.research.signal_study import (
+    run_realized_volatility_signal_study,
+    run_signal_study,
+)
 
 DATES = [date(2024, 1, day) for day in range(2, 9)]
 
@@ -91,3 +94,54 @@ def test_signal_study_handles_thin_samples() -> None:
     assert window.information_coefficient is None
     assert window.quantiles == []
     assert window.long_short_mean is None
+
+
+def test_realized_volatility_signal_study_recovers_monotonic_risk() -> None:
+    events: list[FilingEvent] = []
+    bars: list[MarketBar] = _benchmark()
+    n = 30
+    for index in range(n):
+        feature = (index + 1) / n
+        daily_return = 0.002 + feature * 0.01
+        prices = [100.0]
+        for _ in range(len(DATES) - 1):
+            prices.append(prices[-1] * (1 + daily_return))
+        ticker = f"V{index:02d}"
+        bars.extend(
+            MarketBar(ticker=ticker, date=day, adjusted_close=price)
+            for day, price in zip(DATES, prices, strict=False)
+        )
+        when = datetime(2024, 1, 2, 9, 0, tzinfo=UTC)
+        events.append(
+            FilingEvent(
+                ticker=ticker,
+                accession_number=f"vol-{index:04d}",
+                available_at=when,
+                max_source_available_at=when,
+                feature_value=feature,
+            )
+        )
+
+    config = EventStudyConfig(windows=[EventWindow(start=0, end=3)], bootstrap_iterations=500)
+    report = run_realized_volatility_signal_study(
+        events,
+        bars,
+        config,
+        signal_name="risk_factor_expansion",
+        n_quantiles=5,
+        dataset_version="test",
+        feature_version="test",
+        code_sha="test",
+    )
+
+    assert report.outcome_name == "realized_volatility"
+    assert report.event_count == n
+    window = report.results[0]
+    assert window.information_coefficient is not None and window.information_coefficient > 0.95
+    means = [
+        q.mean_abnormal_return
+        for q in window.quantiles
+        if q.mean_abnormal_return is not None
+    ]
+    assert means == sorted(means)
+    assert window.long_short_mean is not None and window.long_short_mean > 0

@@ -1,0 +1,175 @@
+name: Signal study
+
+# Runs point-in-time filing-feature signal studies against cached daily market
+# data. Use market_cache_slice with max_uncached_market_fetches to warm Tiingo
+# data in budgeted chunks, then run cache_only + fail_on_missing_market_data to
+# publish a complete study from cache.
+
+on:
+  workflow_dispatch:
+    inputs:
+      signal:
+        description: "Point-in-time filing feature"
+        type: choice
+        options:
+          - disclosure_similarity
+          - risk_factor_expansion
+        default: disclosure_similarity
+      outcome:
+        description: "Forward market outcome"
+        type: choice
+        options:
+          - abnormal_return
+          - realized_volatility
+        default: abnormal_return
+      max_tickers:
+        description: "Largest eligible issuer count"
+        default: "250"
+      min_documents:
+        description: "Minimum filings per issuer"
+        default: "4"
+      market_cache_slice:
+        description: "Optional OFFSET:LIMIT cache-warming slice; skips publishing"
+        default: ""
+      max_uncached_market_fetches:
+        description: "Maximum uncached market-data requests in this run"
+        default: "50"
+      cache_only:
+        description: "Use only cached market data"
+        type: boolean
+        default: false
+      fail_on_missing_market_data:
+        description: "Fail publish runs with missing selected market data"
+        type: boolean
+        default: true
+      windows:
+        description: "Space-separated event windows"
+        default: "0:1 1:21 1:63"
+      benchmark:
+        description: "Market benchmark ticker"
+        default: "SPY"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-signal-study
+  cancel-in-progress: false
+
+jobs:
+  signal-study:
+    name: Run signal study
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      TIINGO_API_KEY: ${{ secrets.TIINGO_API_KEY }}
+      PYTHONPATH: .
+      SIGNAL: ${{ github.event.inputs.signal || 'disclosure_similarity' }}
+      OUTCOME: ${{ github.event.inputs.outcome || 'abnormal_return' }}
+      MAX_TICKERS: ${{ github.event.inputs.max_tickers || '250' }}
+      MIN_DOCUMENTS: ${{ github.event.inputs.min_documents || '4' }}
+      MARKET_CACHE_SLICE: ${{ github.event.inputs.market_cache_slice || '' }}
+      MAX_UNCACHED_MARKET_FETCHES: ${{ github.event.inputs.max_uncached_market_fetches || '50' }}
+      CACHE_ONLY: ${{ github.event.inputs.cache_only || 'false' }}
+      FAIL_ON_MISSING_MARKET_DATA: ${{ github.event.inputs.fail_on_missing_market_data || 'true' }}
+      WINDOWS: ${{ github.event.inputs.windows || '0:1 1:21 1:63' }}
+      BENCHMARK: ${{ github.event.inputs.benchmark || 'SPY' }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "${SIGNAL}" =~ ^(disclosure_similarity|risk_factor_expansion)$ ]]
+          [[ "${OUTCOME}" =~ ^(abnormal_return|realized_volatility)$ ]]
+          [[ "${MAX_TICKERS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${MIN_DOCUMENTS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${MARKET_CACHE_SLICE}" =~ ^$|^[0-9]+:[1-9][0-9]*$ ]]
+          [[ "${MAX_UNCACHED_MARKET_FETCHES}" =~ ^[0-9]+$ ]]
+          [[ "${CACHE_ONLY}" =~ ^(true|false)$ ]]
+          [[ "${FAIL_ON_MISSING_MARKET_DATA}" =~ ^(true|false)$ ]]
+          [[ "${WINDOWS}" =~ ^-?[0-9]+:-?[0-9]+([[:space:]]+-?[0-9]+:-?[0-9]+)*$ ]]
+          [[ "${BENCHMARK}" =~ ^[A-Z0-9.-]+$ ]]
+
+      - name: Check required secrets
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ "${CACHE_ONLY}" != "true" ] && [ -z "${TIINGO_API_KEY}" ]; then
+            echo "::error::TIINGO_API_KEY is required for uncached market-data fetches."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Restore market cache
+        id: market-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fdre-market-${{ runner.os }}-
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Use direct database URL for signal study
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Run signal study
+        run: |
+          read -r -a window_args <<< "${WINDOWS}"
+          cache_args=()
+          if [ -n "${MARKET_CACHE_SLICE}" ]; then
+            cache_args+=(--market-cache-slice "${MARKET_CACHE_SLICE}")
+          fi
+          if [ "${CACHE_ONLY}" = "true" ]; then
+            cache_args+=(--cache-only)
+          fi
+          if [ "${FAIL_ON_MISSING_MARKET_DATA}" = "true" ]; then
+            cache_args+=(--fail-on-missing-market-data)
+          fi
+          python -m scripts.retrieval_pipeline signal-study \
+            --signal "${SIGNAL}" \
+            --outcome "${OUTCOME}" \
+            --output "data/processed/signals/${SIGNAL}-${OUTCOME}.json" \
+            --max-tickers "${MAX_TICKERS}" \
+            --min-documents "${MIN_DOCUMENTS}" \
+            --benchmark "${BENCHMARK}" \
+            --windows "${window_args[@]}" \
+            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}" \
+            "${cache_args[@]}"
+
+      - name: Upload signal-study report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signal-study-${{ github.run_id }}
+          path: data/processed/signals/*.json
+          if-no-files-found: ignore
+
+      - name: Save market cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}

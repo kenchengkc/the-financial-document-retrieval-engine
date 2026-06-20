@@ -7,7 +7,7 @@ import subprocess
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -42,8 +42,9 @@ from fdre.research.event_study import (
     run_event_study,
     write_event_study_report,
 )
-from fdre.research.market_data import fetch_market_bars
+from fdre.research.market_data import DEFAULT_CACHE_DIR, fetch_market_bars
 from fdre.research.panel import (
+    PanelFeature,
     ResearchPanelQuery,
     build_research_panel,
     write_research_panel,
@@ -51,6 +52,7 @@ from fdre.research.panel import (
 from fdre.research.signal_study import (
     SignalStudyReport,
     persist_signal_study,
+    run_realized_volatility_signal_study,
     run_signal_study,
 )
 from fdre.retrieval.dense import DenseRetriever
@@ -155,9 +157,19 @@ def parse_args() -> argparse.Namespace:
     event_parser.add_argument("--walk-forward-splits", nargs="+")
     signal_parser = subparsers.add_parser(
         "signal-study",
-        help="Run the point-in-time disclosure-change (Lazy Prices) signal study",
+        help="Run a point-in-time filing-feature signal study",
     )
     signal_parser.add_argument("--output", required=True)
+    signal_parser.add_argument(
+        "--signal",
+        choices=("disclosure_similarity", "risk_factor_expansion"),
+        default="disclosure_similarity",
+    )
+    signal_parser.add_argument(
+        "--outcome",
+        choices=("abnormal_return", "realized_volatility"),
+        default="abnormal_return",
+    )
     signal_parser.add_argument("--tickers", nargs="+")
     signal_parser.add_argument("--max-tickers", type=int, default=50)
     signal_parser.add_argument("--min-documents", type=int, default=4)
@@ -166,6 +178,30 @@ def parse_args() -> argparse.Namespace:
     signal_parser.add_argument("--windows", nargs="+", default=["0:1", "1:21", "1:63"])
     signal_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
     signal_parser.add_argument("--forward-buffer-days", type=int, default=130)
+    signal_parser.add_argument(
+        "--market-cache-dir",
+        default=str(DEFAULT_CACHE_DIR),
+        help="Local market-data cache directory; use an empty value to disable caching",
+    )
+    signal_parser.add_argument(
+        "--cache-only",
+        action="store_true",
+        help="Use only cached market data and report uncached symbols as missing",
+    )
+    signal_parser.add_argument(
+        "--fail-on-missing-market-data",
+        action="store_true",
+        help="Fail instead of publishing when any selected market data is missing",
+    )
+    signal_parser.add_argument(
+        "--max-uncached-market-fetches",
+        type=int,
+        help="Maximum uncached ticker/benchmark market-data requests for this run",
+    )
+    signal_parser.add_argument(
+        "--market-cache-slice",
+        help="Warm only OFFSET:LIMIT selected market tickers, then exit without publishing",
+    )
     audit_parser = subparsers.add_parser(
         "audit",
         help="Report corpus freshness, completeness, and indexing integrity",
@@ -469,6 +505,11 @@ def _git_sha() -> str:
 
 
 def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
+    if (
+        args.max_uncached_market_fetches is not None
+        and args.max_uncached_market_fetches < 0
+    ):
+        raise SystemExit("--max-uncached-market-fetches must be non-negative.")
     if args.tickers:
         tickers = [ticker.upper() for ticker in args.tickers]
     else:
@@ -485,7 +526,7 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         session,
         ResearchPanelQuery(
             tickers=tickers,
-            features=["disclosure_similarity"],
+            features=_signal_panel_features(args.signal),
             limit=10_000,
         ),
     )
@@ -495,32 +536,85 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             accession_number=row.accession_number,
             available_at=row.available_at,
             max_source_available_at=row.max_source_available_at,
-            feature_value=row.disclosure_similarity,
+            feature_value=_signal_feature_value(row, args.signal),
         )
         for row in panel.rows
     ]
     scored = [event for event in events if event.feature_value is not None]
     if len(scored) < args.n_quantiles * 4:
-        raise SystemExit(f"Only {len(scored)} scored events; ingest more filing history first.")
+        raise SystemExit(
+            f"Only {len(scored)} scored events; ingest more filing history first."
+        )
     event_dates = [event.available_at.date() for event in scored]
     start = min(event_dates) - timedelta(days=10)
     end = max(event_dates) + timedelta(days=args.forward_buffer_days)
-    bars, missing = fetch_market_bars(tickers, start, end, benchmark=args.benchmark)
+    cache_dir = Path(args.market_cache_dir) if args.market_cache_dir else None
+    market_slice = _optional_slice(args.market_cache_slice)
+    market_tickers = (
+        tickers[market_slice[0] : market_slice[0] + market_slice[1]]
+        if market_slice is not None
+        else tickers
+    )
+    bars, missing = fetch_market_bars(
+        market_tickers,
+        start,
+        end,
+        benchmark=args.benchmark,
+        cache_dir=cache_dir,
+        cache_only=args.cache_only,
+        max_uncached_fetches=args.max_uncached_market_fetches,
+    )
+    if market_slice is not None:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "status": "market_cache_warmed",
+            "signal_name": args.signal,
+            "outcome_name": args.outcome,
+            "tickers": market_tickers,
+            "all_selected_tickers": len(tickers),
+            "events": len(scored),
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "market_bars": len(bars),
+            "missing_market_data": missing,
+        }
+        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        return {"output": str(output_path), **payload}
+    if missing and args.fail_on_missing_market_data:
+        raise SystemExit(f"Missing market data for: {', '.join(missing)}")
     config = EventStudyConfig(
         benchmark_ticker=args.benchmark,
         windows=[_event_window(value) for value in args.windows],
         bootstrap_iterations=args.bootstrap_iterations,
     )
-    report: SignalStudyReport = run_signal_study(
-        scored,
-        bars,
-        config,
-        signal_name="disclosure_similarity",
-        n_quantiles=args.n_quantiles,
-        dataset_version=panel.corpus_snapshot_id,
-        feature_version=panel.feature_version,
-        code_sha=_git_sha(),
-    )
+    if args.outcome == "realized_volatility":
+        report: SignalStudyReport = run_realized_volatility_signal_study(
+            scored,
+            bars,
+            config,
+            signal_name=args.signal,
+            n_quantiles=args.n_quantiles,
+            dataset_version=panel.corpus_snapshot_id,
+            feature_version=panel.feature_version,
+            code_sha=_git_sha(),
+        )
+    else:
+        report = run_signal_study(
+            scored,
+            bars,
+            config,
+            signal_name=args.signal,
+            n_quantiles=args.n_quantiles,
+            dataset_version=panel.corpus_snapshot_id,
+            feature_version=panel.feature_version,
+            code_sha=_git_sha(),
+            outcome_name=args.outcome,
+        )
+    if report.event_count == 0:
+        raise SystemExit(
+            "No filing events had matching market data; refusing to publish an empty study."
+        )
     experiment = persist_signal_study(session, report)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -531,10 +625,39 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         "output": str(output_path),
         "experiment_id": experiment.id,
         "experiment_key": report.experiment_key,
+        "signal_name": report.signal_name,
+        "outcome_name": report.outcome_name,
         "tickers": len(tickers),
         "events": report.event_count,
         "missing_market_data": missing,
     }
+
+
+def _signal_panel_features(signal_name: str) -> list[PanelFeature]:
+    if signal_name == "risk_factor_expansion":
+        return ["risk_changes"]
+    return ["disclosure_similarity"]
+
+
+def _signal_feature_value(row: Any, signal_name: str) -> float | None:
+    if signal_name == "risk_factor_expansion":
+        if row.risk_added_passages is None and row.risk_removed_passages is None:
+            return None
+        return float((row.risk_added_passages or 0) - (row.risk_removed_passages or 0))
+    return cast(float | None, row.disclosure_similarity)
+
+
+def _optional_slice(value: str | None) -> tuple[int, int] | None:
+    if not value:
+        return None
+    offset_text, separator, limit_text = value.partition(":")
+    if not separator:
+        raise SystemExit("--market-cache-slice must use OFFSET:LIMIT.")
+    offset = int(offset_text)
+    limit = int(limit_text)
+    if offset < 0 or limit < 1:
+        raise SystemExit("--market-cache-slice requires offset >= 0 and limit >= 1.")
+    return offset, limit
 
 
 if __name__ == "__main__":

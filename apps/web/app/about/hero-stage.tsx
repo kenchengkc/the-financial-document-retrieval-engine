@@ -1,7 +1,8 @@
 "use client";
 
 import { ArrowDown } from "lucide-react";
-import { useEffect, useRef } from "react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
 
 // The two arched videos hold their first frame (the poster is the exact frame 0)
 // until BOTH are ready, then start together so the load -> play transition is
@@ -9,36 +10,80 @@ import { useEffect, useRef } from "react";
 export function HeroStage() {
   const leftRef = useRef<HTMLVideoElement | null>(null);
   const rightRef = useRef<HTMLVideoElement | null>(null);
+  const [videoLive, setVideoLive] = useState(false);
 
   useEffect(() => {
     const left = leftRef.current;
     const right = rightRef.current;
     if (!left || !right) return;
-    left.muted = true;
-    right.muted = true;
+    const videos = [left, right];
+    videos.forEach((video) => {
+      video.defaultMuted = true;
+      video.muted = true;
+      video.pause();
+    });
+
+    let cancelled = false;
     let started = false;
-    const startBoth = () => {
+    let revealFrame = 0;
+
+    const ready = () => videos.every((video) => video.readyState >= 3);
+
+    const startBoth = async () => {
       if (started) return;
-      if (left.readyState >= 3 && right.readyState >= 3) {
-        started = true;
+      if (!ready()) return;
+      started = true;
+      setVideoLive(false);
+
+      try {
         left.currentTime = 0;
         right.currentTime = 0;
-        void left.play().catch(() => {});
-        void right.play().catch(() => {});
+        await Promise.all(videos.map((video) => video.play()));
+        if (cancelled) return;
+        revealFrame = window.requestAnimationFrame(() => {
+          setVideoLive(true);
+        });
+      } catch {
+        videos.forEach((video) => video.pause());
+        setVideoLive(false);
       }
     };
-    left.addEventListener("canplay", startBoth);
-    right.addEventListener("canplay", startBoth);
-    startBoth();
+
+    videos.forEach((video) => {
+      video.addEventListener("loadeddata", startBoth);
+      video.addEventListener("canplay", startBoth);
+      video.addEventListener("canplaythrough", startBoth);
+    });
+    videos.forEach((video) => {
+      video.load();
+    });
+    void startBoth();
+
     return () => {
-      left.removeEventListener("canplay", startBoth);
-      right.removeEventListener("canplay", startBoth);
+      cancelled = true;
+      if (revealFrame) {
+        window.cancelAnimationFrame(revealFrame);
+      }
+      videos.forEach((video) => {
+        video.removeEventListener("loadeddata", startBoth);
+        video.removeEventListener("canplay", startBoth);
+        video.removeEventListener("canplaythrough", startBoth);
+      });
     };
   }, []);
 
   return (
     <div className="ih-stage">
-      <div className="ih-panel left">
+      <div className={`ih-panel left ${videoLive ? "video-live" : ""}`}>
+        <Image
+          className="ih-poster"
+          src="/about/panel-left.png"
+          alt=""
+          aria-hidden="true"
+          fill
+          priority
+          sizes="(max-width: 700px) 0px, (max-width: 1100px) 170px, 248px"
+        />
         <video
           ref={leftRef}
           className="ih-video"
@@ -73,7 +118,16 @@ export function HeroStage() {
         </a>
       </div>
 
-      <div className="ih-panel right">
+      <div className={`ih-panel right ${videoLive ? "video-live" : ""}`}>
+        <Image
+          className="ih-poster"
+          src="/about/panel-right.png"
+          alt=""
+          aria-hidden="true"
+          fill
+          priority
+          sizes="(max-width: 700px) 0px, (max-width: 1100px) 170px, 248px"
+        />
         <video
           ref={rightRef}
           className="ih-video"

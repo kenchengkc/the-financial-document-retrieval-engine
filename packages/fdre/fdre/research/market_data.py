@@ -38,6 +38,20 @@ def _epoch(day: date) -> int:
     return int(datetime.combine(day, time.min, tzinfo=UTC).timestamp())
 
 
+def _market_cache_path(
+    ticker: str,
+    start: date,
+    end: date,
+    *,
+    cache_dir: Path | None,
+    provider: str,
+) -> Path | None:
+    if cache_dir is None:
+        return None
+    prefix = "tiingo_" if provider == "tiingo" else ""
+    return Path(cache_dir) / f"{prefix}{ticker.upper()}_{start:%Y%m%d}_{end:%Y%m%d}.json"
+
+
 def open_yahoo_session() -> tuple[requests.Session, str | None]:
     """Establish a Yahoo session with anti-bot cookies + a crumb token."""
     session = requests.Session()
@@ -170,14 +184,19 @@ def fetch_market_bars(
     cache_dir: Path | None = DEFAULT_CACHE_DIR,
     pause: float = 0.5,
     tiingo_token: str | None = None,
+    cache_only: bool = False,
+    max_uncached_fetches: int | None = None,
 ) -> tuple[list[MarketBar], list[str]]:
     """Fetch bars for ``tickers`` plus the benchmark. Returns (bars, missing).
 
     Uses Tiingo when a token is available (``tiingo_token`` arg or the
     ``TIINGO_API_KEY`` env var) — reliable and reproducible — otherwise falls
-    back to the keyless Yahoo chart API (best-effort, rate-limited).
+    back to the keyless Yahoo chart API (best-effort, rate-limited). When
+    ``cache_only`` is true or ``max_uncached_fetches`` is exhausted, uncached
+    symbols are returned as missing without making network calls.
     """
     token = tiingo_token or os.environ.get("TIINGO_API_KEY")
+    provider = "tiingo" if token else "yahoo"
     wanted = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
     session = requests.Session()
     crumb = None
@@ -185,7 +204,27 @@ def fetch_market_bars(
         session, crumb = open_yahoo_session()
     bars: list[MarketBar] = []
     missing: list[str] = []
+    uncached_fetches = 0
     for symbol in wanted:
+        cache_path = _market_cache_path(
+            symbol,
+            start,
+            end,
+            cache_dir=cache_dir,
+            provider=provider,
+        )
+        cached = cache_path is not None and cache_path.exists()
+        if not cached:
+            if cache_only:
+                missing.append(symbol)
+                continue
+            if (
+                max_uncached_fetches is not None
+                and uncached_fetches >= max_uncached_fetches
+            ):
+                missing.append(symbol)
+                continue
+            uncached_fetches += 1
         try:
             if token:
                 ticker_bars = fetch_ticker_bars_tiingo(

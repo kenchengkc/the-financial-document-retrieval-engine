@@ -159,6 +159,40 @@ def signal_study(
     )
     if experiment is None:
         raise HTTPException(status_code=404, detail="No signal study has been published yet.")
+    return _signal_study_payload(experiment)
+
+
+@router.get("/signal-studies")
+def signal_studies(
+    session: Annotated[Session, Depends(get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+) -> dict[str, Any]:
+    experiments = list(
+        session.scalars(
+            select(ResearchExperiment)
+            .where(ResearchExperiment.experiment_type == "signal_study")
+            .order_by(ResearchExperiment.created_at.desc(), ResearchExperiment.id.desc())
+            .limit(limit * 4)
+        )
+    )
+    payloads: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for experiment in experiments:
+        report = experiment.results_json or {}
+        key = (
+            str(report.get("signal_name", "")),
+            str(report.get("outcome_name", "abnormal_return")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        payloads.append(_signal_study_payload(experiment))
+        if len(payloads) >= limit:
+            break
+    return {"studies": payloads}
+
+
+def _signal_study_payload(experiment: ResearchExperiment) -> dict[str, Any]:
     return {
         "experiment_id": experiment.id,
         "experiment_key": experiment.experiment_key,

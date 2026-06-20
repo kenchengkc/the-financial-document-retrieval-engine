@@ -5,6 +5,7 @@ import type {
   OperationsQuality,
   SearchFilters,
   SearchResponse,
+  SignalStudiesResponse,
   SignalStudyResponse,
   ThematicScanResponse,
 } from "@/lib/types";
@@ -135,4 +136,17 @@ export async function fetchSignalStudy(): Promise<SignalStudyResponse | null> {
   } catch {
     return null;
   }
+}
+
+export async function fetchSignalStudies(): Promise<SignalStudyResponse[]> {
+  try {
+    const response = await fetch(`${API_URL}/research/signal-studies`, { cache: "no-store" });
+    if (response.ok) {
+      return ((await response.json()) as SignalStudiesResponse).studies;
+    }
+  } catch {
+    // Fall back to the legacy single-study endpoint below.
+  }
+  const study = await fetchSignalStudy();
+  return study ? [study] : [];
 }

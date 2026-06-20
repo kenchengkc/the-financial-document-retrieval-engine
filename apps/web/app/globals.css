@@ -803,20 +803,54 @@ a {
   box-shadow: 0 24px 54px rgba(14, 26, 20, 0.22);
 }
 
-.ih-video {
+.ih-video,
+.ih-poster {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  z-index: 1;
 }
 
-.ih-panel.left .ih-video {
+.ih-video {
+  z-index: 1;
+  opacity: 0;
+}
+
+.ih-poster {
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+  opacity: 1;
+}
+
+.ih-panel.video-live .ih-video {
+  opacity: 1;
+}
+
+.ih-panel.video-live .ih-poster {
+  opacity: 0;
+}
+
+.ih-panel.left {
+  background-image: url("/about/panel-left.png");
+  background-position: 42% 50%;
+  background-size: cover;
+}
+
+.ih-panel.right {
+  background-image: url("/about/panel-right.png");
+  background-position: 53% 50%;
+  background-size: cover;
+}
+
+.ih-panel.left .ih-video,
+.ih-panel.left .ih-poster {
   object-position: 42% 50%;
 }
 
-.ih-panel.right .ih-video {
+.ih-panel.right .ih-video,
+.ih-panel.right .ih-poster {
   object-position: 53% 50%;
 }
 
@@ -824,7 +858,7 @@ a {
   position: absolute;
   inset: -20%;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
   mix-blend-mode: screen;
 }
 
@@ -2470,6 +2504,7 @@ main {
 }
 
 .rf-query button {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -3075,9 +3110,31 @@ main {
     display: none;
   }
 
+  .rf-query {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    padding: 10px;
+  }
+
+  .rf-query > svg {
+    align-self: center;
+    justify-self: center;
+  }
+
+  .rf-query button {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
+  }
+
   .rf-controls,
   .issuer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rr-summary .pit-on,
+  .rr-summary .pit-off {
+    margin-left: 0;
   }
 
   .universe-stats,
@@ -3106,6 +3163,32 @@ main {
 }
 
 /* ---- signals (event-study backtest) ---- */
+.sig-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.sig-tabs button {
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 11px;
+  background: transparent;
+  color: var(--muted);
+  font: 10px var(--mono);
+  cursor: pointer;
+}
+
+.sig-tabs button.on {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(17, 31, 24, 0.08);
+}
+
 .sig-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3255,6 +3338,10 @@ main {
   background: var(--amber);
 }
 
+.sig-qfill.vol {
+  background: var(--cyan);
+}
+
 .sig-qval {
   text-align: right;
   font: 10px var(--mono);
@@ -3266,6 +3353,10 @@ main {
 
 .sig-qval.neg {
   color: var(--amber);
+}
+
+.sig-qval.vol {
+  color: var(--cyan);
 }
 
 .sig-card > footer {
