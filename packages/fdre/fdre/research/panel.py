@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models import Company, Document, DocumentElement, FinancialFact
 from fdre.ingestion.xbrl import CANONICAL_CONCEPTS
-from fdre.research.filing_diffs import diff_documents, select_comparable_document
+from fdre.research.filing_diffs import select_comparable_document
 
 FEATURE_VERSION = "fdre-panel-v1"
 PanelFeature = Literal[
@@ -259,15 +259,10 @@ def _build_row(
         if fact.available_at is not None
     ]
     source_times.extend(fact_times)
-    diff = (
-        diff_documents(
-            session,
-            prior,
-            document,
-            comparison_basis="research_panel_comparable",
-        )
+    risk_added, risk_removed = (
+        _risk_factor_changes(texts_by_section, prior_sections)
         if prior is not None and "risk_changes" in selected_features
-        else None
+        else (None, None)
     )
     revenue = current_facts.get("revenue")
     previous_revenue = prior_facts.get("revenue")
@@ -301,12 +296,8 @@ def _build_row(
             if "disclosure_similarity" in selected_features
             else None
         ),
-        risk_added_passages=(
-            _risk_change_count(diff, "added") if diff is not None else None
-        ),
-        risk_removed_passages=(
-            _risk_change_count(diff, "removed") if diff is not None else None
-        ),
+        risk_added_passages=risk_added,
+        risk_removed_passages=risk_removed,
         table_density=(
             sum(element.element_type == "table" for element in elements)
             / max(len(elements), 1)
@@ -474,14 +465,17 @@ def _ratio(numerator: Decimal | None, denominator: Decimal | None) -> float | No
     return float(numerator / denominator)
 
 
-def _risk_change_count(
-    difference: Any,
-    change_type: str,
-) -> int:
-    return sum(
-        change.change_type == change_type and change.section == "Risk Factors"
-        for change in difference.changes
-    )
+def _risk_factor_changes(
+    current: dict[str, list[str]],
+    previous: dict[str, list[str]],
+) -> tuple[int, int]:
+    """Net Risk-Factors passage churn vs the prior filing via fingerprint set
+    difference (added, removed). Equivalent net signal to a full SequenceMatcher
+    diff but ~order-of-magnitude faster, since it only touches the Risk Factors
+    section and avoids per-passage similarity scoring."""
+    current_risk = {_text_fingerprint(passage) for passage in current.get("Risk Factors", [])}
+    previous_risk = {_text_fingerprint(passage) for passage in previous.get("Risk Factors", [])}
+    return len(current_risk - previous_risk), len(previous_risk - current_risk)
 
 
 def _text_fingerprint(value: str) -> str:
