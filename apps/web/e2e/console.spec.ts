@@ -87,6 +87,53 @@ test("renders the coverage universe", async ({ page }) => {
   await expect(page.locator(".ut-row").first()).toContainText("KKR");
 });
 
+test("renders the published signal study", async ({ page }) => {
+  await mockBase(page);
+  await page.route("**/research/signal-study**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        experiment_id: 1,
+        experiment_key: "abc",
+        code_sha: "deadbeef",
+        created_at: "2026-06-20T06:12:36Z",
+        report: {
+          signal_name: "disclosure_similarity",
+          n_quantiles: 5,
+          event_count: 241,
+          config: { benchmark_ticker: "SPY", confidence_level: 0.95 },
+          results: [
+            {
+              window: "0:1",
+              sample_size: 241,
+              information_coefficient: 0.0771,
+              ic_t_stat: 1.2,
+              quantiles: [
+                { quantile: 1, sample_size: 48, mean_abnormal_return: -0.0005 },
+                { quantile: 2, sample_size: 48, mean_abnormal_return: -0.0016 },
+                { quantile: 3, sample_size: 48, mean_abnormal_return: -0.0051 },
+                { quantile: 4, sample_size: 48, mean_abnormal_return: 0.0003 },
+                { quantile: 5, sample_size: 49, mean_abnormal_return: 0.0016 },
+              ],
+              long_short_mean: 0.0021,
+              long_short_ci_low: -0.0083,
+              long_short_ci_high: 0.0121,
+              long_short_p_value: 0.686,
+            },
+          ],
+        },
+      }),
+    }),
+  );
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: /Signals/ }).click();
+  await expect(page.locator(".sig-stats")).toContainText("Filing events");
+  await expect(page.locator(".sig-card").first()).toContainText("Filing day");
+  await expect(page.locator(".sig-card").first()).toContainText("not significant");
+});
+
 test("renders the live data-quality dashboard", async ({ page }) => {
   await mockBase(page);
   await page.route("**/operations/quality**", (route) =>

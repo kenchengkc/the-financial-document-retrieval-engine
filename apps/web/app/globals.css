@@ -2327,7 +2327,7 @@ main {
 
 .console-rail {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
@@ -3060,7 +3060,8 @@ main {
     grid-template-columns: 1fr 1fr;
   }
 
-  .ops-grid {
+  .ops-grid,
+  .sig-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -3080,12 +3081,14 @@ main {
   }
 
   .universe-stats,
-  .ops-counts {
+  .ops-counts,
+  .sig-stats {
     grid-template-columns: 1fr 1fr;
   }
 
   .universe-stats > div:nth-child(2n),
-  .ops-counts > div:nth-child(2n) {
+  .ops-counts > div:nth-child(2n),
+  .sig-stats > div:nth-child(2n) {
     border-right: 0;
   }
 
@@ -3100,6 +3103,231 @@ main {
   .ut-row span:nth-child(4) {
     display: none;
   }
+}
+
+/* ---- signals (event-study backtest) ---- */
+.sig-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.sig-stats > div {
+  padding: 16px 18px;
+  border-right: 1px solid var(--line);
+}
+
+.sig-stats > div:last-child {
+  border-right: 0;
+}
+
+.sig-stats dt {
+  color: var(--muted);
+  font: 9px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sig-stats dd {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font: 500 22px var(--display);
+}
+
+.sig-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sig-card {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.sig-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sig-card header strong {
+  display: block;
+  color: var(--ink);
+  font: 500 16px var(--display);
+}
+
+.sig-card header small {
+  color: var(--muted);
+  font: 9.5px var(--mono);
+}
+
+.sig-ic {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.sig-ic span {
+  color: var(--muted);
+  font: 8.5px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sig-ic strong {
+  color: var(--green-deep);
+  font: 15px var(--mono);
+}
+
+.sig-ic em {
+  color: var(--muted);
+  font: 9px var(--mono);
+  font-style: normal;
+}
+
+.sig-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: 14px 0 10px;
+  color: var(--muted);
+  font: 8.5px var(--mono);
+}
+
+.sig-quantiles {
+  display: grid;
+  gap: 8px;
+}
+
+.sig-qrow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 9px;
+}
+
+.sig-qlabel {
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
+.sig-qtrack {
+  position: relative;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+}
+
+.sig-qzero {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.sig-qfill {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 2px;
+}
+
+.sig-qfill.pos {
+  background: var(--green);
+}
+
+.sig-qfill.neg {
+  background: var(--amber);
+}
+
+.sig-qval {
+  text-align: right;
+  font: 10px var(--mono);
+}
+
+.sig-qval.pos {
+  color: var(--green-deep);
+}
+
+.sig-qval.neg {
+  color: var(--amber);
+}
+
+.sig-card > footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
+.sig-card > footer strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.sig-card > footer.ok strong {
+  color: var(--green-deep);
+}
+
+.sig-note {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--green);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.sig-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--green);
+}
+
+.sig-note p {
+  margin: 0;
+  color: var(--prose);
+  font: 12.5px/1.65 var(--lede);
+}
+
+.sig-note strong {
+  color: var(--ink);
+}
+
+.sig-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
+.sig-foot svg {
+  color: var(--green);
 }
 
 /* ============================================================

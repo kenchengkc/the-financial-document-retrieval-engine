@@ -174,7 +174,8 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
 
   await expect(page.getByRole("heading", { name: "Research infrastructure that shows its work" }))
     .toBeVisible();
-  await expect(page.getByText("495 / 499")).toBeVisible();
+  // The corpus counts are read live (ISR), so assert the stable labels, not values.
+  await expect(page.getByText("S&P 500 primary tickers indexed")).toBeVisible();
   await expect(page.getByText("Five public demonstrations")).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({

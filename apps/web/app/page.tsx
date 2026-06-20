@@ -16,6 +16,7 @@ import {
   Filter,
   GaugeCircle,
   Layers,
+  LineChart,
   LoaderCircle,
   MessageSquareText,
   Route,
@@ -29,6 +30,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { OperationsPanel } from "@/components/operations-panel";
 import { RetrievePanel } from "@/components/retrieve-panel";
 import { ScreenPanel } from "@/components/screen-panel";
+import { SignalsPanel } from "@/components/signals-panel";
 import { UniversePanel } from "@/components/universe-panel";
 import {
   ConfidenceRing,
@@ -63,12 +65,13 @@ const exampleChips = [
   },
 ];
 
-type ModeId = "ask" | "retrieve" | "screen" | "universe" | "operations";
+type ModeId = "ask" | "retrieve" | "screen" | "signals" | "universe" | "operations";
 
 const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] = [
   { id: "ask", label: "Ask", hint: "Cited answers", icon: MessageSquareText },
   { id: "retrieve", label: "Retrieve", hint: "Point-in-time search", icon: CalendarClock },
   { id: "screen", label: "Screen", hint: "Cross-sectional scan", icon: ScanSearch },
+  { id: "signals", label: "Signals", hint: "Event-study backtest", icon: LineChart },
   { id: "universe", label: "Universe", hint: "Coverage explorer", icon: Building2 },
   { id: "operations", label: "Operations", hint: "Data quality", icon: GaugeCircle },
 ];
@@ -383,6 +386,7 @@ export default function Home() {
             )}
             {mode === "retrieve" && <RetrievePanel onRun={pushRun} />}
             {mode === "screen" && <ScreenPanel onRun={pushRun} />}
+            {mode === "signals" && <SignalsPanel />}
             {mode === "universe" && <UniversePanel />}
             {mode === "operations" && <OperationsPanel />}
           </div>

@@ -94,6 +94,38 @@ export type CompaniesResponse = {
   companies: Company[];
 };
 
+export type SignalQuantile = {
+  quantile: number;
+  sample_size: number;
+  mean_abnormal_return: number | null;
+};
+
+export type SignalWindow = {
+  window: string;
+  sample_size: number;
+  information_coefficient: number | null;
+  ic_t_stat: number | null;
+  quantiles: SignalQuantile[];
+  long_short_mean: number | null;
+  long_short_ci_low: number | null;
+  long_short_ci_high: number | null;
+  long_short_p_value: number | null;
+};
+
+export type SignalStudyResponse = {
+  experiment_id: number;
+  experiment_key: string;
+  code_sha: string;
+  created_at: string;
+  report: {
+    signal_name: string;
+    n_quantiles: number;
+    event_count: number;
+    config: { benchmark_ticker?: string; confidence_level?: number };
+    results: SignalWindow[];
+  };
+};
+
 export type OperationsQuality = {
   generated_at: string;
   company_count: number;

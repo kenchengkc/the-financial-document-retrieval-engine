@@ -5,6 +5,7 @@ import type {
   OperationsQuality,
   SearchFilters,
   SearchResponse,
+  SignalStudyResponse,
   ThematicScanResponse,
 } from "@/lib/types";
 
@@ -122,4 +123,16 @@ export function fetchCompanies(): Promise<CompaniesResponse> {
 
 export function fetchOperationsQuality(): Promise<OperationsQuality> {
   return getJson<OperationsQuality>("/operations/quality");
+}
+
+export async function fetchSignalStudy(): Promise<SignalStudyResponse | null> {
+  try {
+    const response = await fetch(`${API_URL}/research/signal-study`, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as SignalStudyResponse;
+  } catch {
+    return null;
+  }
 }
