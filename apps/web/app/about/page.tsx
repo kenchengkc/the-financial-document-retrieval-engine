@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  ArrowDown,
   ArrowUpRight,
   BarChart3,
   CheckCircle2,
@@ -14,7 +13,7 @@ import {
   TableProperties,
 } from "lucide-react";
 
-import { LoopVideo } from "./loop-video";
+import { HeroStage } from "./hero-stage";
 import { SearchDemo } from "./search-demo";
 
 export const metadata: Metadata = {
@@ -74,38 +73,7 @@ export default async function About() {
           </div>
         </header>
 
-        <div className="ih-stage">
-          <div className="ih-panel left">
-            <LoopVideo src="/about/panel-left.mp4" poster="/about/panel-left.png" />
-            <div className="ih-motion" aria-hidden="true" />
-          </div>
-
-          <div className="ih-card">
-            <p className="hd-eyebrow">About FDRE</p>
-            <h1>
-              Research infrastructure that <span className="accent">shows its work</span>
-            </h1>
-            <p className="lede">
-              FDRE converts SEC filings into auditable retrieval results, structured facts,
-              point-in-time feature data, and reproducible event-study inputs for research teams.
-            </p>
-            <div className="ih-meta">
-              <span>Research and data engineering</span>
-              <span className="sep" aria-hidden="true" />
-              <span>Quant research engineering</span>
-              <span className="sep" aria-hidden="true" />
-              <span>No trading-strategy claims</span>
-            </div>
-            <a className="ih-down" href="#see-it-work" aria-label="Scroll to the live demo">
-              <ArrowDown size={18} strokeWidth={1.8} />
-            </a>
-          </div>
-
-          <div className="ih-panel right">
-            <LoopVideo src="/about/panel-right.mp4" poster="/about/panel-right.png" />
-            <div className="ih-motion" aria-hidden="true" />
-          </div>
-        </div>
+        <HeroStage />
       </section>
 
       <main>
