@@ -5,6 +5,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
@@ -25,10 +26,10 @@ from fdre.ingestion.ticker_map import (
     sp500_batch_tickers,
 )
 
-try:
-    from scripts.ingestion_lock import serialized_ingestion
-except ModuleNotFoundError:  # pragma: no cover - supports direct script execution
-    from ingestion_lock import serialized_ingestion
+if __package__ in {None, ""}:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from scripts.ingestion_lock import serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:

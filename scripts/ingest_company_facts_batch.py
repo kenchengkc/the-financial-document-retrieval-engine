@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from decimal import Decimal
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
@@ -23,10 +25,10 @@ from fdre.ingestion.ticker_map import (
 )
 from fdre.ingestion.xbrl import ingest_company_facts
 
-try:
-    from scripts.ingestion_lock import serialized_ingestion
-except ModuleNotFoundError:  # pragma: no cover - supports direct script execution
-    from ingestion_lock import serialized_ingestion
+if __package__ in {None, ""}:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from scripts.ingestion_lock import serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:

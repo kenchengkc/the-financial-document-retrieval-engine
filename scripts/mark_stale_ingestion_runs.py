@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -10,10 +12,10 @@ from sqlalchemy.orm import Session
 from apps.api.app.db import create_db_engine
 from apps.api.app.models import IngestionRun
 
-try:
-    from scripts.ingestion_lock import ingestion_lock_is_busy
-except ModuleNotFoundError:  # pragma: no cover - supports direct script execution
-    from ingestion_lock import ingestion_lock_is_busy
+if __package__ in {None, ""}:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from scripts.ingestion_lock import ingestion_lock_is_busy
 
 
 def parse_args() -> argparse.Namespace:
