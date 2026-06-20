@@ -22,6 +22,7 @@ FEATURE_VERSION = "fdre-panel-v1"
 PanelFeature = Literal[
     "filing_length",
     "section_novelty",
+    "disclosure_similarity",
     "risk_changes",
     "document_density",
     "topic_mentions",
@@ -65,6 +66,7 @@ class ResearchPanelRow(BaseModel):
     filing_length_characters: int | None = None
     section_token_counts: dict[str, int] = Field(default_factory=dict)
     section_novelty: dict[str, float] = Field(default_factory=dict)
+    disclosure_similarity: float | None = None
     risk_added_passages: int | None = None
     risk_removed_passages: int | None = None
     table_density: float | None = None
@@ -294,6 +296,11 @@ def _build_row(
             if "section_novelty" in selected_features
             else {}
         ),
+        disclosure_similarity=(
+            _disclosure_similarity(texts_by_section, prior_sections)
+            if "disclosure_similarity" in selected_features
+            else None
+        ),
         risk_added_passages=(
             _risk_change_count(diff, "added") if diff is not None else None
         ),
@@ -385,6 +392,28 @@ def _texts_by_section(
         if normalized:
             sections.setdefault(section, []).append(normalized)
     return sections
+
+
+def _disclosure_similarity(
+    current: dict[str, list[str]],
+    previous: dict[str, list[str]],
+) -> float | None:
+    """Document-level Jaccard similarity of passage fingerprints vs the prior
+    comparable filing (the "Lazy Prices" disclosure-change measure). 1.0 means
+    the filing is textually unchanged; lower means more revised. Point-in-time
+    safe: the prior filing is strictly older than ``available_at``."""
+    if not previous:
+        return None
+    current_fingerprints = {
+        _text_fingerprint(passage) for passages in current.values() for passage in passages
+    }
+    previous_fingerprints = {
+        _text_fingerprint(passage) for passages in previous.values() for passage in passages
+    }
+    union = current_fingerprints | previous_fingerprints
+    if not union:
+        return None
+    return len(current_fingerprints & previous_fingerprints) / len(union)
 
 
 def _section_novelty(
