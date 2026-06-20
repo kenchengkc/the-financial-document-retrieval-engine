@@ -173,7 +173,8 @@ test("renders the published signal study", async ({ page }) => {
           long_short_mean: 0.0021,
           long_short_ci_low: -0.0083,
           long_short_ci_high: 0.0121,
-          long_short_p_value: 0.686,
+          long_short_p_value: 0.04,
+          long_short_adjusted_p_value: 0.12,
         },
       ],
     },
@@ -208,7 +209,9 @@ test("renders the published signal study", async ({ page }) => {
   await page.getByRole("tab", { name: /Signals/ }).click();
   await expect(page.locator(".sig-stats")).toContainText("Filing events");
   await expect(page.locator(".sig-card").first()).toContainText("Filing day");
+  // raw p=0.04 would read "significant"; the UI must use the BH-adjusted p=0.12.
   await expect(page.locator(".sig-card").first()).toContainText("not significant");
+  await expect(page.locator(".sig-card").first()).toContainText("BH-adj p = 0.12");
   await page.getByRole("tab", { name: /Risk expansion/ }).click();
   await expect(page.locator(".panel-intro")).toContainText("higher volatility");
   await expect(page.locator(".sig-stats")).toContainText("Volatility");

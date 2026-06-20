@@ -48,6 +48,7 @@ class SignalWindowResult(BaseModel):
     long_short_ci_low: float | None
     long_short_ci_high: float | None
     long_short_p_value: float | None
+    long_short_adjusted_p_value: float | None = None
 
 
 class SignalStudyReport(BaseModel):
@@ -188,6 +189,7 @@ def _build_signal_report(
         )
         for window in config.windows
     ]
+    _apply_benjamini_hochberg(results)
 
     manifest = {
         "signal_name": signal_name,
@@ -214,6 +216,25 @@ def _build_signal_report(
         event_count=event_count,
         results=results,
     )
+
+
+def _apply_benjamini_hochberg(results: list[SignalWindowResult]) -> None:
+    """Benjamini-Hochberg step-up adjustment of the long-short p-values across
+    the tested windows. Without it, one window clearing 0.05 by chance (out of
+    several tested) reads as a finding when it is just multiple comparisons."""
+    tested = [
+        (index, result.long_short_p_value)
+        for index, result in enumerate(results)
+        if result.long_short_p_value is not None
+    ]
+    ordered = sorted(tested, key=lambda item: item[1])
+    adjusted: dict[int, float] = {}
+    running = 1.0
+    for rank, (index, p_value) in reversed(list(enumerate(ordered, start=1))):
+        running = min(running, p_value * len(ordered) / rank)
+        adjusted[index] = min(1.0, running)
+    for index, value in adjusted.items():
+        results[index].long_short_adjusted_p_value = value
 
 
 def persist_signal_study(session: Session, report: SignalStudyReport) -> ResearchExperiment:

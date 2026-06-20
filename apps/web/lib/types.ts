@@ -110,6 +110,7 @@ export type SignalWindow = {
   long_short_ci_low: number | null;
   long_short_ci_high: number | null;
   long_short_p_value: number | null;
+  long_short_adjusted_p_value: number | null;
 };
 
 export type SignalStudyResponse = {

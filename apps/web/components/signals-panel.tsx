@@ -133,7 +133,8 @@ function WindowCard({
   isVolatility: boolean;
 }) {
   const ic = window.information_coefficient;
-  const significant = window.long_short_p_value !== null && window.long_short_p_value < 0.05;
+  const adjustedP = window.long_short_adjusted_p_value ?? window.long_short_p_value;
+  const significant = adjustedP !== null && adjustedP < 0.05;
   return (
     <article className="sig-card">
       <header>
@@ -158,11 +159,9 @@ function WindowCard({
           <strong>{pct(window.long_short_mean)}</strong>
         </span>
         <span>
-          {window.long_short_p_value === null
+          {adjustedP === null
             ? ""
-            : significant
-              ? `significant (p = ${window.long_short_p_value.toFixed(2)})`
-              : `not significant (p = ${window.long_short_p_value.toFixed(2)})`}
+            : `${significant ? "significant" : "not significant"} (BH-adj p = ${adjustedP.toFixed(2)})`}
         </span>
       </footer>
     </article>
