@@ -104,6 +104,19 @@ def test_dense_sparse_hybrid_and_reranking() -> None:
         assert "Gaming" in reranked[0].text
 
 
+def test_bm25_rank_prefers_lexical_match() -> None:
+    from fdre.retrieval.bm25 import bm25_rank
+
+    documents = [
+        "the company reported revenue growth in its gaming division",
+        "data center revenue accelerated sharply this quarter",
+        "general corporate boilerplate language with no signal",
+    ]
+    order = bm25_rank("data center revenue", documents)
+    assert order[0] == 1  # strongest term overlap ranks first
+    assert order[-1] == 2  # the boilerplate doc ranks last
+
+
 def test_reciprocal_rank_fusion_rewards_agreement_and_top_ranks() -> None:
     # id 1 is rank-1 in both lists; id 2 and 3 sit lower / appear in one list each.
     dense = (1.0, [1, 3, 4])
