@@ -76,6 +76,11 @@ class EmbeddingRateLimiter:
             time.sleep(min(wait_for, 1.0))
 
 
+def _backoff_seconds(*, attempt: int) -> float:
+    backoff = float(2 ** (attempt - 1)) + random.uniform(0.0, 0.5)
+    return min(60.0, backoff)
+
+
 def _retry_after_seconds(response: httpx.Response, *, attempt: int) -> float:
     retry_after = response.headers.get("Retry-After")
     if retry_after is not None:
@@ -83,8 +88,7 @@ def _retry_after_seconds(response: httpx.Response, *, attempt: int) -> float:
             return max(float(retry_after), 0.0)
         except ValueError:
             pass
-    backoff = float(2 ** (attempt - 1)) + random.uniform(0.0, 0.5)
-    return min(60.0, backoff)
+    return _backoff_seconds(attempt=attempt)
 
 
 def _post_json_with_retries(
@@ -101,7 +105,18 @@ def _post_json_with_retries(
     for attempt in range(1, max_attempts + 1):
         if rate_limiter is not None:
             rate_limiter.acquire(token_count=token_count)
-        response = httpx.post(url, headers=headers, json=json_body, timeout=timeout)
+        try:
+            response = httpx.post(url, headers=headers, json=json_body, timeout=timeout)
+        except httpx.TransportError:
+            # Transient network failures (read timeouts, dropped/reset connections,
+            # protocol errors) are common across thousands of requests in a long
+            # embedding run; retry them with backoff like retryable status codes
+            # rather than letting one blip abort the whole batch.
+            if attempt == max_attempts:
+                raise
+            time.sleep(_backoff_seconds(attempt=delay_attempt))
+            delay_attempt += 1
+            continue
         if response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
             response.raise_for_status()
             return response

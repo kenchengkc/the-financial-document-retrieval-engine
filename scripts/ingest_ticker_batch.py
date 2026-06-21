@@ -84,11 +84,15 @@ def _selected_tickers(args: argparse.Namespace) -> list[str]:
 def _run(command: list[str]) -> int:
     print({"run": " ".join(command)}, flush=True)
     started = perf_counter()
-    completed = subprocess.run(command, check=True, capture_output=True, text=True)
+    completed = subprocess.run(command, capture_output=True, text=True)
+    # Always surface the child's output, including on failure — otherwise a
+    # non-zero exit only shows the CalledProcessError wrapper and hides the
+    # actual error (e.g. an embedding API or database failure).
     if completed.stdout:
         print(completed.stdout, end="")
     if completed.stderr:
         print(completed.stderr, end="", file=sys.stderr)
+    completed.check_returncode()
     return round((perf_counter() - started) * 1000)
 
 

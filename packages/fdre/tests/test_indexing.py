@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import time
 
+import pytest
 import respx
-from httpx import Response
+from httpx import ReadTimeout, Response
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -135,6 +136,30 @@ def test_voyage_provider_retries_after_rate_limit() -> None:
             200,
             json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]},
         ),
+    ]
+    provider = VoyageEmbeddingProvider(
+        api_key="test-key",
+        model="voyage-4-large",
+        dimensions=2,
+        requests_per_minute=None,
+        tokens_per_minute=None,
+    )
+
+    assert provider.embed_texts(["hello"]) == [[1.0, 0.0]]
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_voyage_provider_retries_after_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A transient network failure (read timeout / dropped connection) must be
+    # retried rather than aborting a long embedding run.
+    monkeypatch.setattr(time, "sleep", lambda *_args, **_kwargs: None)
+    route = respx.post("https://api.voyageai.com/v1/embeddings")
+    route.side_effect = [
+        ReadTimeout("read timed out"),
+        Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]}),
     ]
     provider = VoyageEmbeddingProvider(
         api_key="test-key",
