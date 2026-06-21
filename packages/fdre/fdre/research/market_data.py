@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import time as time_module
 from datetime import UTC, date, datetime, time
 from pathlib import Path
@@ -119,6 +120,28 @@ def fetch_ticker_bars(
     return bars
 
 
+def _covering_tiingo_path(
+    cache_dir: Path, ticker: str, start: date, end: date
+) -> Path | None:
+    """Path of a cached Tiingo file whose window covers [start, end], if any.
+
+    The cache key embeds the exact requested window, so a wider study universe
+    that shifts the date range by even a day would otherwise miss every cached
+    file and re-fetch the whole universe. Any cached file spanning at least
+    [start, end] already holds the bars we need.
+    """
+    prefix = f"tiingo_{ticker.upper()}_"
+    for path in cache_dir.glob(f"{prefix}*.json"):
+        match = re.fullmatch(rf"{re.escape(prefix)}(\d{{8}})_(\d{{8}})\.json", path.name)
+        if match is None:
+            continue
+        cached_start = datetime.strptime(match.group(1), "%Y%m%d").date()
+        cached_end = datetime.strptime(match.group(2), "%Y%m%d").date()
+        if cached_start <= start and cached_end >= end:
+            return path
+    return None
+
+
 def fetch_ticker_bars_tiingo(
     ticker: str,
     start: date,
@@ -136,6 +159,9 @@ def fetch_ticker_bars_tiingo(
         if cache_path.exists():
             rows = json.loads(cache_path.read_text())
             return _parse_tiingo(ticker, rows)
+        covering = _covering_tiingo_path(Path(cache_dir), ticker, start, end)
+        if covering is not None:
+            return _parse_tiingo(ticker, json.loads(covering.read_text()))
     http = session or requests
     response = http.get(
         TIINGO_URL.format(symbol=ticker.lower()),
@@ -214,6 +240,10 @@ def fetch_market_bars(
             provider=provider,
         )
         cached = cache_path is not None and cache_path.exists()
+        if not cached and provider == "tiingo" and cache_dir is not None:
+            # A wider cached window already covers this request; reuse it instead
+            # of counting it as a fresh (rate-limited) fetch.
+            cached = _covering_tiingo_path(Path(cache_dir), symbol, start, end) is not None
         if not cached:
             if cache_only:
                 missing.append(symbol)
