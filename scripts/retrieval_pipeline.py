@@ -186,6 +186,12 @@ def parse_args() -> argparse.Namespace:
     signal_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
     signal_parser.add_argument("--forward-buffer-days", type=int, default=130)
     signal_parser.add_argument(
+        "--market-start",
+        help="Pin the market-data window start (YYYY-MM-DD) instead of deriving it "
+        "from event dates; keeps the cache key stable across universe changes",
+    )
+    signal_parser.add_argument("--market-end", help="Pin the market-data window end (YYYY-MM-DD)")
+    signal_parser.add_argument(
         "--market-cache-dir",
         default=str(DEFAULT_CACHE_DIR),
         help="Local market-data cache directory; use an empty value to disable caching",
@@ -221,6 +227,14 @@ def parse_args() -> argparse.Namespace:
     composite_parser.add_argument("--windows", nargs="+", default=["0:1", "1:21", "1:63"])
     composite_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
     composite_parser.add_argument("--forward-buffer-days", type=int, default=130)
+    composite_parser.add_argument(
+        "--market-start",
+        help="Pin the market-data window start (YYYY-MM-DD) instead of deriving it "
+        "from event dates; keeps the cache key stable across universe changes",
+    )
+    composite_parser.add_argument(
+        "--market-end", help="Pin the market-data window end (YYYY-MM-DD)"
+    )
     composite_parser.add_argument("--market-cache-dir", default=str(DEFAULT_CACHE_DIR))
     composite_parser.add_argument("--cache-only", action="store_true")
     composite_parser.add_argument("--max-uncached-market-fetches", type=int)
@@ -592,6 +606,10 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
     event_dates = [event.available_at.date() for event in scored]
     start = min(event_dates) - timedelta(days=10)
     end = max(event_dates) + timedelta(days=args.forward_buffer_days)
+    if args.market_start:
+        start = date.fromisoformat(args.market_start)
+    if args.market_end:
+        end = date.fromisoformat(args.market_end)
     cache_dir = Path(args.market_cache_dir) if args.market_cache_dir else None
     market_slice = _optional_slice(args.market_cache_slice)
     market_tickers = (
@@ -768,6 +786,10 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
     event_dates = [event.available_at.date() for event in events]
     start = min(event_dates) - timedelta(days=10)
     end = max(event_dates) + timedelta(days=args.forward_buffer_days)
+    if args.market_start:
+        start = date.fromisoformat(args.market_start)
+    if args.market_end:
+        end = date.fromisoformat(args.market_end)
     bars, missing = fetch_market_bars(
         tickers,
         start,
