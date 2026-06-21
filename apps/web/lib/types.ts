@@ -141,6 +141,7 @@ export type SignalStudyResponse = {
     component_signals?: string[];
     components?: ComponentResult[];
     signal_correlations?: SignalCorrelation[];
+    neutralization?: string;
   };
 };
 

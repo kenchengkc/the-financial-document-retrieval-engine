@@ -34,11 +34,15 @@ function ComponentsPanel({
   windows,
   components,
   correlations,
+  neutralization,
 }: {
   windows: string[];
   components: ComponentResult[];
   correlations: SignalCorrelation[];
+  neutralization?: string;
 }) {
+  const neutralLabel =
+    neutralization === "period+sector" ? "Period + sector neutral" : "Period neutral";
   const signals = [...new Set(components.map((c) => c.signal))];
   const ordered = [
     ...signals.filter((s) => s !== "composite"),
@@ -50,10 +54,14 @@ function ComponentsPanel({
   return (
     <div className="comp-panel">
       <div className="comp-head">
-        <h3>Signal components — information coefficient by horizon</h3>
+        <div className="comp-head-row">
+          <h3>Signal components — information coefficient by horizon</h3>
+          <span className="comp-neutral">{neutralLabel}</span>
+        </div>
         <p>
-          Each component is weak; the composite (last row) averages their period-neutral
-          z-scores. The pairwise correlations near zero are why they are worth combining.
+          Each component is weak; the composite (last row) averages their cross-sectionally
+          standardized z-scores. The pairwise correlations near zero are why they are worth
+          combining.
         </p>
       </div>
       <div className="comp-table">
@@ -138,11 +146,11 @@ function studyCopy(study: SignalStudyResponse) {
       headlineAccent: "beat any single one",
       headlineSuffix: "?",
       lede:
-        "Three point-in-time filing signals — disclosure similarity, net risk-factor expansion, and filing lateness — are each z-scored within their filing period (period-neutral), sign-aligned, and averaged into one composite. The Fundamental Law of Active Management (IR ≈ IC × √breadth) says uncorrelated signals combine into more information than any single one.",
+        "Three point-in-time filing signals — disclosure similarity, net risk-factor expansion, and filing lateness — are each z-scored within their filing period and sector (cross-sectionally neutral, with a period fallback where a sector is thin), sign-aligned, and averaged into one composite. The Fundamental Law of Active Management (IR ≈ IC × √breadth) says uncorrelated signals combine into more information than any single one.",
       leftAxis: "← composite bearish",
       rightAxis: "composite bullish →",
       note:
-        "The components are genuinely uncorrelated — the prerequisite for combination — but individually weak and sign-unstable across horizons, so naive equal-weighting does not beat the best single signal here. The realistic levers are breadth (more names and history) and IC-weighting the components out-of-sample, not a free lunch from averaging.",
+        "The components are genuinely uncorrelated — the prerequisite for combination — but individually weak and sign-unstable across horizons, so naive equal-weighting does not beat the best single signal here. Sector-neutralizing the cross-section shrinks the raw ICs: part of a single signal's apparent edge was a sector tilt, not issuer-specific information. The realistic levers are breadth and IC-weighting the components out-of-sample, not a free lunch from averaging.",
     };
   }
   if (
@@ -390,6 +398,7 @@ export function SignalsPanel() {
           windows={report.results.map((w) => w.window)}
           components={report.components}
           correlations={report.signal_correlations ?? []}
+          neutralization={report.neutralization}
         />
       )}
 

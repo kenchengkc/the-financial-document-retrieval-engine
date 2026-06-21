@@ -224,6 +224,24 @@ def parse_args() -> argparse.Namespace:
     composite_parser.add_argument("--market-cache-dir", default=str(DEFAULT_CACHE_DIR))
     composite_parser.add_argument("--cache-only", action="store_true")
     composite_parser.add_argument("--max-uncached-market-fetches", type=int)
+    composite_parser.add_argument(
+        "--neutralize",
+        choices=("period", "sector"),
+        default="period",
+        help="period z-scores each signal within its filing quarter; sector adds a"
+        " within-(quarter, sector) cross-section where sector breadth allows",
+    )
+    sectors_parser = subparsers.add_parser(
+        "backfill-sectors",
+        help="Populate Company.sector/industry from SEC SIC codes",
+    )
+    sectors_parser.add_argument("--tickers", nargs="+")
+    sectors_parser.add_argument("--limit", type=int, default=600)
+    sectors_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Refresh companies that already have a sector",
+    )
     audit_parser = subparsers.add_parser(
         "audit",
         help="Report corpus freshness, completeness, and indexing integrity",
@@ -369,6 +387,8 @@ def main() -> None:
             print(_run_signal_study(session, args))
         elif args.command == "composite-study":
             print(_run_composite_study(session, args))
+        elif args.command == "backfill-sectors":
+            print(_run_backfill_sectors(session, args))
         elif args.command == "audit":
             audit_report = build_data_quality_report(
                 session,
@@ -657,6 +677,45 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
     }
 
 
+def _run_backfill_sectors(session: Session, args: argparse.Namespace) -> dict[str, Any]:
+    from collections import Counter
+
+    from fdre.ingestion.sec_client import SECClient
+    from fdre.research.sectors import sic_to_sector
+
+    statement = select(Company).order_by(Company.ticker)
+    if args.tickers:
+        statement = statement.where(
+            Company.ticker.in_([ticker.upper() for ticker in args.tickers])
+        )
+    elif not args.overwrite:
+        statement = statement.where(Company.sector.is_(None))
+    companies = list(session.scalars(statement.limit(args.limit)))
+
+    client = SECClient.from_settings()
+    counts: Counter[str] = Counter()
+    updated = 0
+    try:
+        for company in companies:
+            try:
+                submissions = client.get_company_submissions(company.cik)
+            except Exception as exc:
+                print(f"  skip {company.ticker}: {exc}")
+                continue
+            sic = submissions.get("sic")
+            sector = sic_to_sector(sic)
+            company.sector = sector
+            description = submissions.get("sicDescription")
+            if isinstance(description, str) and description.strip():
+                company.industry = description.strip().title()
+            counts[sector] += 1
+            updated += 1
+    finally:
+        client.close()
+    session.commit()
+    return {"companies_updated": updated, "sector_distribution": dict(counts.most_common())}
+
+
 def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
     rows = session.execute(
         select(Company.ticker, func.count(Document.id))
@@ -723,6 +782,17 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
         windows=[_event_window(value) for value in args.windows],
         bootstrap_iterations=args.bootstrap_iterations,
     )
+    sector_by_accession: dict[str, str] | None = None
+    if args.neutralize == "sector":
+        ticker_sector = dict(
+            session.execute(
+                select(Company.ticker, Company.sector).where(Company.ticker.in_(tickers))
+            ).all()
+        )
+        sector_by_accession = {
+            event.accession_number: (ticker_sector.get(event.ticker) or "Unknown")
+            for event in events
+        }
     report = run_composite_study(
         events,
         components,
@@ -732,6 +802,7 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
         dataset_version=panel.corpus_snapshot_id,
         feature_version=panel.feature_version,
         code_sha=_git_sha(),
+        sector_by_accession=sector_by_accession,
     )
     if report.event_count == 0:
         raise SystemExit("No composite events had matching market data; refusing to publish.")
@@ -746,6 +817,7 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
         "experiment_id": experiment.id,
         "events": report.event_count,
         "components": report.component_signals,
+        "neutralization": report.neutralization,
         "missing_market_data": missing,
     }
 

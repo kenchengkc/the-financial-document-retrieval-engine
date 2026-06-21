@@ -3430,10 +3430,29 @@ main {
   background: var(--surface);
 }
 
+.comp-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .comp-head h3 {
   margin: 0;
   color: var(--ink);
   font: 500 16px var(--display);
+}
+
+.comp-neutral {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--green);
+  border-radius: 999px;
+  color: var(--green-deep);
+  font: 9px var(--mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .comp-head p {

@@ -56,6 +56,7 @@ class CompositeStudyReport(SignalStudyReport):
     component_signals: list[str]
     components: list[ComponentResult]
     signal_correlations: list[SignalCorrelation]
+    neutralization: str = "period"
 
 
 class CompositeEvent(BaseModel):
@@ -67,31 +68,66 @@ class CompositeEvent(BaseModel):
     raw: dict[str, float]
 
 
+def _zscore_into(
+    z: dict[str, dict[str, float]],
+    signal: str,
+    sign: int,
+    cell: list[tuple[str, float]],
+) -> None:
+    values = [value for _, value in cell]
+    if len(values) < 2:
+        return
+    mean = fmean(values)
+    std = pstdev(values)
+    if std == 0:
+        return
+    for accession, value in cell:
+        z[accession][signal] = sign * (value - mean) / std
+
+
 def standardize_by_period(
     events: list[CompositeEvent],
     components: list[SignalComponent],
+    *,
+    sector_by_accession: dict[str, str] | None = None,
+    min_group: int = 4,
 ) -> dict[str, dict[str, float]]:
-    """Return accession -> {signal: sign-aligned z-score within its period}."""
-    by_period_signal: dict[tuple[str, str], list[tuple[str, float]]] = defaultdict(list)
+    """Return accession -> {signal: sign-aligned z-score}.
+
+    Each signal is z-scored within its filing period (period/level-neutral). When
+    ``sector_by_accession`` is supplied the cross-section is split further by
+    sector so a high score means "high versus same-sector, same-period peers"
+    (sector-neutral). Sectors that are too thin in a period (< ``min_group``, or
+    unknown) fall back to the period-level cross-section, so no event is dropped
+    and the neutralization simply strengthens as breadth grows.
+    """
+    period_signal_rows: dict[tuple[str, str], list[tuple[str, float, str]]] = defaultdict(list)
     for event in events:
+        sector = (sector_by_accession or {}).get(event.accession_number, "Unknown")
         for component in components:
             value = event.raw.get(component.name)
             if value is not None:
-                by_period_signal[(event.available_at_period, component.name)].append(
-                    (event.accession_number, value)
+                period_signal_rows[(event.available_at_period, component.name)].append(
+                    (event.accession_number, value, sector)
                 )
+
     z: dict[str, dict[str, float]] = defaultdict(dict)
-    for (_, signal), rows in by_period_signal.items():
-        values = [value for _, value in rows]
-        if len(values) < 2:
-            continue
-        mean = fmean(values)
-        std = pstdev(values)
-        if std == 0:
-            continue
+    for (_, signal), rows in period_signal_rows.items():
         sign = next(c.sign for c in components if c.name == signal)
-        for accession, value in rows:
-            z[accession][signal] = sign * (value - mean) / std
+        if not sector_by_accession:
+            _zscore_into(z, signal, sign, [(acc, val) for acc, val, _ in rows])
+            continue
+        by_sector: dict[str, list[tuple[str, float]]] = defaultdict(list)
+        for accession, value, sector in rows:
+            by_sector[sector].append((accession, value))
+        fallback: list[tuple[str, float]] = []
+        for sector, cell in by_sector.items():
+            if sector != "Unknown" and len(cell) >= min_group:
+                _zscore_into(z, signal, sign, cell)
+            else:
+                fallback.extend(cell)
+        if fallback:
+            _zscore_into(z, signal, sign, fallback)
     return z
 
 
@@ -105,8 +141,13 @@ def run_composite_study(
     dataset_version: str,
     feature_version: str,
     code_sha: str,
+    sector_by_accession: dict[str, str] | None = None,
+    min_group: int = 4,
 ) -> CompositeStudyReport:
-    z = standardize_by_period(events, components)
+    z = standardize_by_period(
+        events, components, sector_by_accession=sector_by_accession, min_group=min_group
+    )
+    neutralization = "period+sector" if sector_by_accession else "period"
     composite_value: dict[str, float] = {}
     for accession, signals in z.items():
         if signals:
@@ -191,6 +232,7 @@ def run_composite_study(
         "feature_version": feature_version,
         "code_sha": code_sha,
         "config": config.model_dump(mode="json"),
+        "neutralization": neutralization,
         "events": sorted(composite_value),
     }
     experiment_key = hashlib.sha256(
@@ -210,6 +252,7 @@ def run_composite_study(
         component_signals=[c.name for c in components],
         components=components_out,
         signal_correlations=correlations,
+        neutralization=neutralization,
     )
 
 
