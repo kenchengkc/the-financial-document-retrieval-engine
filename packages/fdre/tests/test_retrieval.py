@@ -11,7 +11,7 @@ from apps.api.app.db import Base
 from apps.api.app.models import Chunk, Company, Document, DocumentElement
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
 from fdre.retrieval.dense import DenseRetriever
-from fdre.retrieval.hybrid import HybridRetriever
+from fdre.retrieval.hybrid import HybridRetriever, reciprocal_rank_fusion
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import FakeReranker, VoyageReranker, reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
@@ -102,6 +102,19 @@ def test_dense_sparse_hybrid_and_reranking() -> None:
         assert any(result.sparse_score is not None for result in hybrid_results)
         assert reranked[0].rerank_score is not None
         assert "Gaming" in reranked[0].text
+
+
+def test_reciprocal_rank_fusion_rewards_agreement_and_top_ranks() -> None:
+    # id 1 is rank-1 in both lists; id 2 and 3 sit lower / appear in one list each.
+    dense = (1.0, [1, 3, 4])
+    sparse = (1.0, [1, 2, 5])
+    scores = reciprocal_rank_fusion([dense, sparse], k=60)
+    ranked = sorted(scores, key=lambda i: -scores[i])
+    assert ranked[0] == 1  # agreed top of both lists wins
+    assert scores[1] > scores[3] and scores[1] > scores[2]
+    # weighting one ranker higher lifts its exclusive ids
+    weighted = reciprocal_rank_fusion([(0.1, [1, 3, 4]), (1.0, [2, 1, 5])], k=60)
+    assert weighted[2] > weighted[3]
 
 
 def _candidate(chunk_id: int, text: str) -> RetrievalCandidate:
