@@ -35,15 +35,25 @@ on:
         description: "Skip metadata/download/chunk; only embed missing chunks (recovery)"
         type: boolean
         default: false
+      lane:
+        description: "Parallel lane id; disjoint lanes use distinct advisory locks and run concurrently"
+        default: "0"
+      lanes_total:
+        description: "Total concurrent lanes; the embedding rate budget is divided across them"
+        default: "1"
+      range_end:
+        description: "Stop chaining when next offset reaches this index (per-lane upper bound)"
+        default: "499"
 
 permissions:
   contents: read
   actions: write
 
 concurrency:
-  # Queue S&P 500 batches independently; scripts/ingest_ticker_batch.py holds
-  # the database advisory lock that serializes actual ingestion across workflows.
-  group: fdre-sp500-ingestion
+  # One concurrency group per lane: a lane's own batches queue (serialize), while
+  # disjoint lanes run in parallel. scripts/ingest_ticker_batch.py holds a
+  # per-lane Postgres advisory lock so concurrent lanes can't collide on writes.
+  group: fdre-sp500-ingestion-lane-${{ github.event.inputs.lane || '0' }}
   cancel-in-progress: false
 
 jobs:
@@ -108,6 +118,9 @@ jobs:
       QUARTERLY_LIMIT: ${{ github.event.inputs.quarterly_limit || '' }}
       FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
       INDEX_ONLY: ${{ github.event.inputs.index_only || 'false' }}
+      LANE: ${{ github.event.inputs.lane || '0' }}
+      LANES_TOTAL: ${{ github.event.inputs.lanes_total || '1' }}
+      RANGE_END: ${{ github.event.inputs.range_end || '499' }}
     steps:
       - name: Validate inputs
         run: |
@@ -118,6 +131,21 @@ jobs:
           [[ "${QUARTERLY_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
           [[ "${FORCE_PARSE}" =~ ^(true|false)$ ]]
           [[ "${INDEX_ONLY}" =~ ^(true|false)$ ]]
+          [[ "${LANE}" =~ ^[0-9]+$ ]]
+          [[ "${LANES_TOTAL}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${RANGE_END}" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Divide embedding rate budget across lanes
+        run: |
+          base_rpm="${EMBEDDING_REQUESTS_PER_MINUTE:-2000}"
+          base_tpm="${EMBEDDING_TOKENS_PER_MINUTE:-3000000}"
+          lane_rpm=$(( base_rpm / LANES_TOTAL ))
+          lane_tpm=$(( base_tpm / LANES_TOTAL ))
+          [ "${lane_rpm}" -lt 1 ] && lane_rpm=1
+          [ "${lane_tpm}" -lt 1 ] && lane_tpm=1
+          echo "EMBEDDING_REQUESTS_PER_MINUTE=${lane_rpm}" >> "${GITHUB_ENV}"
+          echo "EMBEDDING_TOKENS_PER_MINUTE=${lane_tpm}" >> "${GITHUB_ENV}"
+          echo "::notice::lane ${LANE}/${LANES_TOTAL} embedding budget: ${lane_rpm} rpm / ${lane_tpm} tpm"
 
       - name: Check out repository
         uses: actions/checkout@v6
@@ -167,6 +195,7 @@ jobs:
             --universe sp500 \
             --offset "${OFFSET}" \
             --limit "${LIMIT}" \
+            --lane "${LANE}" \
             "${history_args[@]}" \
             "${force_args[@]}" \
             "${index_args[@]}"
@@ -181,8 +210,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           next_offset=$((OFFSET + LIMIT))
-          if [ "${next_offset}" -lt 499 ]; then
-            echo "::notice::Queueing next batch at offset ${next_offset}"
+          if [ "${next_offset}" -lt "${RANGE_END}" ]; then
+            echo "::notice::Queueing lane ${LANE} next batch at offset ${next_offset}"
             gh workflow run "S&P 500 batch ingestion" \
               -f offset="${next_offset}" \
               -f limit="${LIMIT}" \
@@ -191,7 +220,10 @@ jobs:
               -f quarterly_limit="${QUARTERLY_LIMIT}" \
               -f force_parse="${FORCE_PARSE}" \
               -f index_only="${INDEX_ONLY}" \
+              -f lane="${LANE}" \
+              -f lanes_total="${LANES_TOTAL}" \
+              -f range_end="${RANGE_END}" \
               -f chain=true
           else
-            echo "::notice::S&P 500 ingest chain complete (offset ${OFFSET})."
+            echo "::notice::S&P 500 ingest lane ${LANE} complete (offset ${OFFSET}, range_end ${RANGE_END})."
           fi

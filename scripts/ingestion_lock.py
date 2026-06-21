@@ -10,15 +10,29 @@ INGESTION_LOCK_NAMESPACE = 0x46445245  # FDRE
 INGESTION_LOCK_ID = 0x494E4754  # INGT
 
 
+def lane_lock_id(lane: int) -> int:
+    """Advisory-lock id for a parallel ingestion lane.
+
+    Lane 0 keeps the historical global lock id so single-lane runs are
+    unchanged. Disjoint lanes (>0) get distinct ids so they ingest concurrently
+    while a lane's own batches still serialize against each other.
+    """
+    if lane < 0:
+        raise ValueError("lane must be non-negative")
+    return INGESTION_LOCK_ID + lane
+
+
 @contextmanager
-def serialized_ingestion(engine: Engine, *, skip_if_locked: bool) -> Iterator[bool]:
+def serialized_ingestion(
+    engine: Engine, *, skip_if_locked: bool, lock_id: int = INGESTION_LOCK_ID
+) -> Iterator[bool]:
     if engine.dialect.name != "postgresql":
         yield True
         return
 
     params = {
         "namespace": INGESTION_LOCK_NAMESPACE,
-        "lock_id": INGESTION_LOCK_ID,
+        "lock_id": lock_id,
     }
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         if skip_if_locked:

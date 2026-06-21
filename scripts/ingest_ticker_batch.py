@@ -29,7 +29,7 @@ from fdre.ingestion.ticker_map import (
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.ingestion_lock import serialized_ingestion
+from scripts.ingestion_lock import lane_lock_id, serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,6 +60,13 @@ def parse_args() -> argparse.Namespace:
         "--skip-if-locked",
         action="store_true",
         help="Exit successfully when another Postgres ingestion already holds the lock",
+    )
+    parser.add_argument(
+        "--lane",
+        type=int,
+        default=0,
+        help="Parallel ingestion lane; disjoint lanes use distinct advisory locks "
+        "so they ingest concurrently (lane 0 = the historical global lock)",
     )
     return parser.parse_args()
 
@@ -94,7 +101,9 @@ def main() -> None:
 
     settings = get_settings()
     engine = create_db_engine()
-    with serialized_ingestion(engine, skip_if_locked=args.skip_if_locked) as acquired:
+    with serialized_ingestion(
+        engine, skip_if_locked=args.skip_if_locked, lock_id=lane_lock_id(args.lane)
+    ) as acquired:
         if not acquired:
             return
         _run_ingestion(args, tickers, settings, engine)
