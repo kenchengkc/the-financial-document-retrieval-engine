@@ -113,6 +113,19 @@ export type SignalWindow = {
   long_short_adjusted_p_value: number | null;
 };
 
+export type ComponentResult = {
+  signal: string;
+  window: string;
+  sample_size: number;
+  information_coefficient: number | null;
+};
+
+export type SignalCorrelation = {
+  signal_a: string;
+  signal_b: string;
+  correlation: number | null;
+};
+
 export type SignalStudyResponse = {
   experiment_id: number;
   experiment_key: string;
@@ -125,6 +138,9 @@ export type SignalStudyResponse = {
     event_count: number;
     config: { benchmark_ticker?: string; confidence_level?: number };
     results: SignalWindow[];
+    component_signals?: string[];
+    components?: ComponentResult[];
+    signal_correlations?: SignalCorrelation[];
   };
 };
 

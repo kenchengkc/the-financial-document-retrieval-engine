@@ -4,7 +4,12 @@ import { CircleAlert, FlaskConical, LoaderCircle, TrendingUp } from "lucide-reac
 import { useEffect, useState } from "react";
 
 import { fetchSignalStudies } from "@/lib/api";
-import type { SignalStudyResponse, SignalWindow } from "@/lib/types";
+import type {
+  ComponentResult,
+  SignalCorrelation,
+  SignalStudyResponse,
+  SignalWindow,
+} from "@/lib/types";
 
 const WINDOW_LABELS: Record<string, string> = {
   "0:1": "Filing day",
@@ -13,6 +18,87 @@ const WINDOW_LABELS: Record<string, string> = {
   "1:21": "+1 month",
   "1:63": "+1 quarter",
 };
+
+const SIGNAL_LABELS: Record<string, string> = {
+  disclosure_similarity: "Disclosure similarity",
+  risk_expansion: "Risk expansion",
+  filing_lateness: "Filing lateness",
+  composite: "Composite",
+};
+
+function prettySignal(signal: string) {
+  return SIGNAL_LABELS[signal] ?? signal;
+}
+
+function ComponentsPanel({
+  windows,
+  components,
+  correlations,
+}: {
+  windows: string[];
+  components: ComponentResult[];
+  correlations: SignalCorrelation[];
+}) {
+  const signals = [...new Set(components.map((c) => c.signal))];
+  const ordered = [
+    ...signals.filter((s) => s !== "composite"),
+    ...(signals.includes("composite") ? ["composite"] : []),
+  ];
+  const icFor = (signal: string, window: string) =>
+    components.find((c) => c.signal === signal && c.window === window)
+      ?.information_coefficient ?? null;
+  return (
+    <div className="comp-panel">
+      <div className="comp-head">
+        <h3>Signal components — information coefficient by horizon</h3>
+        <p>
+          Each component is weak; the composite (last row) averages their period-neutral
+          z-scores. The pairwise correlations near zero are why they are worth combining.
+        </p>
+      </div>
+      <div className="comp-table">
+        <div className="comp-row comp-th">
+          <span>signal</span>
+          {windows.map((w) => (
+            <span key={w}>{windowLabel(w)}</span>
+          ))}
+        </div>
+        {ordered.map((signal) => (
+          <div
+            className={`comp-row${signal === "composite" ? " comp-composite" : ""}`}
+            key={signal}
+          >
+            <span className="comp-name">{prettySignal(signal)}</span>
+            {windows.map((w) => {
+              const ic = icFor(signal, w);
+              return (
+                <span
+                  key={w}
+                  className={`comp-ic ${ic === null ? "" : ic >= 0 ? "pos" : "neg"}`}
+                >
+                  {ic === null ? "—" : ic.toFixed(3)}
+                </span>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {correlations.length > 0 && (
+        <div className="comp-corr">
+          <span className="comp-corr-title">Pairwise correlation (near zero = diversifying)</span>
+          <div className="comp-corr-list">
+            {correlations.map((c) => (
+              <span key={`${c.signal_a}-${c.signal_b}`} className="comp-corr-item">
+                {prettySignal(c.signal_a)} · {prettySignal(c.signal_b)}
+                <strong>{c.correlation === null ? "—" : c.correlation.toFixed(2)}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function windowLabel(window: string) {
   return WINDOW_LABELS[window] ?? window;
@@ -31,6 +117,10 @@ function studyKey(study: SignalStudyResponse) {
 }
 
 function signalLabel(study: SignalStudyResponse) {
+  if (study.report.signal_name === "composite") {
+    const count = study.report.component_signals?.length ?? 0;
+    return `Composite (${count} signals)`;
+  }
   if (study.report.signal_name === "risk_factor_expansion") {
     return outcomeName(study) === "realized_volatility"
       ? "Risk expansion -> volatility"
@@ -42,6 +132,19 @@ function signalLabel(study: SignalStudyResponse) {
 }
 
 function studyCopy(study: SignalStudyResponse) {
+  if (study.report.signal_name === "composite") {
+    return {
+      headlinePrefix: "Can combining weak signals ",
+      headlineAccent: "beat any single one",
+      headlineSuffix: "?",
+      lede:
+        "Three point-in-time filing signals — disclosure similarity, net risk-factor expansion, and filing lateness — are each z-scored within their filing period (period-neutral), sign-aligned, and averaged into one composite. The Fundamental Law of Active Management (IR ≈ IC × √breadth) says uncorrelated signals combine into more information than any single one.",
+      leftAxis: "← composite bearish",
+      rightAxis: "composite bullish →",
+      note:
+        "The components are genuinely uncorrelated — the prerequisite for combination — but individually weak and sign-unstable across horizons, so naive equal-weighting does not beat the best single signal here. The realistic levers are breadth (more names and history) and IC-weighting the components out-of-sample, not a free lunch from averaging.",
+    };
+  }
   if (
     study.report.signal_name === "risk_factor_expansion" &&
     outcomeName(study) === "realized_volatility"
@@ -281,6 +384,14 @@ export function SignalsPanel() {
           />
         ))}
       </div>
+
+      {report.components && report.components.length > 0 && (
+        <ComponentsPanel
+          windows={report.results.map((w) => w.window)}
+          components={report.components}
+          correlations={report.signal_correlations ?? []}
+        />
+      )}
 
       <div className="sig-note">
         <FlaskConical size={14} aria-hidden="true" />

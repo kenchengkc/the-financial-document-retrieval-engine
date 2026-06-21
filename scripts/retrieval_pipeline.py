@@ -32,6 +32,13 @@ from fdre.evals.runner import (
 from fdre.indexing.embeddings import embedding_provider_from_settings, rebuild_embeddings
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.xbrl import ingest_company_facts
+from fdre.research.composite_study import (
+    CompositeEvent,
+    SignalComponent,
+    period_label,
+    persist_composite_study,
+    run_composite_study,
+)
 from fdre.research.event_study import (
     EventStudyConfig,
     EventWindow,
@@ -202,6 +209,21 @@ def parse_args() -> argparse.Namespace:
         "--market-cache-slice",
         help="Warm only OFFSET:LIMIT selected market tickers, then exit without publishing",
     )
+    composite_parser = subparsers.add_parser(
+        "composite-study",
+        help="Combine several weak filing signals into one cross-sectional composite",
+    )
+    composite_parser.add_argument("--output", required=True)
+    composite_parser.add_argument("--max-tickers", type=int, default=120)
+    composite_parser.add_argument("--min-documents", type=int, default=4)
+    composite_parser.add_argument("--benchmark", default="SPY")
+    composite_parser.add_argument("--n-quantiles", type=int, default=5)
+    composite_parser.add_argument("--windows", nargs="+", default=["0:1", "1:21", "1:63"])
+    composite_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
+    composite_parser.add_argument("--forward-buffer-days", type=int, default=130)
+    composite_parser.add_argument("--market-cache-dir", default=str(DEFAULT_CACHE_DIR))
+    composite_parser.add_argument("--cache-only", action="store_true")
+    composite_parser.add_argument("--max-uncached-market-fetches", type=int)
     audit_parser = subparsers.add_parser(
         "audit",
         help="Report corpus freshness, completeness, and indexing integrity",
@@ -345,6 +367,8 @@ def main() -> None:
             )
         elif args.command == "signal-study":
             print(_run_signal_study(session, args))
+        elif args.command == "composite-study":
+            print(_run_composite_study(session, args))
         elif args.command == "audit":
             audit_report = build_data_quality_report(
                 session,
@@ -629,6 +653,99 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         "outcome_name": report.outcome_name,
         "tickers": len(tickers),
         "events": report.event_count,
+        "missing_market_data": missing,
+    }
+
+
+def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
+    rows = session.execute(
+        select(Company.ticker, func.count(Document.id))
+        .join(Document, Document.company_id == Company.id)
+        .group_by(Company.ticker)
+        .having(func.count(Document.id) >= args.min_documents)
+        .order_by(func.count(Document.id).desc(), Company.ticker)
+        .limit(args.max_tickers)
+    ).all()
+    tickers = [row[0] for row in rows]
+    panel = build_research_panel(
+        session,
+        ResearchPanelQuery(
+            tickers=tickers,
+            features=["disclosure_similarity", "risk_changes", "filing_timing"],
+            limit=10_000,
+        ),
+    )
+    components = [
+        SignalComponent(name="disclosure_similarity", sign=1),
+        SignalComponent(name="risk_expansion", sign=-1),
+        SignalComponent(name="filing_lateness", sign=-1),
+    ]
+    events: list[CompositeEvent] = []
+    for row in panel.rows:
+        # Anchor on a prior comparable filing so every signal is defined and the
+        # event universe matches the single-signal studies (and their market cache).
+        if row.disclosure_similarity is None:
+            continue
+        raw: dict[str, float] = {"disclosure_similarity": float(row.disclosure_similarity)}
+        if row.risk_added_passages is not None or row.risk_removed_passages is not None:
+            raw["risk_expansion"] = float(
+                (row.risk_added_passages or 0) - (row.risk_removed_passages or 0)
+            )
+        if row.filing_delay_days is not None:
+            raw["filing_lateness"] = float(row.filing_delay_days)
+        if raw:
+            events.append(
+                CompositeEvent(
+                    ticker=row.ticker,
+                    accession_number=row.accession_number,
+                    available_at_period=period_label(row.available_at.date()),
+                    available_at=row.available_at,
+                    max_source_available_at=row.max_source_available_at,
+                    raw=raw,
+                )
+            )
+    if len(events) < args.n_quantiles * 4:
+        raise SystemExit(f"Only {len(events)} composite events; ingest more history.")
+    event_dates = [event.available_at.date() for event in events]
+    start = min(event_dates) - timedelta(days=10)
+    end = max(event_dates) + timedelta(days=args.forward_buffer_days)
+    bars, missing = fetch_market_bars(
+        tickers,
+        start,
+        end,
+        benchmark=args.benchmark,
+        cache_dir=Path(args.market_cache_dir) if args.market_cache_dir else None,
+        cache_only=args.cache_only,
+        max_uncached_fetches=args.max_uncached_market_fetches,
+    )
+    config = EventStudyConfig(
+        benchmark_ticker=args.benchmark,
+        windows=[_event_window(value) for value in args.windows],
+        bootstrap_iterations=args.bootstrap_iterations,
+    )
+    report = run_composite_study(
+        events,
+        components,
+        bars,
+        config,
+        n_quantiles=args.n_quantiles,
+        dataset_version=panel.corpus_snapshot_id,
+        feature_version=panel.feature_version,
+        code_sha=_git_sha(),
+    )
+    if report.event_count == 0:
+        raise SystemExit("No composite events had matching market data; refusing to publish.")
+    experiment = persist_composite_study(session, report)
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    )
+    return {
+        "output": str(output_path),
+        "experiment_id": experiment.id,
+        "events": report.event_count,
+        "components": report.component_signals,
         "missing_market_data": missing,
     }
 

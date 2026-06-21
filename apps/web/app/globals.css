@@ -3421,6 +3421,117 @@ main {
   color: var(--green);
 }
 
+/* ---- composite signal components ---- */
+.comp-panel {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.comp-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font: 500 16px var(--display);
+}
+
+.comp-head p {
+  margin: 6px 0 16px;
+  color: var(--prose);
+  font: 12.5px/1.6 var(--lede);
+  max-width: 720px;
+}
+
+.comp-table {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.comp-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.5fr) repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  background: var(--surface);
+}
+
+.comp-th {
+  background: var(--surface-muted);
+  color: var(--muted);
+  font: 9px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.comp-name {
+  color: var(--ink);
+  font: 12px var(--sans);
+}
+
+.comp-ic {
+  text-align: right;
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+
+.comp-ic.pos {
+  color: var(--green-deep);
+}
+
+.comp-ic.neg {
+  color: var(--amber);
+}
+
+.comp-composite {
+  background: var(--green-soft);
+}
+
+.comp-composite .comp-name {
+  font-weight: 600;
+  color: var(--green-deep);
+}
+
+.comp-corr {
+  margin-top: 16px;
+}
+
+.comp-corr-title {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font: 9px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.comp-corr-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.comp-corr-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--prose);
+  font: 10px var(--mono);
+}
+
+.comp-corr-item strong {
+  color: var(--cyan);
+}
+
 /* ============================================================
    About — animated demo (browser box) + specimen band
    ============================================================ */
