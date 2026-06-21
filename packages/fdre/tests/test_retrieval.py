@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import respx
 from httpx import Response
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
@@ -102,6 +102,30 @@ def test_dense_sparse_hybrid_and_reranking() -> None:
         assert any(result.sparse_score is not None for result in hybrid_results)
         assert reranked[0].rerank_score is not None
         assert "Gaming" in reranked[0].text
+
+
+def test_expand_with_neighbors_adds_adjacent_chunks() -> None:
+    from fdre.retrieval.neighbors import expand_with_neighbors
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed_retrieval_data(session)
+        chunks = list(session.scalars(select(Chunk).order_by(Chunk.id)))
+        middle = chunks[1]
+        hit = RetrievalCandidate(
+            chunk_id=middle.id, text=middle.chunk_text, metadata={}, rerank_score=0.9
+        )
+        expanded = expand_with_neighbors(session, [hit], window=1)
+
+        assert {c.chunk_id for c in expanded} == {chunks[0].id, chunks[1].id, chunks[2].id}
+        neighbors = [c for c in expanded if c.metadata.get("neighbor_expanded")]
+        assert len(neighbors) == 2
+        # the original hit is preserved and not flagged as a neighbor
+        original = next(c for c in expanded if c.chunk_id == middle.id)
+        assert not original.metadata.get("neighbor_expanded")
+        # window=0 is a no-op
+        assert expand_with_neighbors(session, [hit], window=0) == [hit]
 
 
 def test_bm25_rank_prefers_lexical_match() -> None:

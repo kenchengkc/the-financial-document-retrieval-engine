@@ -10,6 +10,13 @@ COMPANIES = [
 ]
 
 
+def test_preprocess_expands_ticker_to_company_name() -> None:
+    result = preprocess_query("AAPL gross margin trend", companies=COMPANIES)
+    assert result.filters.tickers == ["AAPL"]
+    # one rewrite spells out the issuer name so ticker-only queries still match
+    assert any("Apple Inc." in variant for variant in result.rewritten_queries)
+
+
 def test_preprocess_resolves_company_section_and_form() -> None:
     result = preprocess_query(
         "What changed in Apple's risk factors in the annual report?",

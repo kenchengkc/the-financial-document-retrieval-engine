@@ -14,6 +14,7 @@ from fdre.indexing.embeddings import embedding_provider_from_settings
 from fdre.research.financial_facts import FinancialFactQuery, query_financial_facts
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
+from fdre.retrieval.neighbors import expand_with_neighbors
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import reranker_from_settings
@@ -160,6 +161,7 @@ def retrieve_text_node(context: WorkflowContext, state: AgentState) -> AgentStat
         state["rewritten_queries"][0],
         filters=filters,
         limit=max(context.settings.answer_top_k, 10),
+        queries=state["rewritten_queries"][1:],
     )
     return {
         "text_candidates": [candidate.model_dump(mode="json") for candidate in candidates],
@@ -195,6 +197,7 @@ def retrieve_tables_node(context: WorkflowContext, state: AgentState) -> AgentSt
         state["rewritten_queries"][0],
         filters=filters,
         limit=max(context.settings.answer_top_k, 10),
+        queries=state["rewritten_queries"][1:],
     )
     return {
         "table_candidates": [candidate.model_dump(mode="json") for candidate in candidates],
@@ -305,13 +308,22 @@ def evaluate_retrieval_gate_node(
         reason = "Insufficient retrieved evidence."
     elif maximum < context.settings.min_retrieval_score:
         reason = "Retrieved evidence is below the confidence threshold."
+    evidence_candidates = candidates
+    if reason is None and context.settings.neighbor_expansion_window > 0:
+        # Enrich the passing hits with adjacent passages for generation; the gate
+        # decision above is unchanged (it ran on the ranked hits only).
+        evidence_candidates = expand_with_neighbors(
+            context.session,
+            candidates,
+            window=context.settings.neighbor_expansion_window,
+        )
     return {
         "retrieval_gate": {
             "evidence_count": len(candidates),
             "max_score": maximum,
             "passed": reason is None,
         },
-        "evidence": [candidate.model_dump(mode="json") for candidate in candidates],
+        "evidence": [candidate.model_dump(mode="json") for candidate in evidence_candidates],
         "should_abstain": reason is not None,
         "abstention_reason": reason,
         "trace": _trace(

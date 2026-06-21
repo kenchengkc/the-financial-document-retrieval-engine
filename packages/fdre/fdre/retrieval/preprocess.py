@@ -112,10 +112,17 @@ def preprocess_query(
     section_query = (
         f"{cleaned} {' '.join(detected_sections)}" if detected_sections else cleaned
     )
+    # Expand detected tickers to their issuer names so a ticker-only query
+    # ("AAPL margins") also matches passages that spell out "Apple Inc".
+    ticker_names = {company.ticker.upper(): company.name for company in company_list}
+    company_terms = " ".join(
+        ticker_names[ticker] for ticker in sorted(detected_tickers) if ticker in ticker_names
+    )
+    company_expansion = f"{cleaned} {company_terms}".strip() if company_terms else cleaned
     return PreprocessedQuery(
         original_query=cleaned,
         rewritten_queries=list(
-            dict.fromkeys([cleaned, finance_expansion, section_query])
+            dict.fromkeys([cleaned, company_expansion, finance_expansion, section_query])
         ),
         filters=merged_filters,
         routes=list(dict.fromkeys(routes)),
