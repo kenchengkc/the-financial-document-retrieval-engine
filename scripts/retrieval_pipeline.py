@@ -784,11 +784,12 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
     )
     sector_by_accession: dict[str, str] | None = None
     if args.neutralize == "sector":
-        ticker_sector = dict(
-            session.execute(
+        ticker_sector: dict[str, str | None] = {
+            row.ticker: row.sector
+            for row in session.execute(
                 select(Company.ticker, Company.sector).where(Company.ticker.in_(tickers))
-            ).all()
-        )
+            )
+        }
         sector_by_accession = {
             event.accession_number: (ticker_sector.get(event.ticker) or "Unknown")
             for event in events
