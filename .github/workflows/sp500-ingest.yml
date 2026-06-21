@@ -35,25 +35,19 @@ on:
         description: "Skip metadata/download/chunk; only embed missing chunks (recovery)"
         type: boolean
         default: false
-      lane:
-        description: "Parallel lane id; disjoint lanes use distinct advisory locks and run concurrently"
-        default: "0"
-      lanes_total:
-        description: "Total concurrent lanes; the embedding rate budget is divided across them"
-        default: "1"
-      range_end:
-        description: "Stop chaining when next offset reaches this index (per-lane upper bound)"
-        default: "499"
+      lane_spec:
+        description: "Parallel lane as LANE:LANES_TOTAL:RANGE_END (e.g. 1:4:180); disjoint lanes run concurrently"
+        default: "0:1:499"
 
 permissions:
   contents: read
   actions: write
 
 concurrency:
-  # One concurrency group per lane: a lane's own batches queue (serialize), while
-  # disjoint lanes run in parallel. scripts/ingest_ticker_batch.py holds a
+  # One concurrency group per lane_spec: a lane's own batches queue (serialize),
+  # while disjoint lanes run in parallel. scripts/ingest_ticker_batch.py holds a
   # per-lane Postgres advisory lock so concurrent lanes can't collide on writes.
-  group: fdre-sp500-ingestion-lane-${{ github.event.inputs.lane || '0' }}
+  group: fdre-sp500-ingestion-lane-${{ github.event.inputs.lane_spec || '0:1:499' }}
   cancel-in-progress: false
 
 jobs:
@@ -118,10 +112,18 @@ jobs:
       QUARTERLY_LIMIT: ${{ github.event.inputs.quarterly_limit || '' }}
       FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
       INDEX_ONLY: ${{ github.event.inputs.index_only || 'false' }}
-      LANE: ${{ github.event.inputs.lane || '0' }}
-      LANES_TOTAL: ${{ github.event.inputs.lanes_total || '1' }}
-      RANGE_END: ${{ github.event.inputs.range_end || '499' }}
+      LANE_SPEC: ${{ github.event.inputs.lane_spec || '0:1:499' }}
     steps:
+      - name: Parse lane spec
+        run: |
+          IFS=':' read -r lane lanes_total range_end <<< "${LANE_SPEC}"
+          : "${lane:=0}"; : "${lanes_total:=1}"; : "${range_end:=499}"
+          {
+            echo "LANE=${lane}"
+            echo "LANES_TOTAL=${lanes_total}"
+            echo "RANGE_END=${range_end}"
+          } >> "${GITHUB_ENV}"
+
       - name: Validate inputs
         run: |
           [[ "${OFFSET}" =~ ^[0-9]+$ ]]
@@ -220,9 +222,7 @@ jobs:
               -f quarterly_limit="${QUARTERLY_LIMIT}" \
               -f force_parse="${FORCE_PARSE}" \
               -f index_only="${INDEX_ONLY}" \
-              -f lane="${LANE}" \
-              -f lanes_total="${LANES_TOTAL}" \
-              -f range_end="${RANGE_END}" \
+              -f lane_spec="${LANE_SPEC}" \
               -f chain=true
           else
             echo "::notice::S&P 500 ingest lane ${LANE} complete (offset ${OFFSET}, range_end ${RANGE_END})."
