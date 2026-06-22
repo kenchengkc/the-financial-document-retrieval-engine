@@ -42,7 +42,11 @@ class HybridRetriever:
         *,
         dense_weight: float = 1.0,
         sparse_weight: float = 1.0,
-        fusion: FusionMethod = "rrf",
+        # Weighted fusion wins on the labeled benchmark (data/evals): with strong
+        # dense embeddings + only two base rankers, preserving the dense score
+        # beats RRF's rank-only flattening. RRF stays available for cases with
+        # many heterogeneous rankers.
+        fusion: FusionMethod = "weighted",
         rrf_k: int = DEFAULT_RRF_K,
     ) -> None:
         if dense_weight < 0 or sparse_weight < 0 or dense_weight + sparse_weight == 0:

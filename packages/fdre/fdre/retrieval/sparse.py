@@ -12,7 +12,10 @@ class SparseRetriever:
         self,
         indexer: PostgresFullTextIndexer | None = None,
         *,
-        bm25: bool = True,
+        # BM25 re-ranking underperforms ts_rank on the labeled benchmark
+        # (data/evals): document frequencies over the small retrieved pool are
+        # too noisy without corpus-level IDF, so it is opt-in.
+        bm25: bool = False,
         pool_multiplier: int = 4,
     ) -> None:
         self.indexer = indexer or PostgresFullTextIndexer()
