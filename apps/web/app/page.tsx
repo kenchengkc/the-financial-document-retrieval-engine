@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   Activity,
   ArrowRight,
@@ -10,7 +9,6 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
-  Code2,
   Database,
   FileText,
   Filter,
@@ -27,6 +25,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { LandingHero } from "@/components/landing-hero";
 import { OperationsPanel } from "@/components/operations-panel";
 import { RetrievePanel } from "@/components/retrieve-panel";
 import { ScreenPanel } from "@/components/screen-panel";
@@ -43,8 +42,8 @@ import {
   traceCount,
   type SessionRun,
 } from "@/components/instruments";
-import { askQuestion, checkHealth, fetchCoverage } from "@/lib/api";
-import type { AnswerResponse, CoverageResponse } from "@/lib/types";
+import { askQuestion, checkHealth } from "@/lib/api";
+import type { AnswerResponse } from "@/lib/types";
 
 const exampleChips = [
   {
@@ -76,43 +75,6 @@ const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] 
   { id: "operations", label: "Operations", hint: "Data quality", icon: GaugeCircle },
 ];
 
-function Wave({ cls }: { cls: string }) {
-  return (
-    <svg className={`gh-wave ${cls}`} viewBox="0 0 1200 120" preserveAspectRatio="none">
-      <path d="M0,58 C200,42 400,70 600,56 C800,42 1000,68 1200,54 L1200,120 L0,120 Z" />
-    </svg>
-  );
-}
-
-function SunsetScene() {
-  return (
-    <div className="gh-scene" aria-hidden="true">
-      <div className="gh-sky" />
-      <div className="gh-glow" />
-      <div className="gh-rays" />
-      <div className="gh-cloud c1" />
-      <div className="gh-cloud c2" />
-      <div className="gh-cloud c3" />
-      <div className="gh-sun" />
-      <div className="gh-horizon" />
-      <div className="gh-sea">
-        <div className="gh-sun-sub" />
-        <div className="gh-reflect" />
-        <div className="gh-waves">
-          <Wave cls="w1" />
-          <Wave cls="w2" />
-          <Wave cls="w3" />
-          <Wave cls="w4" />
-          <Wave cls="w5" />
-        </div>
-      </div>
-      <div className="gh-mist" />
-      <div className="gh-grain" />
-      <div className="gh-scrim" />
-    </div>
-  );
-}
-
 export default function Home() {
   const [mode, setMode] = useState<ModeId>("ask");
   const [question, setQuestion] = useState("");
@@ -121,18 +83,13 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
-  const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
   const questionRef = useRef<HTMLInputElement | null>(null);
   const consoleRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const online = await checkHealth();
-      setApiOnline(online);
-      if (online) {
-        setCoverage(await fetchCoverage());
-      }
+      setApiOnline(await checkHealth());
     })();
   }, []);
 
@@ -223,125 +180,15 @@ export default function Home() {
 
   return (
     <div className="site-shell">
-      <section className="hero">
-        <SunsetScene />
-
-        <header className="hd-nav">
-          <Link className="hd-brand" href="/" aria-label="FDRE home">
-            <span className="hd-mark">F</span>
-            <span>
-              <strong>FDRE</strong>
-              <small>thefdre.com</small>
-            </span>
-          </Link>
-          <nav className="hd-links" aria-label="Site">
-            <Link className="on" href="/">
-              Console
-            </Link>
-            <Link href="/about">About</Link>
-          </nav>
-          <div className="hd-right">
-            {coverage && (
-              <span
-                className="coverage-badge"
-                title="Companies with embedded chunks searchable via RAG"
-              >
-                <Database size={14} aria-hidden="true" />
-                <span>
-                  {coverage.indexed_count.toLocaleString()} /{" "}
-                  {coverage.catalog_count.toLocaleString()} indexed
-                </span>
-                <span className="coverage-divider" aria-hidden="true">
-                  |
-                </span>
-                <span>
-                  S&amp;P 500: {coverage.sp500_indexed_count} / {coverage.sp500_catalog_count}
-                </span>
-              </span>
-            )}
-            <span className={`hd-status ${apiOnline === true ? "online" : ""}`}>
-              <span className="dot" aria-hidden="true" />
-              {apiOnline === null ? "Checking API" : apiOnline ? "API online" : "API unavailable"}
-            </span>
-            <a
-              className="hd-pill"
-              href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Code2 size={16} aria-hidden="true" />
-              <span className="hd-pill-label">View source</span>
-            </a>
-          </div>
-        </header>
-
-        <div className="gh-inner">
-          <div className="gh-copy">
-            <p className="hd-eyebrow">Production RAG for SEC search</p>
-            <h1>Financial Document Retrieval Engine</h1>
-            <p className="lede">
-              A research console over SEC filings: hybrid RAG, citation verification,
-              point-in-time retrieval, cross-sectional scans, and live data quality behind every
-              result.
-            </p>
-
-            <form className="hd-search gh-form" onSubmit={submit}>
-              <Search size={22} aria-hidden="true" />
-              <label className="sr-only" htmlFor="question">
-                Ask a financial filing question
-              </label>
-              <input
-                id="question"
-                ref={questionRef}
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Ask about a filing, table, risk factor, or financial fact…"
-              />
-              <button className="go" type="submit" disabled={loading}>
-                {loading ? (
-                  <LoaderCircle className="spin" size={17} />
-                ) : (
-                  <ArrowRight size={17} strokeWidth={1.8} />
-                )}
-                {loading ? "Retrieving" : "Search"}
-              </button>
-            </form>
-
-            <div className="hd-chips gh-chips" aria-label="Example questions">
-              {exampleChips.map((chip) => (
-                <button
-                  key={chip.tag}
-                  type="button"
-                  className={`hd-chip${chip.abstain ? " ab" : ""}`}
-                  onClick={() => {
-                    setQuestion(chip.question);
-                    questionRef.current?.focus();
-                  }}
-                >
-                  <span className="k">{chip.tag}</span>
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="gh-trust">
-              <span>
-                {coverage
-                  ? `${coverage.sp500_indexed_count} / ${coverage.sp500_catalog_count} S&P 500 names`
-                  : "Production SEC corpus"}
-              </span>
-              <span className="sep" aria-hidden="true" />
-              <span>
-                {coverage
-                  ? `${coverage.chunk_count.toLocaleString()} embedded chunks`
-                  : "1M+ embedded chunks"}
-              </span>
-              <span className="sep" aria-hidden="true" />
-              <span>Hybrid RAG with citation audit</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <LandingHero
+        apiOnline={apiOnline}
+        onExplore={() => {
+          setMode("ask");
+          window.requestAnimationFrame(() =>
+            consoleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          );
+        }}
+      />
 
       <main>
         {history.length > 0 && <SessionTelemetry runs={history} />}
@@ -371,19 +218,58 @@ export default function Home() {
 
           <div className="console-body">
             {mode === "ask" && (
-              <AskWorkspace
-                question={question}
-                result={result}
-                error={error}
-                loading={loading}
-                loadingStage={loadingStage}
-                displayEvidence={displayEvidence}
-                funnel={funnel}
-                scope={scope}
-                primaryTicker={primaryTicker}
-                primaryForm={primaryForm}
-                primaryDate={primaryDate}
-              />
+              <>
+                <form className="hd-search console-search" onSubmit={submit}>
+                  <Search size={20} aria-hidden="true" />
+                  <label className="sr-only" htmlFor="question">
+                    Ask a financial filing question
+                  </label>
+                  <input
+                    id="question"
+                    ref={questionRef}
+                    value={question}
+                    onChange={(event) => setQuestion(event.target.value)}
+                    placeholder="Ask about a filing, table, risk factor, or financial fact…"
+                  />
+                  <button className="go" type="submit" disabled={loading}>
+                    {loading ? (
+                      <LoaderCircle className="spin" size={17} />
+                    ) : (
+                      <ArrowRight size={17} strokeWidth={1.8} />
+                    )}
+                    {loading ? "Retrieving" : "Search"}
+                  </button>
+                </form>
+                <div className="hd-chips console-chips" aria-label="Example questions">
+                  {exampleChips.map((chip) => (
+                    <button
+                      key={chip.tag}
+                      type="button"
+                      className={`hd-chip${chip.abstain ? " ab" : ""}`}
+                      onClick={() => {
+                        setQuestion(chip.question);
+                        questionRef.current?.focus();
+                      }}
+                    >
+                      <span className="k">{chip.tag}</span>
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+                <AskWorkspace
+                  question={question}
+                  result={result}
+                  error={error}
+                  loading={loading}
+                  loadingStage={loadingStage}
+                  displayEvidence={displayEvidence}
+                  funnel={funnel}
+                  scope={scope}
+                  primaryTicker={primaryTicker}
+                  primaryForm={primaryForm}
+                  primaryDate={primaryDate}
+                />
+              </>
             )}
             {mode === "retrieve" && <RetrievePanel onRun={pushRun} />}
             {mode === "screen" && <ScreenPanel onRun={pushRun} />}

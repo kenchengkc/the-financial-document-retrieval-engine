@@ -130,7 +130,7 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
   await page.goto("/");
 
   await page.getByRole("textbox", { name: "Ask a financial filing question" }).fill(question);
-  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
 
   await expect(page.getByText("Searching indexed SEC filings")).toBeVisible();
   await expect(page.getByRole("heading", { name: question })).toBeVisible();
@@ -158,7 +158,7 @@ test("keeps the earnings result within a mobile viewport", async ({ page }) => {
   await mockApi(page);
   await page.goto("/");
   await page.getByRole("textbox", { name: "Ask a financial filing question" }).fill(question);
-  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("heading", { name: question })).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
