@@ -257,3 +257,8 @@ data/processed/*
 # Local brand reference sheet (1.5 MB, not used at runtime — the rebrand sourced
 # colors from it). Keep it local rather than shipping it in the public/ bundle.
 apps/web/public/FDRE_Branding.png
+
+# Uncropped logo source canvases (1536x1024). The cropped fdre-logo-*.png are
+# what the app uses; keep the large originals local.
+apps/web/public/logo_dark.png
+apps/web/public/logo_light.png

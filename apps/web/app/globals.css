@@ -4223,18 +4223,12 @@ main {
   margin: 0 auto;
 }
 .ld-nav { display: flex; align-items: center; gap: 40px; padding: 30px 0; }
-/* White wordmark for the dark nav (the branding's dark-background logo). The
-   colored gradient version is reserved for light backgrounds via .ld-brand--color. */
-.ld-brand {
-  font: 600 32px/1 var(--font-logo), "Playfair Display", Georgia, serif;
-  letter-spacing: 0.005em;
-  color: var(--ld-cream);
-}
-.ld-brand--color {
-  background: var(--ld-brand-sweep);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+/* The actual FDRE logo asset — white version on the dark nav (the colored
+   version, public/fdre-logo-color.png, is for light backgrounds). */
+.ld-brand-img {
+  height: 40px;
+  width: auto;
+  display: block;
 }
 .ld-links { margin-left: auto; display: flex; align-items: center; gap: 34px; }
 .ld-links a,

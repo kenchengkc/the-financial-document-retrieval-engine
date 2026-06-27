@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import { Libre_Franklin, Newsreader, Playfair_Display, Public_Sans } from "next/font/google";
+import { Libre_Franklin, Newsreader, Public_Sans } from "next/font/google";
 import "./globals.css";
 
 const newsreader = Newsreader({
   subsets: ["latin"],
   style: ["normal", "italic"],
   variable: "--font-display",
-});
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-logo",
 });
 
 const libreFranklin = Libre_Franklin({
@@ -50,7 +44,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${newsreader.variable} ${libreFranklin.variable} ${publicSans.variable} ${playfair.variable}`}
+      className={`${newsreader.variable} ${libreFranklin.variable} ${publicSans.variable}`}
     >
       <body>{children}</body>
     </html>

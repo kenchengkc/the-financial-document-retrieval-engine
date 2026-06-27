@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 
 const WAVE_PATH =
@@ -52,7 +53,14 @@ export function LandingHero({
 
       <div className="ld-wrap">
         <nav className="ld-nav" aria-label="Primary">
-          <span className="ld-brand">FDRE</span>
+          <Image
+            className="ld-brand-img"
+            src="/fdre-logo-white.png"
+            alt="FDRE"
+            width={629}
+            height={230}
+            priority
+          />
           <div className="ld-links">
             <a className="on" href="#top">
               Home
