@@ -250,3 +250,10 @@ data/processed/*
 *.faiss
 *.index
 .vercel
+
+# macOS
+.DS_Store
+
+# Local brand reference sheet (1.5 MB, not used at runtime — the rebrand sourced
+# colors from it). Keep it local rather than shipping it in the public/ bundle.
+apps/web/public/FDRE_Branding.png
