@@ -20,11 +20,11 @@ const publicSans = Public_Sans({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://thefdre.com"),
-  title: "FDRE — SEC Research Infrastructure",
+  title: "FDRE | SEC Research Infrastructure",
   description:
     "Point-in-time SEC filing retrieval, structured financial facts, filing comparisons, and reproducible research exports with verified evidence.",
   openGraph: {
-    title: "FDRE — SEC Research Infrastructure",
+    title: "FDRE | SEC Research Infrastructure",
     description:
       "Auditable SEC retrieval, typed facts, filing changes, and point-in-time research data.",
     url: "https://thefdre.com",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%233a8a70'/><text x='16' y='23' font-family='Georgia,serif' font-size='20' font-weight='600' fill='white' text-anchor='middle'>F</text></svg>",
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%231a0f2c'/><text x='16' y='23.5' font-family='Georgia,serif' font-size='21' font-weight='600' fill='%23eec79a' text-anchor='middle'>F</text></svg>",
   },
 };
 

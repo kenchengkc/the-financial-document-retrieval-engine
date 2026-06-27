@@ -478,6 +478,13 @@ a {
   gap: 12px;
 }
 
+/* Real FDRE logo asset in standard navs (colored version for the light nav). */
+.hd-brand-img {
+  height: 34px;
+  width: auto;
+  display: block;
+}
+
 .hd-mark {
   width: 40px;
   height: 40px;
@@ -4209,8 +4216,8 @@ main {
   right: 0;
   height: 3px;
   z-index: 20;
-  background: var(--ld-brand-sweep);
-  opacity: 0.9;
+  background: linear-gradient(90deg, #fbf8f1 0%, #eec79a 50%, #fbf8f1 100%);
+  opacity: 0.95;
 }
 
 .ld-wrap {

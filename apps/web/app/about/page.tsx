@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -17,7 +18,7 @@ import { HeroStage } from "./hero-stage";
 import { SearchDemo } from "./search-demo";
 
 export const metadata: Metadata = {
-  title: "About — FDRE",
+  title: "About | FDRE",
   description:
     "Measured engineering evidence for FDRE's point-in-time SEC research infrastructure.",
 };
@@ -48,11 +49,14 @@ export default async function About() {
       <section className="about-hero">
         <header className="hd-nav light">
           <Link className="hd-brand" href="/" aria-label="FDRE home">
-            <span className="hd-mark">F</span>
-            <span>
-              <strong>FDRE</strong>
-              <small>thefdre.com</small>
-            </span>
+            <Image
+              className="hd-brand-img"
+              src="/fdre-logo-color.png"
+              alt="FDRE"
+              width={629}
+              height={230}
+              priority
+            />
           </Link>
           <nav className="hd-links" aria-label="Site">
             <Link href="/">Console</Link>
