@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     neighbor_expansion_window: int = Field(
         default=1, ge=0, le=5, alias="NEIGHBOR_EXPANSION_WINDOW"
     )
+    answer_cache_ttl_seconds: int = Field(
+        default=21600, ge=0, alias="ANSWER_CACHE_TTL_SECONDS"
+    )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     voyage_api_key: str | None = Field(default=None, alias="VOYAGE_API_KEY")
 

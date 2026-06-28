@@ -22,6 +22,7 @@ from apps.api.app.models import (
 )
 
 EXPECTED_TABLES = {
+    "answer_cache",
     "answer_runs",
     "chunks",
     "citations",
