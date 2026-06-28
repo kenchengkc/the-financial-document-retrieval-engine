@@ -28,6 +28,7 @@ from fdre.retrieval.neighbors import expand_with_neighbors
 from fdre.retrieval.preprocess import CompanyReference, load_company_references, preprocess_query
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.sparse import SparseRetriever
+from scripts.eval_guard import require_neon_optin
 
 DEFAULT_DATASET = "data/evals/retrieval_benchmark.jsonl"
 
@@ -110,6 +111,7 @@ def main() -> None:
     parser.add_argument("--dataset", default=DEFAULT_DATASET)
     parser.add_argument("--k", type=int, default=5)
     args = parser.parse_args()
+    require_neon_optin()
 
     questions = [
         EvalQuestion.model_validate_json(line)

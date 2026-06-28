@@ -34,6 +34,7 @@ from fdre.evals.datasets import EvalQuestion
 from fdre.graph.nodes import GeneratedAnswer, MockAnswerGenerator, WorkflowContext
 from fdre.graph.workflow import run_answer_workflow
 from fdre.retrieval.query import RetrievalCandidate
+from scripts.eval_guard import require_neon_optin
 
 
 def _run(questions: list[EvalQuestion], window: int) -> dict[str, float]:
@@ -93,6 +94,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="data/evals/retrieval_benchmark.jsonl")
     args = parser.parse_args()
+    require_neon_optin()
     questions = [
         EvalQuestion.model_validate_json(line)
         for line in Path(args.dataset).read_text().splitlines()
