@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pgvector.sqlalchemy import Vector
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -192,7 +192,7 @@ class Embedding(Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     vector: Mapped[list[float]] = mapped_column(
-        Vector().with_variant(JSON, "sqlite"),
+        HALFVEC().with_variant(JSON, "sqlite"),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
