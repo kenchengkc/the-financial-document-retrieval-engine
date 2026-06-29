@@ -120,6 +120,15 @@ function outcomeName(study: SignalStudyResponse) {
   return study.report.outcome_name ?? "abnormal_return";
 }
 
+function significantCount(study: SignalStudyResponse) {
+  const windows = study.report.results;
+  const sig = windows.filter((w) => {
+    const p = w.long_short_adjusted_p_value ?? w.long_short_p_value;
+    return p !== null && p < 0.05;
+  }).length;
+  return { sig, total: windows.length };
+}
+
 function studyKey(study: SignalStudyResponse) {
   return `${study.report.signal_name}:${outcomeName(study)}`;
 }
@@ -191,17 +200,19 @@ function QuantileChart({
 }) {
   const values = window.quantiles.map((q) => q.mean_abnormal_return ?? 0);
   const maxAbs = Math.max(0.0001, ...values.map((v) => Math.abs(v)));
+  const n = window.quantiles.length;
   return (
     <div className="sig-quantiles">
       {window.quantiles.map((q) => {
         const value = q.mean_abnormal_return ?? 0;
         const positive = value >= 0;
+        const edge = q.quantile === 1 || q.quantile === n ? " edge" : "";
         if (isVolatility) {
           // Volatility is a non-negative level, not a signed return: a 0-based
           // bar, not a diverging long/short chart.
           const width = (Math.abs(value) / maxAbs) * 100;
           return (
-            <div className="sig-qrow" key={q.quantile}>
+            <div className={`sig-qrow${edge}`} key={q.quantile}>
               <span className="sig-qlabel">Q{q.quantile}</span>
               <span className="sig-qtrack" aria-hidden="true">
                 <span className="sig-qfill vol" style={{ left: "0%", width: `${width}%` }} />
@@ -212,7 +223,7 @@ function QuantileChart({
         }
         const width = (Math.abs(value) / maxAbs) * 50;
         return (
-          <div className="sig-qrow" key={q.quantile}>
+          <div className={`sig-qrow${edge}`} key={q.quantile}>
             <span className="sig-qlabel">Q{q.quantile}</span>
             <span className="sig-qtrack" aria-hidden="true">
               <span className="sig-qzero" />
@@ -246,6 +257,8 @@ function WindowCard({
   const ic = window.information_coefficient;
   const adjustedP = window.long_short_adjusted_p_value ?? window.long_short_p_value;
   const significant = adjustedP !== null && adjustedP < 0.05;
+  const rising = (window.long_short_mean ?? 0) >= 0;
+  const verdict = significant ? `Significant ${rising ? "↑" : "↓"}` : "No edge";
   return (
     <article className="sig-card">
       <header>
@@ -265,15 +278,13 @@ function WindowCard({
       </p>
       <QuantileChart window={window} isVolatility={isVolatility} />
       <footer className={significant ? "ok" : undefined}>
-        <span>
-          {isVolatility ? "Q5−Q1 vol spread" : "Q5−Q1 long-short"}{" "}
-          <strong>{pct(window.long_short_mean)}</strong>
+        <span className={`sig-verdict ${significant ? "sig" : "flat"}`}>{verdict}</span>
+        <span className="sig-spread">
+          {isVolatility ? "Q5−Q1 vol" : "Q5−Q1"} <strong>{pct(window.long_short_mean)}</strong>
         </span>
-        <span>
-          {adjustedP === null
-            ? ""
-            : `${significant ? "significant" : "not significant"} (BH-adj p = ${adjustedP.toFixed(2)})`}
-        </span>
+        {adjustedP !== null && (
+          <span className="sig-pval">BH-adj p&nbsp;{adjustedP.toFixed(2)}</span>
+        )}
       </footer>
     </article>
   );
@@ -337,6 +348,7 @@ export function SignalsPanel() {
         <div className="sig-tabs" role="tablist" aria-label="Signal studies">
           {studies.map((candidate) => {
             const key = studyKey(candidate);
+            const { sig, total } = significantCount(candidate);
             return (
               <button
                 key={key}
@@ -346,7 +358,10 @@ export function SignalsPanel() {
                 className={key === studyKey(study) ? "on" : undefined}
                 onClick={() => setActiveKey(key)}
               >
-                {signalLabel(candidate)}
+                <span className="sig-tab-name">{signalLabel(candidate)}</span>
+                <span className={`sig-tab-verdict${sig > 0 ? " has" : ""}`}>
+                  {sig > 0 ? `${sig}/${total} horizons sig` : "no edge"}
+                </span>
               </button>
             );
           })}

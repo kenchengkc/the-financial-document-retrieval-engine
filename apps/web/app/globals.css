@@ -1439,6 +1439,7 @@ main {
 }
 
 .evidence summary {
+  position: relative;
   min-height: 62px;
   display: grid;
   grid-template-columns: 34px minmax(150px, 1.3fr) minmax(120px, 1fr) auto 18px;
@@ -1498,6 +1499,55 @@ main {
 
 .evidence-score {
   color: var(--cyan);
+}
+
+.evidence-src-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.evidence-source strong.dim {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.evidence-section.dim {
+  opacity: 0.5;
+}
+
+/* The cited source(s) — flag the proof the answer actually rests on. */
+.evidence-cited {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  font: 600 8px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.evidence.cited {
+  border-color: var(--green);
+  box-shadow: inset 3px 0 0 0 var(--green);
+}
+
+/* Per-card relevance heat (rerank score, relative to the top hit). */
+.evidence-heat {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--cyan-soft);
+}
+
+.evidence-heat > span {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
 }
 
 .evidence-body > p {
@@ -3214,12 +3264,17 @@ main {
 }
 
 .sig-tabs button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   border: 0;
   border-radius: 7px;
-  padding: 8px 11px;
+  padding: 7px 11px;
   background: transparent;
   color: var(--muted);
   font: 10px var(--mono);
+  text-align: left;
   cursor: pointer;
 }
 
@@ -3227,6 +3282,16 @@ main {
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 1px 4px rgba(17, 31, 24, 0.08);
+}
+
+.sig-tab-verdict {
+  font: 8.5px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.sig-tab-verdict.has {
+  color: var(--green-deep);
 }
 
 .sig-stats {
@@ -3371,7 +3436,7 @@ main {
 }
 
 .sig-qfill.pos {
-  background: var(--green);
+  background: linear-gradient(90deg, var(--green), var(--green-deep));
 }
 
 .sig-qfill.neg {
@@ -3379,7 +3444,17 @@ main {
 }
 
 .sig-qfill.vol {
-  background: var(--cyan);
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+}
+
+/* The extreme quantiles (Q1 / Qn) are the long-short legs — make them read first. */
+.sig-qrow.edge .sig-qlabel {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sig-qrow.edge .sig-qtrack {
+  border-color: var(--line-strong);
 }
 
 .sig-qval {
@@ -3419,6 +3494,30 @@ main {
 
 .sig-card > footer.ok strong {
   color: var(--green-deep);
+}
+
+.sig-verdict {
+  margin-right: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font: 600 9px var(--mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sig-verdict.sig {
+  border: 1px solid var(--green);
+  color: var(--green-deep);
+}
+
+.sig-verdict.flat {
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.sig-pval {
+  color: var(--muted);
 }
 
 .sig-note {

@@ -89,30 +89,46 @@ export function EvidenceCard({
   candidate,
   index,
   defaultOpen,
+  cited,
+  heat,
+  commonTicker,
+  commonSection,
 }: {
   candidate: RetrievalCandidate;
   index: number;
   defaultOpen?: boolean;
+  cited?: boolean;
+  heat?: number;
+  commonTicker?: string | null;
+  commonSection?: string | null;
 }) {
   const metadata = candidate.metadata;
   const ticker = metadataValue(metadata.ticker, "Document");
   const formType = metadataValue(metadata.form_type, "Filing");
   const section = metadataValue(metadata.section, "Unsectioned");
   const filingDate = metadataValue(metadata.filing_date, "Date unavailable");
+  const tickerDim = commonTicker != null && ticker === commonTicker;
+  const sectionDim = commonSection != null && section === commonSection;
 
   return (
-    <details className="evidence" open={defaultOpen ? true : undefined}>
+    <details className={`evidence${cited ? " cited" : ""}`} open={defaultOpen ? true : undefined}>
       <summary>
         <span className="evidence-rank">{String(index + 1).padStart(2, "0")}</span>
         <span className="evidence-source">
-          <strong>{ticker}</strong>
+          <span className="evidence-src-top">
+            <strong className={tickerDim ? "dim" : undefined}>{ticker}</strong>
+            {cited ? <span className="evidence-cited">Cited</span> : null}
+          </span>
           <span>
             {formType} · {filingDate}
           </span>
         </span>
-        <span className="evidence-section">{section}</span>
+        <span className={`evidence-section${sectionDim ? " dim" : ""}`}>{section}</span>
         <span className="evidence-score">{score(candidate.rerank_score)} rerank</span>
         <ChevronDown size={16} aria-hidden="true" />
+        <span className="evidence-heat" aria-hidden="true">
+          <span style={{ width: `${Math.round(Math.max(0, Math.min(1, heat ?? 0)) * 100)}%` }} />
+        </span>
       </summary>
       <div className="evidence-body">
         <p>{candidate.text}</p>

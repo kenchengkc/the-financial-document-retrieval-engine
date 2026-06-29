@@ -333,6 +333,19 @@ function AskWorkspace({
   primaryForm: string;
   primaryDate: string;
 }) {
+  const citedChunkIds = new Set(result?.citations.map((c) => c.chunk_id) ?? []);
+  const maxRerank = Math.max(0.0001, ...displayEvidence.map((c) => c.rerank_score ?? 0));
+  const firstEvidence = displayEvidence[0];
+  const commonTicker =
+    firstEvidence && displayEvidence.length > 1 &&
+    displayEvidence.every((c) => c.metadata.ticker === firstEvidence.metadata.ticker)
+      ? metadataValue(firstEvidence.metadata.ticker, "") || null
+      : null;
+  const commonSection =
+    firstEvidence && displayEvidence.length > 1 &&
+    displayEvidence.every((c) => c.metadata.section === firstEvidence.metadata.section)
+      ? metadataValue(firstEvidence.metadata.section, "") || null
+      : null;
   return (
     <div aria-live="polite">
       {error && (
@@ -432,7 +445,11 @@ function AskWorkspace({
                   <p className="eyebrow">Primary sources</p>
                   <h2>Sources supporting this answer</h2>
                 </div>
-                <span>{result.evidence.length} sources</span>
+                <span>
+                  {result.evidence.length} sources
+                  {commonTicker ? ` · ${commonTicker}` : ""}
+                  {commonSection ? ` · ${commonSection}` : ""}
+                </span>
               </div>
               <div className="evidence-list">
                 {displayEvidence.map((candidate, index) => (
@@ -441,6 +458,10 @@ function AskWorkspace({
                     candidate={candidate}
                     index={index}
                     defaultOpen={index === 0}
+                    cited={citedChunkIds.has(candidate.chunk_id)}
+                    heat={(candidate.rerank_score ?? 0) / maxRerank}
+                    commonTicker={commonTicker}
+                    commonSection={commonSection}
                   />
                 ))}
                 {result.evidence.length === 0 && (
