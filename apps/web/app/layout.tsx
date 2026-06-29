@@ -31,9 +31,6 @@ export const metadata: Metadata = {
     siteName: "FDRE",
     type: "website",
   },
-  icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%231a0f2c'/><text x='16' y='23.5' font-family='Georgia,serif' font-size='21' font-weight='600' fill='%23eec79a' text-anchor='middle'>F</text></svg>",
-  },
 };
 
 export default function RootLayout({

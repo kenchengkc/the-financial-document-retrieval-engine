@@ -69,6 +69,7 @@ export default async function About() {
             <Link className="on" href="/about">
               About
             </Link>
+            <Link href="/contact">Contact</Link>
           </nav>
           <div className="hd-right">
             <a

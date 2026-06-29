@@ -5,8 +5,6 @@ import Link from "next/link";
 
 const WAVE_PATH =
   "M0,58 C200,42 400,70 600,56 C800,42 1000,68 1200,54 L1200,120 L0,120 Z";
-const CONTACT = "mailto:overtakingkc@gmail.com";
-
 function Wave({ variant }: { variant: string }) {
   return (
     <svg className={`ld-wave ${variant}`} viewBox="0 0 1200 120" preserveAspectRatio="none">
@@ -69,11 +67,8 @@ export function LandingHero({
               Research
             </button>
             <Link href="/about">About</Link>
-            <a href={CONTACT}>Contact</a>
+            <Link href="/contact">Contact</Link>
           </div>
-          <button type="button" className="ld-signin" onClick={onExplore}>
-            Sign in
-          </button>
         </nav>
 
         <section className="ld-hero">
@@ -105,9 +100,6 @@ export function LandingHero({
                 <path d="M5 12h14M13 6l6 6-6 6" />
               </svg>
             </button>
-            <a className="ld-btn ld-btn-ghost" href={CONTACT}>
-              Request access
-            </a>
           </div>
         </section>
 
