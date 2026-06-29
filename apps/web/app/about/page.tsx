@@ -34,7 +34,13 @@ type Coverage = {
 
 async function getCoverage(): Promise<Coverage | null> {
   try {
-    const response = await fetch(`${API_URL}/coverage`, { next: { revalidate: 1800 } });
+    // Build-time ISR fetch: cap it so a slow/unreachable API degrades to the
+    // fallback (null) instead of hanging static generation until Vercel's 60s
+    // worker timeout kills the whole build.
+    const response = await fetch(`${API_URL}/coverage`, {
+      next: { revalidate: 1800 },
+      signal: AbortSignal.timeout(10000),
+    });
     if (!response.ok) return null;
     return (await response.json()) as Coverage;
   } catch {
