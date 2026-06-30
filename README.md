@@ -14,31 +14,38 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Production Corpus
 
-Measured from production on June 20, 2026:
+Measured from production on June 30, 2026:
 
 | Metric | Value |
 | --- | ---: |
-| S&P 500 primary tickers indexed | 498 / 499 |
-| SEC filings | 1,542 |
-| Parsed chunks | 1,536,043 |
-| Embedded chunks | 1,535,651 |
-| Embeddings | Voyage `voyage-4-large`, 512 dimensions |
+| S&P 500 primary tickers indexed | 499 / 500 |
+| SEC filings (10-K / 10-Q) | 2,749 |
+| Parsed chunks | 2,694,321 |
+| Embedded chunks | 2,571,371 |
+| Embeddings | Voyage `voyage-4-large`, 512-dim, stored as `halfvec` |
 
-The corpus is deepened to several years of 10-K/10-Q history per issuer (chained
-`sp500-ingest` runs), enabling multi-year point-in-time retrieval and event studies.
-The constituent list is current and therefore survivorship-biased.
+The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026, via
+chained `sp500-ingest` runs), enabling multi-year point-in-time retrieval and event
+studies. The constituent list is current and therefore survivorship-biased. Vectors are
+stored at half precision (`halfvec`) — the HNSW index already ranks on the half-precision
+cast, so this halves vector storage with no change to retrieval results.
 
 ## What It Does
 
-- Hybrid PostgreSQL full-text and pgvector retrieval with exact company resolution.
+- Hybrid PostgreSQL full-text and pgvector retrieval with exact company resolution,
+  multi-query expansion, and neighbor-chunk context (all behind a labeled benchmark).
 - Citation-verified answers with deliberate abstention for unsupported requests.
+- Point-in-time-aware answer caching: identical questions serve a stored response
+  (`X-Cache: HIT`) instead of re-running retrieval; abstentions are never cached.
 - SEC acceptance-time filtering, amendments, comparable filings, and filing differences.
 - Typed Company Facts queries for a restrained canonical metric set.
 - Point-in-time issuer-period panels in JSON, CSV, or Parquet.
 - Provider-neutral filing event studies with leakage checks and persisted experiment manifests.
-- Point-in-time disclosure-change signal studies (a "Lazy Prices" replication and a
-  risk-expansion-to-volatility study) with quantile portfolios, information coefficients,
-  and bootstrap inference — published at `GET /research/signal-studies`.
+- Point-in-time disclosure-change signal studies — a "Lazy Prices" disclosure-similarity
+  replication, a risk-expansion-to-volatility study, and a sector-neutral composite of the
+  three — with quantile portfolios, information coefficients, and bootstrap inference
+  (`GET /research/signal-studies`). The honest finding: the signals are genuinely
+  uncorrelated but individually weak, so naive combination is no free lunch.
 - Incremental ingestion, provider backoff, run manifests, and corpus quality audits.
 
 ## Architecture
@@ -130,11 +137,12 @@ python3 scripts/ingest_ticker_batch.py \
 Core endpoints:
 
 - `GET /health`, `/coverage`, `/companies`
-- `POST /search`, `/answer`
+- `POST /search`, `/answer` (point-in-time-aware cache; responses carry `X-Cache: HIT|MISS`)
 - `GET /research/facts`
 - `GET /research/filing-differences/{accession_number}`
 - `POST /research/thematic-scan`
 - `GET /research/panel`, `/research/panel/export`
+- `GET /research/signal-studies`
 - `GET /operations/quality`
 
 ## Verification
@@ -155,8 +163,22 @@ npm run test:e2e
 CI also runs PostgreSQL pgvector migration and query-plan tests. Railway runs Alembic as a
 pre-deploy command before starting uvicorn; Vercel serves the frontend.
 
-No holdout benchmark score or post-index production latency is published yet. Those numbers remain
-gated on the reviewed 120-question dataset and measured latency and ANN-recall distributions.
+## Retrieval evaluation
+
+A labeled, content-grounded benchmark drives the fusion defaults rather than assumption —
+`data/evals/retrieval_benchmark.jsonl` (33 semantic / paraphrased queries; a hit counts only if it
+shares the issuer + section and contains the labeled quote). The ablation is honest about what
+actually helps on this corpus:
+
+| Variant | recall@5 | MRR | nDCG@5 |
+| --- | ---: | ---: | ---: |
+| Baseline (single query, weighted fusion) | 0.152 | 0.086 | 0.102 |
+| **Multi-query expansion (shipped default)** | **0.212** | **0.125** | **0.146** |
+
+RRF and BM25-over-pool underperformed on this corpus, so both are opt-in; multi-query expansion
+(+40% recall) is the shipped default, and neighbor-chunk expansion lifts context recall
+0.212 → 0.242. Reproduce with `python3 -m scripts.benchmark_retrieval`. A larger reviewed holdout
+set and post-index production-latency distributions are still pending.
 
 ## Data Policy
 
