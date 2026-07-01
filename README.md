@@ -26,9 +26,12 @@ Measured from production on June 30, 2026:
 
 The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026, via
 chained `sp500-ingest` runs), enabling multi-year point-in-time retrieval and event
-studies. The constituent list is current and therefore survivorship-biased. Vectors are
-stored at half precision (`halfvec`) — the HNSW index already ranks on the half-precision
-cast, so this halves vector storage with no change to retrieval results.
+studies. The constituent list is current and therefore survivorship-biased. The one company
+without indexed data is FedEx Freight (`FDXF`) — a June 2026 spin-off from FedEx whose EDGAR
+history is still only registration, `8-K`, and insider filings, with no 10-K or 10-Q yet, so
+there is nothing to retrieve until its first quarterly report. Vectors are stored at half
+precision (`halfvec`) — the HNSW index already ranks on the half-precision cast, so this
+halves vector storage with no change to retrieval results.
 
 ## What It Does
 
