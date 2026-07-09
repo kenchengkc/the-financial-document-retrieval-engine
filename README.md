@@ -15,12 +15,12 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Highlights
 
-- **2.7M chunks, one database.** 499 S&P 500 issuers × ~5 years of 10-K/10-Q (2,749 filings, 2.69M parsed chunks, 2.57M embeddings) served from a single PostgreSQL — lexical, vector, typed facts, and traces — with no separate search, vector, or queue service.
+- **2.7M chunks, one database.** 499 S&P 500 issuers × ~5 years of 10-K/10-Q (2,749 filings, 2.69M parsed chunks, 2.57M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
 - **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF and BM25 were implemented, measured, and rejected for underperforming on this corpus.
 - **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN results before and after.
 - **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
 - **Cheap to build and run.** The entire ~242M-token embedding corpus was built for ≈**$14.60**, and a daily incremental job keeps all 499 issuers current for ~$9/year.
-- **Honest research.** Three point-in-time signal studies with real information coefficients and bootstrap inference — reporting genuine null results, not manufactured alpha.
+- **Honest research.** Three point-in-time signal studies with real information coefficients and bootstrap inference, reporting genuine null results, not manufactured alpha.
 
 ## Production Corpus
 
@@ -37,10 +37,10 @@ Measured from production on June 30, 2026:
 The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026, via
 chained `sp500-ingest` runs), enabling multi-year point-in-time retrieval and event
 studies. The constituent list is current and therefore survivorship-biased. The one company
-without indexed data is FedEx Freight (`FDXF`) — a June 2026 spin-off from FedEx whose EDGAR
+without indexed data is FedEx Freight (`FDXF`), a June 2026 spin-off from FedEx whose EDGAR
 history is still only registration, `8-K`, and insider filings, with no 10-K or 10-Q yet, so
 there is nothing to retrieve until its first quarterly report. Vectors are stored at half
-precision (`halfvec`) — the HNSW index already ranks on the half-precision cast, so this
+precision (`halfvec`); the HNSW index already ranks on the half-precision cast, so this
 halves vector storage with no change to retrieval results.
 
 ## What It Does
@@ -54,9 +54,9 @@ halves vector storage with no change to retrieval results.
 - Typed Company Facts queries for a restrained canonical metric set.
 - Point-in-time issuer-period panels in JSON, CSV, or Parquet.
 - Provider-neutral filing event studies with leakage checks and persisted experiment manifests.
-- Point-in-time disclosure-change signal studies — a "Lazy Prices" disclosure-similarity
+- Point-in-time disclosure-change signal studies: a "Lazy Prices" disclosure-similarity
   replication, a risk-expansion-to-volatility study, and a sector-neutral composite of the
-  three — with quantile portfolios, information coefficients, and bootstrap inference
+  three, with quantile portfolios, information coefficients, and bootstrap inference
   (`GET /research/signal-studies`). The honest finding: the signals are genuinely
   uncorrelated but individually weak, so naive combination is no free lunch.
 - Incremental ingestion, provider backoff, run manifests, and corpus quality audits.
@@ -178,7 +178,7 @@ pre-deploy command before starting uvicorn; Vercel serves the frontend.
 
 ## Retrieval evaluation
 
-A labeled, content-grounded benchmark drives the fusion defaults rather than assumption —
+A labeled, content-grounded benchmark drives the fusion defaults rather than assumption:
 `data/evals/retrieval_benchmark.jsonl` (33 semantic / paraphrased queries; a hit counts only if it
 shares the issuer + section and contains the labeled quote). The ablation is honest about what
 actually helps on this corpus:

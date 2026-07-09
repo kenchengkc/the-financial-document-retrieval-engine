@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Protocol, SupportsFloat, SupportsIndex, runtime_checkable
+
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import cast, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import ColumnElement, Select
 
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
 from fdre.indexing.embeddings import EmbeddingProvider, cosine_similarity
@@ -12,6 +16,18 @@ from fdre.retrieval.query import RetrievalCandidate, SearchFilters, chunk_matche
 # Lower values keep unfiltered thematic scans closer to the latency gate.
 FILTERED_HNSW_EF_SEARCH = 400
 UNFILTERED_HNSW_EF_SEARCH = 40
+
+VectorScalar = str | SupportsFloat | SupportsIndex
+
+
+@runtime_checkable
+class SupportsToList(Protocol):
+    def to_list(self) -> Iterable[VectorScalar]: ...
+
+
+@runtime_checkable
+class SupportsToListNumpy(Protocol):
+    def tolist(self) -> Iterable[VectorScalar]: ...
 
 
 class DenseRetriever:
@@ -132,7 +148,7 @@ class DenseRetriever:
         self,
         session: Session,
         *,
-        distance,
+        distance: ColumnElement[float],
         filters: SearchFilters,
         limit: int,
     ) -> list[RetrievalCandidate]:
@@ -178,7 +194,10 @@ class DenseRetriever:
         ]
 
 
-def _apply_filters(statement, filters: SearchFilters):
+def _apply_filters(
+    statement: Select[tuple[Chunk, float]],
+    filters: SearchFilters,
+) -> Select[tuple[Chunk, float]]:
     if filters.tickers:
         statement = statement.where(Company.ticker.in_(filters.tickers))
     if filters.ciks:
@@ -211,10 +230,10 @@ def _apply_filters(statement, filters: SearchFilters):
 
 
 def _as_float_list(vector: object) -> list[float]:
-    if hasattr(vector, "to_list"):
-        return [float(value) for value in vector.to_list()]  # type: ignore[union-attr]
-    if hasattr(vector, "tolist"):
-        return [float(value) for value in vector.tolist()]  # type: ignore[union-attr]
+    if isinstance(vector, SupportsToList):
+        return [float(value) for value in vector.to_list()]
+    if isinstance(vector, SupportsToListNumpy):
+        return [float(value) for value in vector.tolist()]
     if isinstance(vector, (list, tuple)):
         return [float(value) for value in vector]
     text = str(vector).strip()
