@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       tickers:
-        description: "Space-separated tickers"
-        default: "AAPL MSFT NVDA AMZN GOOGL"
+        description: "Space-separated tickers (blank = full S&P 500)"
+        default: ""
       forms:
         description: "Space-separated form types"
         default: "10-K 10-Q"
@@ -94,7 +94,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       PYTHONPATH: .
-      TICKERS: ${{ github.event.inputs.tickers || 'AAPL MSFT NVDA AMZN GOOGL' }}
+      TICKERS: ${{ github.event.inputs.tickers || '' }}
       FORMS: ${{ github.event.inputs.forms || '10-K 10-Q' }}
       LIMIT: ${{ github.event.inputs.limit || '1' }}
       ANNUAL_LIMIT: ${{ github.event.inputs.annual_limit || '' }}
@@ -103,7 +103,7 @@ jobs:
     steps:
       - name: Validate inputs
         run: |
-          [[ "${TICKERS}" =~ ^[A-Z0-9.-]+([[:space:]]+[A-Z0-9.-]+)*$ ]]
+          [[ "${TICKERS}" =~ ^$|^[A-Z0-9.-]+([[:space:]]+[A-Z0-9.-]+)*$ ]]
           [[ "${FORMS}" =~ ^[0-9A-Z-]+([[:space:]]+[0-9A-Z-]+)*$ ]]
           [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
           [[ "${ANNUAL_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
@@ -139,7 +139,6 @@ jobs:
 
       - name: Run incremental filing ingest
         run: |
-          read -r -a ticker_args <<< "${TICKERS}"
           read -r -a form_args <<< "${FORMS}"
           force_args=()
           if [ "${FORCE_PARSE}" = "true" ]; then
@@ -156,8 +155,18 @@ jobs:
           if [ -n "${QUARTERLY_LIMIT}" ]; then
             history_args+=(--quarterly-limit "${QUARTERLY_LIMIT}")
           fi
+          # Explicit tickers override; otherwise refresh the whole S&P 500
+          # incrementally. --filing-limit keeps only the latest N per form and the
+          # pipeline skips already-ingested filings, so quiet days are cheap no-ops
+          # and only newly-filed reports are parsed and embedded.
+          if [ -n "${TICKERS}" ]; then
+            read -r -a ticker_args <<< "${TICKERS}"
+            selection_args=(--tickers "${ticker_args[@]}")
+          else
+            selection_args=(--universe sp500 --offset 0 --limit 500)
+          fi
           python scripts/ingest_ticker_batch.py \
-            --tickers "${ticker_args[@]}" \
+            "${selection_args[@]}" \
             --forms "${form_args[@]}" \
             "${history_args[@]}" \
             "${force_args[@]}" \
