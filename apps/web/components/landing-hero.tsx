@@ -117,7 +117,7 @@ export function LandingHero({
             <span className="ld-dotsep" />
             <span className="ld-pillar">
               <span className="n">03</span>
-              <span className="t">Calibrated abstention</span>
+              <span className="t">Declines unsupported claims</span>
             </span>
           </div>
           <span className="ld-trust">

@@ -57,8 +57,8 @@ const exampleChips = [
     question: "What did META report for earnings last quarter?",
   },
   {
-    tag: "abstain",
-    label: "Price forecast",
+    tag: "no forecasts",
+    label: "Unsupported request",
     question: "What will NVIDIA's stock price be next quarter?",
     abstain: true,
   },
@@ -285,7 +285,7 @@ export default function Home() {
             <h2>Ground retrieval before generation</h2>
             <p>
               FDRE resolves issuers and dates, searches dense and lexical indexes, reranks
-              evidence, verifies citations, and abstains when support is weak.
+              evidence, verifies citations, and declines unsupported requests.
             </p>
           </div>
           <ol>
@@ -411,7 +411,7 @@ function AskWorkspace({
             <div className="notice abstain">
               <ShieldCheck size={20} />
               <div>
-                <strong>FDRE abstained</strong>
+                <strong>No verified answer</strong>
                 <p>{result.abstention_reason}</p>
               </div>
             </div>

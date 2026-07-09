@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const question = "What did META report for earnings last quarter?";
 
-async function mockApi(page: import("@playwright/test").Page) {
+async function mockHealthAndCoverage(page: import("@playwright/test").Page) {
   await page.route("**/health", (route) =>
     route.fulfill({
       status: 200,
@@ -25,6 +25,10 @@ async function mockApi(page: import("@playwright/test").Page) {
       }),
     }),
   );
+}
+
+async function mockApi(page: import("@playwright/test").Page) {
+  await mockHealthAndCoverage(page);
   await page.route("**/answer", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 250));
     await route.fulfill({
@@ -151,6 +155,58 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
 
   await page.getByText("Workflow trace").click();
   await expect(page.getByText("preprocess query")).toBeVisible();
+});
+
+test("labels unsupported forecast requests as no verified answer", async ({ page }) => {
+  const forecastQuestion = "What will NVIDIA's stock price be next quarter?";
+  await mockHealthAndCoverage(page);
+  await page.route("**/answer", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        answer_run_id: 43,
+        question: forecastQuestion,
+        rewritten_queries: [forecastQuestion],
+        route: ["text"],
+        answer: null,
+        confidence: null,
+        abstained: true,
+        abstention_reason:
+          "FDRE does not forecast securities prices or provide trading recommendations.",
+        evidence: [],
+        citations: [],
+        financial_facts: [],
+        retrieval_gate: { evidence_count: 0, max_score: 0, passed: false },
+        trace: [
+          { node: "preprocess_query", details: { filters: { tickers: ["NVDA"] } } },
+          {
+            node: "evaluate_retrieval_gate",
+            details: {
+              passed: false,
+              reason: "FDRE does not forecast securities prices or provide trading recommendations.",
+            },
+          },
+        ],
+        latency_ms: 320,
+      }),
+    }),
+  );
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /no forecasts Unsupported request/i }))
+    .toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Ask a financial filing question" })
+    .fill(forecastQuestion);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+
+  await expect(page.getByText("No verified answer")).toBeVisible();
+  await expect(page.locator(".notice.abstain")).toContainText(
+    "FDRE does not forecast securities prices",
+  );
+  await expect(page.getByText("FDRE abstained")).not.toBeVisible();
+  await expect(page.getByText("No answer")).toBeVisible();
 });
 
 test("keeps the earnings result within a mobile viewport", async ({ page }) => {

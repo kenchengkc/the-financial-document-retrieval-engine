@@ -207,7 +207,7 @@ export function SessionTelemetry({ runs }: { runs: SessionRun[] }) {
   const cells = [
     { k: "Queries", v: String(runs.length) },
     { k: "Grounded", v: `${groundedPct}%` },
-    { k: "Abstained", v: String(abstained) },
+    { k: "No answer", v: String(abstained) },
     { k: "Median latency", v: formatLatency(medianLatency) },
     { k: "Avg top rerank", v: avgTop.toFixed(3) },
   ];
