@@ -75,20 +75,36 @@ class HybridRetriever:
         # De-duplicate the primary query with any expansion variants; each variant
         # contributes its own dense and sparse ranking to the fusion.
         variants = list(dict.fromkeys([query, *(queries or [])]))
-        candidate_limit = max(limit * 5, 20)
+        # Unfiltered thematic scans only need a small diversified pool; a 5x
+        # oversample on 2.7M chunks is wasted work before issuer diversification.
+        # Dense ANN is the primary signal for cross-sectional themes; skipping
+        # full-corpus sparse OR FTS roughly halves wall time toward the 5s gate.
+        unfiltered = not filters.tickers
+        candidate_limit = max(limit * 5, 20) if not unfiltered else max(limit, 20)
         store: dict[int, RetrievalCandidate] = {}
         rankings: list[tuple[float, list[int]]] = []
-        for variant in variants:
-            dense_candidates = self.dense.search(
-                session, variant, filters=filters, limit=candidate_limit
+        query_vectors = self.dense.provider.embed_texts(
+            list(variants), input_type="query"
+        )
+        for variant, query_vector in zip(variants, query_vectors, strict=True):
+            dense_candidates = self.dense.search_with_vector(
+                session,
+                query_vector,
+                filters=filters,
+                limit=candidate_limit,
             )
-            sparse_candidates = self.sparse.search(
-                session, variant, filters=filters, limit=candidate_limit
-            )
+            sparse_candidates: list[RetrievalCandidate] = []
+            if not unfiltered:
+                sparse_candidates = self.sparse.search(
+                    session, variant, filters=filters, limit=candidate_limit
+                )
             for candidate in (*dense_candidates, *sparse_candidates):
                 _merge_into_store(store, candidate)
             rankings.append((self.dense_weight, [c.chunk_id for c in dense_candidates]))
-            rankings.append((self.sparse_weight, [c.chunk_id for c in sparse_candidates]))
+            if sparse_candidates:
+                rankings.append(
+                    (self.sparse_weight, [c.chunk_id for c in sparse_candidates])
+                )
 
         if self.fusion == "weighted":
             self._score_weighted(store, rankings)

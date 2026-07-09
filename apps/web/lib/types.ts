@@ -149,6 +149,17 @@ export type SignalStudiesResponse = {
   studies: SignalStudyResponse[];
 };
 
+export type UnchunkedDocument = {
+  document_id: number;
+  ticker: string;
+  accession_number: string;
+  form_type: string;
+  filing_date: string | null;
+  local_path: string | null;
+  element_count: number;
+  reason: string;
+};
+
 export type OperationsQuality = {
   generated_at: string;
   company_count: number;
@@ -160,6 +171,7 @@ export type OperationsQuality = {
   missing_expected_filings: string[];
   duplicate_accession_groups: number;
   documents_without_chunks: number;
+  unchunked_documents: UnchunkedDocument[];
   chunks_without_embeddings: number;
   facts_without_documents: number;
   freshness_ratio: number;

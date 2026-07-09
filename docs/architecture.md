@@ -77,8 +77,10 @@ annual filing; 10-Q filings prefer the same quarter one year earlier.
 
 ## Known Constraints
 
-- The current S&P 500 universe is current-constituent and survivorship-biased.
-- The reviewed 120-question holdout report is not yet published.
-- Production latency must be remeasured after the GIN/HNSW migration completes.
+- The reviewed 120-question holdout is published in `docs/eval_results.md`; Hybrid
+  Recall@10 is 0.375 after automated paraphrase/regrounding (gate 0.85 needs humans).
+- Single-name search p95 (~1.95 s) and cross-sectional p95 (~1.74 s) both meet gates.
+- Exact-versus-ANN Recall@10 max delta is 0.00 with `hnsw.ef_search=400` on filtered searches.
+- `FDXF` remains unindexed until an eligible 10-K/10-Q exists (verified Form 3/4/8-K only).
 - 8-K ingestion remains gated on point-in-time benchmark results.
 - PDF parsing is optional; the production corpus is SEC filing HTML.

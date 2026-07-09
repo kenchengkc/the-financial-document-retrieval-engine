@@ -72,3 +72,14 @@ def test_preprocess_leaves_cross_sectional_theme_queries_unfiltered() -> None:
     )
 
     assert result.filters.tickers == []
+    assert result.rewritten_queries == [
+        "Which companies mention data center power constraints?"
+    ]
+
+
+def test_preprocess_keeps_finance_expansion_for_ticker_queries() -> None:
+    result = preprocess_query("AAPL gross margin trend", companies=COMPANIES)
+
+    assert any(
+        "SEC filing financial results" in variant for variant in result.rewritten_queries
+    )

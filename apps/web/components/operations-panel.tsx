@@ -191,6 +191,20 @@ export function OperationsPanel() {
               )}
             </div>
           </div>
+          {report.unchunked_documents?.length ? (
+            <div className="ops-watch-block">
+              <span className="ops-watch-label">
+                Unchunked filings ({report.unchunked_documents.length})
+              </span>
+              <div className="ops-tags">
+                {report.unchunked_documents.map((item) => (
+                  <span key={item.document_id} className="ops-tag" title={item.reason}>
+                    {item.ticker}:{item.form_type}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

@@ -234,6 +234,7 @@ test("renders the live data-quality dashboard", async ({ page }) => {
         missing_expected_filings: [],
         duplicate_accession_groups: 0,
         documents_without_chunks: 0,
+        unchunked_documents: [],
         chunks_without_embeddings: 6967,
         facts_without_documents: 0,
         freshness_ratio: 0.996,

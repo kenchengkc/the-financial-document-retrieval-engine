@@ -83,6 +83,9 @@ def test_ingestion_manifest_and_quality_report() -> None:
     assert finished.retry_count == 1
     assert report.embedding_coverage == 1.0
     assert report.documents_without_chunks == 1
+    assert len(report.unchunked_documents) == 1
+    assert report.unchunked_documents[0].ticker == "OLD"
+    assert report.unchunked_documents[0].reason == "missing_local_path"
     assert report.stale_tickers == ["OLD"]
     assert "CURR:10-Q" in report.missing_expected_filings
     assert report.recent_ingestion_success_rate == 1.0

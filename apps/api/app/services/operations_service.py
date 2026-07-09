@@ -11,11 +11,12 @@ from apps.api.app.models import (
     Chunk,
     Company,
     Document,
+    DocumentElement,
     Embedding,
     FinancialFact,
     IngestionRun,
 )
-from apps.api.app.schemas.operations import DataQualityReport
+from apps.api.app.schemas.operations import DataQualityReport, UnchunkedDocument
 
 
 def start_ingestion_run(
@@ -121,6 +122,47 @@ def build_data_quality_report(
             .having(func.count(Document.id) > 1)
         ).all()
     )
+    element_count = func.count(DocumentElement.id).label("element_count")
+    unchunked_rows = session.execute(
+        select(
+            Document.id.label("document_id"),
+            Company.ticker,
+            Document.accession_number,
+            Document.form_type,
+            Document.filing_date,
+            Document.local_path,
+            element_count,
+        )
+        .join(Company, Company.id == Document.company_id)
+        .outerjoin(DocumentElement, DocumentElement.document_id == Document.id)
+        .where(~Document.chunks.any())
+        .group_by(
+            Document.id,
+            Company.ticker,
+            Document.accession_number,
+            Document.form_type,
+            Document.filing_date,
+            Document.local_path,
+        )
+        .order_by(Company.ticker, Document.accession_number)
+        .limit(100)
+    ).all()
+    unchunked_documents = [
+        UnchunkedDocument(
+            document_id=int(row.document_id),
+            ticker=row.ticker,
+            accession_number=row.accession_number,
+            form_type=row.form_type,
+            filing_date=row.filing_date,
+            local_path=row.local_path,
+            element_count=int(row.element_count or 0),
+            reason=_unchunked_reason(
+                local_path=row.local_path,
+                element_count=int(row.element_count or 0),
+            ),
+        )
+        for row in unchunked_rows
+    ]
     documents_without_chunks = session.scalar(
         select(func.count())
         .select_from(Document)
@@ -160,6 +202,7 @@ def build_data_quality_report(
         missing_expected_filings=missing_expected,
         duplicate_accession_groups=duplicate_accession_groups,
         documents_without_chunks=documents_without_chunks,
+        unchunked_documents=unchunked_documents,
         chunks_without_embeddings=chunks_without_embeddings,
         facts_without_documents=facts_without_documents,
         freshness_ratio=(
@@ -180,6 +223,14 @@ def build_data_quality_report(
             recent_runs[0].completed_at if recent_runs else None
         ),
     )
+
+
+def _unchunked_reason(*, local_path: str | None, element_count: int) -> str:
+    if not local_path:
+        return "missing_local_path"
+    if element_count == 0:
+        return "no_parsed_elements"
+    return "elements_present_not_chunked"
 
 
 def _as_utc(value: datetime) -> datetime:

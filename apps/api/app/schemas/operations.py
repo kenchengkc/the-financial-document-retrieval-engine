@@ -1,8 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class UnchunkedDocument(BaseModel):
+    document_id: int
+    ticker: str
+    accession_number: str
+    form_type: str
+    filing_date: date | None = None
+    local_path: str | None = None
+    element_count: int = 0
+    reason: str
 
 
 class DataQualityReport(BaseModel):
@@ -16,6 +27,7 @@ class DataQualityReport(BaseModel):
     missing_expected_filings: list[str]
     duplicate_accession_groups: int
     documents_without_chunks: int
+    unchunked_documents: list[UnchunkedDocument] = Field(default_factory=list)
     chunks_without_embeddings: int
     facts_without_documents: int
     freshness_ratio: float

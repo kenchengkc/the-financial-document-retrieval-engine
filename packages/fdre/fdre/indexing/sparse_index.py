@@ -11,6 +11,30 @@ from apps.api.app.models import Chunk, Company, Document, DocumentElement
 from fdre.retrieval.query import SearchFilters, chunk_matches_filters
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+SPARSE_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "to",
+    "which",
+    "with",
+}
+MAX_SPARSE_TOKENS = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +66,10 @@ class PostgresFullTextIndexer:
         filters: SearchFilters,
         limit: int,
     ) -> list[SparseHit]:
-        tsquery = build_sparse_tsquery(query)
+        tsquery = build_sparse_tsquery(
+            query,
+            max_tokens=None if filters.tickers else MAX_SPARSE_TOKENS,
+        )
         if not tsquery:
             return []
         parsed_query = func.to_tsquery("english", tsquery)
@@ -115,8 +142,14 @@ class PostgresFullTextIndexer:
         return sorted(hits, key=lambda hit: (-hit.score, hit.chunk.id))[:limit]
 
 
-def build_sparse_tsquery(query: str) -> str:
+def build_sparse_tsquery(query: str, *, max_tokens: int | None = None) -> str:
     """Build an OR query so partial lexical matches remain retrievable."""
 
-    tokens = dict.fromkeys(TOKEN_PATTERN.findall(query.casefold()))
+    tokens = [
+        token
+        for token in dict.fromkeys(TOKEN_PATTERN.findall(query.casefold()))
+        if token not in SPARSE_STOPWORDS and len(token) > 1
+    ]
+    if max_tokens is not None:
+        tokens = tokens[:max_tokens]
     return " | ".join(tokens)

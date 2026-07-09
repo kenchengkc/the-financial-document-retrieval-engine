@@ -106,9 +106,6 @@ def preprocess_query(
             ),
         }
     )
-    finance_expansion = (
-        f"{cleaned} SEC filing financial results risks management commentary"
-    )
     section_query = (
         f"{cleaned} {' '.join(detected_sections)}" if detected_sections else cleaned
     )
@@ -116,14 +113,23 @@ def preprocess_query(
     # ("AAPL margins") also matches passages that spell out "Apple Inc".
     ticker_names = {company.ticker.upper(): company.name for company in company_list}
     company_terms = " ".join(
-        ticker_names[ticker] for ticker in sorted(detected_tickers) if ticker in ticker_names
+        ticker_names[ticker]
+        for ticker in sorted(detected_tickers)
+        if ticker in ticker_names
     )
-    company_expansion = f"{cleaned} {company_terms}".strip() if company_terms else cleaned
+    company_expansion = (
+        f"{cleaned} {company_terms}".strip() if company_terms else cleaned
+    )
+    rewritten = [cleaned, company_expansion, section_query]
+    # Finance-suffix expansion helps single-name recall, but on unfiltered
+    # thematic queries it doubles full-corpus dense+sparse work for little gain.
+    if merged_filters.tickers:
+        rewritten.append(
+            f"{cleaned} SEC filing financial results risks management commentary"
+        )
     return PreprocessedQuery(
         original_query=cleaned,
-        rewritten_queries=list(
-            dict.fromkeys([cleaned, company_expansion, finance_expansion, section_query])
-        ),
+        rewritten_queries=list(dict.fromkeys(rewritten)),
         filters=merged_filters,
         routes=list(dict.fromkeys(routes)),
     )

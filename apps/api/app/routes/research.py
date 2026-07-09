@@ -213,7 +213,7 @@ def thematic_scan(
         settings,
         query=request.query,
         filters=request.filters,
-        top_k=min(100, request.issuers * request.results_per_issuer * 4),
+        top_k=min(100, request.issuers * request.results_per_issuer * 2),
     )
     issuers = diversify_candidates_by_issuer(
         result.candidates,

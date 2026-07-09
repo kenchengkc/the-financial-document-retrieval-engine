@@ -302,6 +302,9 @@ def main() -> None:
                 }
             )
         elif args.command == "eval":
+            from scripts.eval_guard import require_neon_optin
+
+            require_neon_optin()
             questions = load_jsonl_dataset(args.dataset)
             if args.require_reviewed:
                 validate_reviewed_benchmark(questions)

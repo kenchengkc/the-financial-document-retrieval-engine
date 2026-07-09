@@ -290,6 +290,10 @@ def test_embedding_rate_limiter_enforces_token_budget() -> None:
 
 def test_sparse_search_works_offline_and_honors_filters() -> None:
     assert build_sparse_tsquery("AI revenue, AI demand") == "ai | revenue | demand"
+    assert build_sparse_tsquery(
+        "Which companies discuss data center power constraints?",
+        max_tokens=8,
+    ) == "companies | discuss | data | center | power | constraints"
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:

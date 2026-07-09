@@ -7,7 +7,8 @@ point-in-time research features, and reproducible event-study inputs.
 [API](https://api.thefdre.com/health) ·
 [Architecture](docs/architecture.md) ·
 [Roadmap](docs/codex_plan.md) ·
-[Benchmark](docs/eval_plan.md)
+[Benchmark](docs/eval_plan.md) ·
+[Eval results](docs/eval_results.md)
 
 FDRE is research infrastructure for Research/Data Engineering and Quant Research Engineering. It
 is not a trading strategy, portfolio optimizer, execution simulator, or low-latency system.
@@ -189,8 +190,13 @@ actually helps on this corpus:
 
 RRF and BM25-over-pool underperformed on this corpus, so both are opt-in; multi-query expansion
 (+40% recall) is the shipped default, and neighbor-chunk expansion lifts context recall
-0.212 → 0.242. Reproduce with `python3 -m scripts.benchmark_retrieval`. A larger reviewed holdout
-set and post-index production-latency distributions are still pending.
+0.212 → 0.242. Reproduce with `python3 -m scripts.benchmark_retrieval`.
+
+A reviewed 120-question (80/40) holdout contract is frozen in
+`data/evals/retrieval_benchmark.jsonl`. Latency, ANN, and holdout results are in
+[`docs/eval_results.md`](docs/eval_results.md): single-name p95 **1.95 s**,
+cross-sectional p95 **1.74 s**, ANN max delta **0.00**, Hybrid holdout Recall@10
+**0.375** (aspirational 0.85 needs human paraphrases).
 
 ## Data Policy
 

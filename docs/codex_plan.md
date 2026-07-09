@@ -87,13 +87,20 @@ The reviewed 120-question dataset and holdout run remain unpublished until revie
 
 ## Remaining Production Work
 
-1. Remeasure single-name/cross-sectional latency and coverage response time.
-2. Measure exact-versus-ANN Recall@10.
-3. Review and freeze 120 benchmark questions; run the untouched holdout.
-4. Run and monitor the Research 50 backfill workflow for 3 annual and 8 quarterly filings.
-5. Run and monitor the Company Facts workflow across the production corpus.
-6. Complete the S&P coverage gap: embed AWK, AXON, and AXP; ingest FDXF when an eligible filing is available.
-7. Publish benchmark and operational numbers only after verification.
+Completed on 2026-07-09 (see `docs/eval_results.md`):
+
+1. Remeasured latency — single-name p95 **1.95 s** and cross-sectional p95 **1.74 s** both pass.
+2. Exact-versus-ANN Recall@10 — mean **1.00**, max delta **0.00** (pass).
+3. Frozen reviewed 120-question benchmark; holdout Hybrid Recall@10 **0.375** after automated
+   paraphrase/regrounding (aspirational 0.85 still needs human labels).
+4. Research 50 backfill and Company Facts workflows already completed (Jun 20).
+5. AWK / AXON / AXP indexed; unchunked GOOG filings remediated.
+6. FDXF verified blocked: SEC CIK `0002082247` has Form 3/4/8-K only — no 10-K/10-Q yet.
+
+Still open (not fully automatable):
+
+1. Human-authored holdout paraphrases until Recall@10 ≥ 0.85 (and related quality gates).
+2. Ingest FDXF when its first 10-Q/10-K appears on EDGAR.
 
 ## Deferred
 

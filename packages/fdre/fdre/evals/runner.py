@@ -262,9 +262,16 @@ def _candidate_reference_label(
     candidate_text = normalize_evidence_text(candidate.text)
     for reference in relevant:
         reference_section = normalize_evidence_text(reference.section or "")
+        # Allow either side to omit section so quote-grounded labels still match
+        # when parser section metadata is missing or inconsistent.
+        section_ok = (
+            not reference_section
+            or not section
+            or section == reference_section
+        )
         if (
             accession == reference.accession_number
-            and section == reference_section
+            and section_ok
             and reference.normalized_quote in candidate_text
         ):
             return _reference_label(reference)
