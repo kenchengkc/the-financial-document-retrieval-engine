@@ -12,6 +12,15 @@ point-in-time research features, and reproducible event-study inputs.
 FDRE is research infrastructure for Research/Data Engineering and Quant Research Engineering. It
 is not a trading strategy, portfolio optimizer, execution simulator, or low-latency system.
 
+## Highlights
+
+- **2.7M chunks, one database.** 499 S&P 500 issuers × ~5 years of 10-K/10-Q (2,749 filings, 2.69M parsed chunks, 2.57M embeddings) served from a single PostgreSQL — lexical, vector, typed facts, and traces — with no separate search, vector, or queue service.
+- **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF and BM25 were implemented, measured, and rejected for underperforming on this corpus.
+- **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN results before and after.
+- **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
+- **Cheap to build and run.** The entire ~242M-token embedding corpus was built for ≈**$14.60**, and a daily incremental job keeps all 499 issuers current for ~$9/year.
+- **Honest research.** Three point-in-time signal studies with real information coefficients and bootstrap inference — reporting genuine null results, not manufactured alpha.
+
 ## Production Corpus
 
 Measured from production on June 30, 2026:
