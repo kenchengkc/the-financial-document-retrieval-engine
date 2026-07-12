@@ -3499,7 +3499,7 @@ main {
 }
 
 .sig-verdict {
-  margin-right: auto;
+  display: inline-block;
   padding: 3px 9px;
   border-radius: 999px;
   font: 600 9px var(--mono);
@@ -3518,8 +3518,177 @@ main {
   color: var(--muted);
 }
 
-.sig-pval {
+/* ── Signals: plain-language verdict banner ── */
+.sig-banner {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 0 0 22px;
+  padding: 17px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.sig-banner > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.sig-banner.flat {
+  border-left: 4px solid var(--line-strong);
+}
+
+.sig-banner.flat > svg {
   color: var(--muted);
+}
+
+.sig-banner.sig {
+  border-left: 4px solid var(--green);
+}
+
+.sig-banner.sig > svg {
+  color: var(--green);
+}
+
+.sig-banner-label {
+  margin: 0;
+  font: 9px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sig-banner > div > strong {
+  display: block;
+  margin: 3px 0 5px;
+  font: 500 20px var(--display);
+  color: var(--ink);
+}
+
+.sig-banner-plain {
+  margin: 0;
+  max-width: 70ch;
+  font: 14px / 1.55 var(--sans);
+  color: var(--prose);
+}
+
+/* ── Signals: results-by-horizon table ── */
+.sig-summary {
+  margin: 0 0 20px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.sig-summary table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sig-summary th {
+  padding: 11px 16px;
+  text-align: left;
+  font: 9px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.sig-summary th.num,
+.sig-summary td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sig-summary td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.sig-summary tr:last-child td {
+  border-bottom: 0;
+}
+
+.sig-summary td strong {
+  font: 500 14px var(--display);
+}
+
+.sig-summary td small {
+  display: block;
+  margin-top: 2px;
+  font: 9px var(--mono);
+  color: var(--muted);
+}
+
+.sig-summary td.num {
+  font: 14px var(--mono);
+}
+
+.sig-summary td.num.pos {
+  color: var(--green-deep);
+  font-weight: 600;
+}
+
+.sig-summary td.num.neg {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* ── Signals: "how to read this" glossary ── */
+.sig-glossary {
+  margin: 0 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.sig-glossary > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 18px;
+  font: 500 12px var(--sans);
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sig-glossary > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sig-glossary[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.sig-glossary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 26px;
+  margin: 0;
+  padding: 16px 18px;
+}
+
+.sig-glossary dt {
+  margin-bottom: 3px;
+  font: 600 12px var(--sans);
+  color: var(--ink);
+}
+
+.sig-glossary dd {
+  margin: 0;
+  font: 12px / 1.5 var(--sans);
+  color: var(--prose);
+}
+
+@media (max-width: 640px) {
+  .sig-glossary dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .sig-note {

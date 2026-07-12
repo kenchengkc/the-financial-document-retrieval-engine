@@ -1,6 +1,14 @@
 "use client";
 
-import { CircleAlert, FlaskConical, LoaderCircle, TrendingUp } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleAlert,
+  CircleSlash,
+  FlaskConical,
+  HelpCircle,
+  LoaderCircle,
+  TrendingUp,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { fetchSignalStudies } from "@/lib/api";
@@ -133,6 +141,138 @@ function studyKey(study: SignalStudyResponse) {
   return `${study.report.signal_name}:${outcomeName(study)}`;
 }
 
+function isWindowSignificant(w: SignalWindow) {
+  const p = w.long_short_adjusted_p_value ?? w.long_short_p_value;
+  return p !== null && p < 0.05;
+}
+
+function bestAdjustedP(results: SignalWindow[]) {
+  return Math.min(
+    1,
+    ...results.map((w) => w.long_short_adjusted_p_value ?? w.long_short_p_value ?? 1),
+  );
+}
+
+function studyVerdict(study: SignalStudyResponse) {
+  const results = study.report.results;
+  const sig = results.filter(isWindowSignificant);
+  if (sig.length === 0) {
+    return {
+      tone: "flat" as const,
+      headline: "No tradeable edge",
+      plain: `None of the ${results.length} holding horizons is statistically significant (best p = ${bestAdjustedP(results).toFixed(2)}). The pattern shows up directionally, but it is too weak and noisy to trade after costs.`,
+    };
+  }
+  const horizons = sig.map((w) => windowLabel(w.window)).join(", ");
+  return {
+    tone: "sig" as const,
+    headline: `Edge at ${sig.length} of ${results.length} horizons`,
+    plain: `The long–short spread is statistically distinguishable from zero (p < 0.05) at ${horizons}.`,
+  };
+}
+
+function StudyVerdict({ study }: { study: SignalStudyResponse }) {
+  const v = studyVerdict(study);
+  const Icon = v.tone === "sig" ? CheckCircle2 : CircleSlash;
+  return (
+    <div className={`sig-banner ${v.tone}`} role="status">
+      <Icon size={22} aria-hidden="true" />
+      <div>
+        <p className="sig-banner-label">Verdict</p>
+        <strong>{v.headline}</strong>
+        <p className="sig-banner-plain">{v.plain}</p>
+      </div>
+    </div>
+  );
+}
+
+function SummaryTable({
+  results,
+  isVolatility,
+}: {
+  results: SignalWindow[];
+  isVolatility: boolean;
+}) {
+  return (
+    <div className="sig-summary">
+      <table>
+        <thead>
+          <tr>
+            <th>Holding horizon</th>
+            <th className="num">{isVolatility ? "High−low vol" : "Long–short return"}</th>
+            <th className="num">Rank skill (IC)</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((w) => {
+            const sig = isWindowSignificant(w);
+            const rising = (w.long_short_mean ?? 0) >= 0;
+            const p = w.long_short_adjusted_p_value ?? w.long_short_p_value;
+            return (
+              <tr key={w.window}>
+                <td>
+                  <strong>{windowLabel(w.window)}</strong>
+                  <small>n = {w.sample_size.toLocaleString()}</small>
+                </td>
+                <td className={`num ${sig ? (rising ? "pos" : "neg") : ""}`}>
+                  {pct(w.long_short_mean)}
+                </td>
+                <td className="num">
+                  {w.information_coefficient === null ? "—" : w.information_coefficient.toFixed(3)}
+                </td>
+                <td>
+                  <span className={`sig-verdict ${sig ? "sig" : "flat"}`}>
+                    {sig ? `Significant ${rising ? "↑" : "↓"}` : "No edge"}
+                  </span>
+                  {p !== null && <small className="sig-p">p = {p.toFixed(2)}</small>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Glossary({ isVolatility }: { isVolatility: boolean }) {
+  const outcome = isVolatility ? "next-period volatility" : "next-period return";
+  const items: [string, string][] = [
+    [
+      "The 5 groups",
+      `Every filing is sorted into 5 equal buckets by the signal (Group 1 = strongest, Group 5 = weakest). Each bar is that group's average ${outcome}.`,
+    ],
+    [
+      "Long–short return",
+      "What you would earn buying the top group and shorting the bottom — the tradeable edge if the signal works. Shown as Q5−Q1.",
+    ],
+    [
+      "Rank skill (IC)",
+      "How accurately the signal ranks winners vs. losers, from −1 to +1. 0 is a coin flip; genuinely useful signals run about 0.02–0.05.",
+    ],
+    [
+      "Significant / p-value",
+      "How likely the result is just luck. p < 0.05 (after adjusting for testing several horizons) means it is unlikely to be random.",
+    ],
+  ];
+  return (
+    <details className="sig-glossary">
+      <summary>
+        <HelpCircle size={14} aria-hidden="true" /> How to read this
+      </summary>
+      <dl>
+        {items.map(([term, def]) => (
+          <div key={term}>
+            <dt>{term}</dt>
+            <dd>{def}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 function signalLabel(study: SignalStudyResponse) {
   if (study.report.signal_name === "composite") {
     const count = study.report.component_signals?.length ?? 0;
@@ -254,7 +394,6 @@ function WindowCard({
   rightAxis: string;
   isVolatility: boolean;
 }) {
-  const ic = window.information_coefficient;
   const adjustedP = window.long_short_adjusted_p_value ?? window.long_short_p_value;
   const significant = adjustedP !== null && adjustedP < 0.05;
   const rising = (window.long_short_mean ?? 0) >= 0;
@@ -264,13 +403,9 @@ function WindowCard({
       <header>
         <div>
           <strong>{windowLabel(window.window)}</strong>
-          <small>holding [{window.window}] · n = {window.sample_size}</small>
+          <small>{window.sample_size.toLocaleString()} filings</small>
         </div>
-        <div className="sig-ic">
-          <span>IC</span>
-          <strong>{ic === null ? "n/a" : ic.toFixed(3)}</strong>
-          {window.ic_t_stat !== null && <em>t = {window.ic_t_stat.toFixed(2)}</em>}
-        </div>
+        <span className={`sig-verdict ${significant ? "sig" : "flat"}`}>{verdict}</span>
       </header>
       <p className="sig-axis">
         <span>{leftAxis}</span>
@@ -278,13 +413,8 @@ function WindowCard({
       </p>
       <QuantileChart window={window} isVolatility={isVolatility} />
       <footer className={significant ? "ok" : undefined}>
-        <span className={`sig-verdict ${significant ? "sig" : "flat"}`}>{verdict}</span>
-        <span className="sig-spread">
-          {isVolatility ? "Q5−Q1 vol" : "Q5−Q1"} <strong>{pct(window.long_short_mean)}</strong>
-        </span>
-        {adjustedP !== null && (
-          <span className="sig-pval">BH-adj p&nbsp;{adjustedP.toFixed(2)}</span>
-        )}
+        <span>{isVolatility ? "High−low volatility" : "Long–short return"}</span>
+        <strong>{pct(window.long_short_mean)}</strong>
       </footer>
     </article>
   );
@@ -342,6 +472,7 @@ export function SignalsPanel() {
   const report = study.report;
   const copy = studyCopy(study);
   const confidence = report.config.confidence_level ?? 0.95;
+  const isVol = outcomeName(study) === "realized_volatility";
   return (
     <div className="mode-panel">
       {studies.length > 1 && (
@@ -377,6 +508,8 @@ export function SignalsPanel() {
         <p className="panel-lede">{copy.lede}</p>
       </div>
 
+      <StudyVerdict study={study} />
+
       <dl className="sig-stats">
         <div>
           <dt>Filing events</dt>
@@ -384,10 +517,10 @@ export function SignalsPanel() {
         </div>
         <div>
           <dt>Outcome</dt>
-          <dd>{outcomeName(study) === "realized_volatility" ? "Volatility" : "Return"}</dd>
+          <dd>{isVol ? "Volatility" : "Return"}</dd>
         </div>
         <div>
-          <dt>Quantiles</dt>
+          <dt>Groups</dt>
           <dd>{report.n_quantiles}</dd>
         </div>
         <div>
@@ -396,6 +529,10 @@ export function SignalsPanel() {
         </div>
       </dl>
 
+      <SummaryTable results={report.results} isVolatility={isVol} />
+
+      <Glossary isVolatility={isVol} />
+
       <div className="sig-grid">
         {report.results.map((window) => (
           <WindowCard
@@ -403,7 +540,7 @@ export function SignalsPanel() {
             window={window}
             leftAxis={copy.leftAxis}
             rightAxis={copy.rightAxis}
-            isVolatility={outcomeName(study) === "realized_volatility"}
+            isVolatility={isVol}
           />
         ))}
       </div>

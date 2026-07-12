@@ -211,7 +211,7 @@ test("renders the published signal study", async ({ page }) => {
   await expect(page.locator(".sig-card").first()).toContainText("Filing day");
   // raw p=0.04 would read significant; the UI must use the BH-adjusted p=0.12 -> "No edge".
   await expect(page.locator(".sig-card").first()).toContainText("No edge");
-  await expect(page.locator(".sig-card").first()).toContainText("BH-adj p 0.12");
+  await expect(page.locator(".sig-summary")).toContainText("p = 0.12");
   await page.getByRole("tab", { name: /Risk expansion/ }).click();
   await expect(page.locator(".panel-intro")).toContainText("higher volatility");
   await expect(page.locator(".sig-stats")).toContainText("Volatility");
