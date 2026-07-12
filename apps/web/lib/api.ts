@@ -55,7 +55,7 @@ export async function askQuestion(question: string): Promise<AnswerResponse> {
     });
   } catch {
     throw new Error(
-      "The FDRE backend is not reachable. Set NEXT_PUBLIC_API_URL to the deployed API URL.",
+      "The data service is temporarily unavailable. Please try again in a moment.",
     );
   }
   if (!response.ok) {
@@ -74,7 +74,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     });
   } catch {
     throw new Error(
-      "The FDRE backend is not reachable. Set NEXT_PUBLIC_API_URL to the deployed API URL.",
+      "The data service is temporarily unavailable. Please try again in a moment.",
     );
   }
   if (!response.ok) {
@@ -89,7 +89,7 @@ async function getJson<T>(path: string): Promise<T> {
     response = await fetch(`${API_URL}${path}`, { cache: "no-store" });
   } catch {
     throw new Error(
-      "The FDRE backend is not reachable. Set NEXT_PUBLIC_API_URL to the deployed API URL.",
+      "The data service is temporarily unavailable. Please try again in a moment.",
     );
   }
   if (!response.ok) {

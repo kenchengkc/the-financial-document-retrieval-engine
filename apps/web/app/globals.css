@@ -674,6 +674,24 @@ a {
   margin: 0 0 20px;
 }
 
+/* The chips sit in the light console, not the dark hero — override the hero
+   styling so the labels are readable on cream. */
+.console-chips .hd-chip {
+  color: var(--prose);
+  background: var(--surface);
+  border-color: var(--line);
+  backdrop-filter: none;
+}
+
+.console-chips .hd-chip:hover {
+  background: var(--surface-muted);
+  border-color: var(--green);
+}
+
+.console-chips .hd-chip.ab .k {
+  color: var(--amber);
+}
+
 .hd-search > svg {
   color: #8a887c;
 }
@@ -3328,10 +3346,32 @@ main {
   font: 500 22px var(--display);
 }
 
+/* Mobile: 2×2 stats (this must follow the base rule to win the cascade). */
+@media (max-width: 700px) {
+  .sig-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sig-stats > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .sig-stats > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
 .sig-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+/* Mobile: stack the horizon cards (must follow the base rule to win the cascade). */
+@media (max-width: 700px) {
+  .sig-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sig-card {
@@ -3636,6 +3676,25 @@ main {
 .sig-summary td.num.neg {
   color: var(--amber);
   font-weight: 600;
+}
+
+/* Mobile: 4 columns don't fit a phone. Drop the most technical column
+   (rank skill / IC — still shown in the glossary and charts) and compact. */
+@media (max-width: 640px) {
+  .sig-summary th,
+  .sig-summary td {
+    padding: 9px 11px;
+  }
+
+  .sig-summary th:nth-child(3),
+  .sig-summary td:nth-child(3) {
+    display: none;
+  }
+
+  .sig-summary td strong,
+  .sig-summary td.num {
+    font-size: 12px;
+  }
 }
 
 /* ── Signals: "how to read this" glossary ── */
