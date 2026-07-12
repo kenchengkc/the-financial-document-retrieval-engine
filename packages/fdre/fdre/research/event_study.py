@@ -112,7 +112,7 @@ def load_market_bars(path: str | Path) -> list[MarketBar]:
             raise RuntimeError(
                 "Parquet market data requires `pip install -e '.[data]'`."
             ) from error
-        rows = pq.read_table(source).to_pylist()  # type: ignore[no-untyped-call]
+        rows = pq.read_table(source).to_pylist()  # type: ignore[no-untyped-call, unused-ignore]
     else:
         with source.open(newline="", encoding="utf-8") as input_file:
             rows = list(csv.DictReader(input_file))
@@ -139,7 +139,7 @@ def load_filing_events(
             raise RuntimeError(
                 "Parquet panel input requires `pip install -e '.[data]'`."
             ) from error
-        rows = pq.read_table(source).to_pylist()  # type: ignore[no-untyped-call]
+        rows = pq.read_table(source).to_pylist()  # type: ignore[no-untyped-call, unused-ignore]
     elif source.suffix.casefold() == ".csv":
         with source.open(newline="", encoding="utf-8") as input_file:
             rows = list(csv.DictReader(input_file))

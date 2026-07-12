@@ -176,7 +176,7 @@ def serialize_research_panel(
             "Parquet export requires `pip install -e '.[data]'`."
         ) from error
     sink = pa.BufferOutputStream()
-    pq.write_table(  # type: ignore[no-untyped-call]
+    pq.write_table(  # type: ignore[no-untyped-call, unused-ignore]
         pa.Table.from_pylist(records),
         sink,
     )
