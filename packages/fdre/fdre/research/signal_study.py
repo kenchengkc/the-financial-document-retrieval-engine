@@ -72,6 +72,30 @@ class SignalStudyReport(BaseModel):
     constituents: list[SignalConstituent] = Field(default_factory=list)
 
 
+def _winsorize_outcomes(
+    by_window: dict[str, list[tuple[float, float]]], pct: float
+) -> dict[str, list[tuple[float, float]]]:
+    """Clip each window's forward outcomes to its [pct, 1-pct] empirical quantiles.
+
+    Small samples with a few highly volatile constituents let single names dominate
+    a quantile's mean; winsorizing the return distribution (standard in factor
+    research) limits that outlier influence without dropping observations.
+    """
+    clipped: dict[str, list[tuple[float, float]]] = {}
+    for label, pairs in by_window.items():
+        if len(pairs) < 5:
+            clipped[label] = pairs
+            continue
+        outcomes = sorted(outcome for _, outcome in pairs)
+        last = len(outcomes) - 1
+        low = outcomes[int(pct * last)]
+        high = outcomes[int((1 - pct) * last)]
+        clipped[label] = [
+            (feature, min(max(outcome, low), high)) for feature, outcome in pairs
+        ]
+    return clipped
+
+
 def run_signal_study(
     events: list[FilingEvent],
     bars: list[MarketBar],
@@ -83,6 +107,7 @@ def run_signal_study(
     feature_version: str,
     code_sha: str,
     outcome_name: str = "abnormal_return",
+    winsorize_pct: float | None = None,
 ) -> SignalStudyReport:
     scored = [event for event in events if event.feature_value is not None]
     base = run_event_study(
@@ -100,6 +125,9 @@ def run_signal_study(
         feature = feature_by_accession.get(observation.accession_number)
         if feature is not None:
             by_window[observation.window].append((feature, observation.abnormal_return))
+
+    if winsorize_pct:
+        by_window = defaultdict(list, _winsorize_outcomes(by_window, winsorize_pct))
 
     return _build_signal_report(
         scored,

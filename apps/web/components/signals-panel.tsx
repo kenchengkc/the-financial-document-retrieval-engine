@@ -321,7 +321,7 @@ function studyCopy(study: SignalStudyResponse) {
       leftAxis: "← low-quality (high accruals)",
       rightAxis: "high-quality (low accruals) →",
       note:
-        "Accruals is a real, published fundamental factor, but in a survivorship-biased S&P 500 large-cap universe the spread is directionally consistent yet not statistically significant — the anomaly is historically strongest in smaller, less-liquid names. Two structural cautions matter for the current names below: banks carry large working-capital swings that inflate accruals for non-quality reasons, and hyper-growth firms build inventory and receivables ahead of sales, so a high accrual reading there reflects expansion, not distress.",
+        "Accruals is a real, published fundamental factor, but in this survivorship-biased S&P 500 large-cap sample it shows no significant edge. Forward returns are winsorized at the 2.5/97.5th percentile — and once a couple of highly volatile names are tamed, the raw long–short spread all but vanishes, which is exactly why the honest verdict is 'no edge.' The anomaly is historically strongest in smaller, less-liquid names outside this universe. Two cautions on the current constituents: banks carry large working-capital swings that inflate accruals for non-quality reasons, and hyper-growth firms build inventory and receivables ahead of sales, so a high reading there reflects expansion, not distress.",
     };
   }
   if (

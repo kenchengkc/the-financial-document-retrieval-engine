@@ -189,6 +189,13 @@ def parse_args() -> argparse.Namespace:
     signal_parser.add_argument("--n-quantiles", type=int, default=5)
     signal_parser.add_argument("--windows", nargs="+", default=["0:1", "1:21", "1:63"])
     signal_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
+    signal_parser.add_argument(
+        "--winsorize",
+        type=float,
+        default=None,
+        help="Clip forward returns to the [pct, 1-pct] quantiles per window "
+        "(e.g. 0.025) to limit single-name outlier influence in small samples",
+    )
     signal_parser.add_argument("--forward-buffer-days", type=int, default=130)
     signal_parser.add_argument(
         "--market-start",
@@ -791,6 +798,7 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             feature_version=feature_version,
             code_sha=_git_sha(),
             outcome_name=args.outcome,
+            winsorize_pct=args.winsorize,
         )
     report.constituents = constituents
     if report.event_count == 0:
