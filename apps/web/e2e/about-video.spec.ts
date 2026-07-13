@@ -17,6 +17,12 @@ test("keeps about hero posters visible until both videos are playing", async ({ 
     await route.continue();
   });
 
+  // Vercel Analytics requests its insights script, which 404s off-Vercel (local/CI);
+  // stub it so that environment noise doesn't fail the console-error assertion below.
+  await page.route("**/_vercel/insights/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
+  );
+
   await page.goto("/about", { waitUntil: "domcontentloaded" });
 
   const leftPanel = page.locator(".ih-panel.left");
