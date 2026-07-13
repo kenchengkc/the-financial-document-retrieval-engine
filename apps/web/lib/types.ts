@@ -126,6 +126,13 @@ export type SignalCorrelation = {
   correlation: number | null;
 };
 
+export type SignalConstituent = {
+  ticker: string;
+  name: string;
+  value: number;
+  side: "long" | "short";
+};
+
 export type SignalStudyResponse = {
   experiment_id: number;
   experiment_key: string;
@@ -142,6 +149,7 @@ export type SignalStudyResponse = {
     components?: ComponentResult[];
     signal_correlations?: SignalCorrelation[];
     neutralization?: string;
+    constituents?: SignalConstituent[];
   };
 };
 

@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   CheckCircle2,
   CircleAlert,
   CircleSlash,
@@ -14,6 +16,7 @@ import { useEffect, useState } from "react";
 import { fetchSignalStudies } from "@/lib/api";
 import type {
   ComponentResult,
+  SignalConstituent,
   SignalCorrelation,
   SignalStudyResponse,
   SignalWindow,
@@ -25,12 +28,15 @@ const WINDOW_LABELS: Record<string, string> = {
   "1:5": "+1 week",
   "1:21": "+1 month",
   "1:63": "+1 quarter",
+  "1:126": "+6 months",
+  "1:252": "+12 months",
 };
 
 const SIGNAL_LABELS: Record<string, string> = {
   disclosure_similarity: "Disclosure similarity",
   risk_expansion: "Risk expansion",
   filing_lateness: "Filing lateness",
+  earnings_quality: "Earnings quality",
   composite: "Composite",
 };
 
@@ -283,6 +289,9 @@ function signalLabel(study: SignalStudyResponse) {
       ? "Risk expansion -> volatility"
       : "Risk expansion -> returns";
   }
+  if (study.report.signal_name === "earnings_quality") {
+    return "Earnings quality -> returns";
+  }
   return outcomeName(study) === "realized_volatility"
     ? "Disclosure similarity -> volatility"
     : "Disclosure similarity -> returns";
@@ -300,6 +309,19 @@ function studyCopy(study: SignalStudyResponse) {
       rightAxis: "composite bullish →",
       note:
         "The components are genuinely uncorrelated — the prerequisite for combination — but individually weak and sign-unstable across horizons, so naive equal-weighting does not beat the best single signal here. Sector-neutralizing the cross-section shrinks the raw ICs: part of a single signal's apparent edge was a sector tilt, not issuer-specific information. The realistic levers are breadth and IC-weighting the components out-of-sample, not a free lunch from averaging.",
+    };
+  }
+  if (study.report.signal_name === "earnings_quality") {
+    return {
+      headlinePrefix: "Are earnings backed by ",
+      headlineAccent: "real cash",
+      headlineSuffix: " rewarded?",
+      lede:
+        "A point-in-time replication of the accruals anomaly (Sloan, 1996). For each 10-K we compute balance-sheet accruals — (net income − operating cash flow) ÷ total assets — straight from the reported XBRL facts. Low accruals mean profits are backed by cash rather than accounting estimates; high accruals have historically preceded weaker returns. Filings are sorted into 5 groups by accrual quality and tracked forward.",
+      leftAxis: "← low-quality (high accruals)",
+      rightAxis: "high-quality (low accruals) →",
+      note:
+        "Accruals is a real, published fundamental factor, but in a survivorship-biased S&P 500 large-cap universe the spread is directionally consistent yet not statistically significant — the anomaly is historically strongest in smaller, less-liquid names. Two structural cautions matter for the current names below: banks carry large working-capital swings that inflate accruals for non-quality reasons, and hyper-growth firms build inventory and receivables ahead of sales, so a high accrual reading there reflects expansion, not distress.",
     };
   }
   if (
@@ -329,6 +351,58 @@ function studyCopy(study: SignalStudyResponse) {
     note:
       "The signal is directionally consistent with Lazy Prices at short horizons but remains sample-size sensitive. Returns are market-adjusted gross of transaction costs and ignore borrow; the universe is survivorship-biased.",
   };
+}
+
+function Constituents({ constituents }: { constituents: SignalConstituent[] }) {
+  if (!constituents.length) {
+    return null;
+  }
+  const longs = constituents.filter((c) => c.side === "long");
+  const shorts = constituents.filter((c) => c.side === "short");
+  const fmt = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+  const column = (
+    rows: SignalConstituent[],
+    tone: "long" | "short",
+    Icon: typeof ArrowDownRight,
+    title: string,
+  ) => (
+    <div className={`sig-const-col ${tone}`}>
+      <p className="sig-const-title">
+        <Icon size={15} aria-hidden="true" /> {title}
+      </p>
+      <ul>
+        {rows.map((c) => (
+          <li key={c.ticker}>
+            <span className="sig-const-tk">{c.ticker}</span>
+            <span className="sig-const-nm">{c.name}</span>
+            <span className={`sig-const-v ${tone === "long" ? "good" : "warn"}`}>
+              {fmt(c.value)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  return (
+    <div className="sig-constituents">
+      <div className="sig-const-head">
+        <h3>Where the S&amp;P 500 sits today</h3>
+        <p>
+          The current highest- and lowest-quality names, ranked by balance-sheet accruals
+          on each issuer&rsquo;s most recent 10-K. More negative means earnings are more
+          fully backed by operating cash.
+        </p>
+      </div>
+      <div className="sig-const-cols">
+        {column(longs, "long", ArrowDownRight, "Cash-backed · top quality")}
+        {column(shorts, "short", ArrowUpRight, "Accrual-heavy · watch quality")}
+      </div>
+      <p className="sig-const-foot">
+        Accruals = (net income − operating cash flow) ÷ total assets, from reported XBRL
+        facts. Illustrative factor research, not investment advice.
+      </p>
+    </div>
+  );
 }
 
 function QuantileChart({
@@ -532,6 +606,10 @@ export function SignalsPanel() {
       <SummaryTable results={report.results} isVolatility={isVol} />
 
       <Glossary isVolatility={isVol} />
+
+      {report.constituents && report.constituents.length > 0 && (
+        <Constituents constituents={report.constituents} />
+      )}
 
       <div className="sig-grid">
         {report.results.map((window) => (

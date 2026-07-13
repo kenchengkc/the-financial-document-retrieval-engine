@@ -14,6 +14,7 @@ on:
         options:
           - disclosure_similarity
           - risk_factor_expansion
+          - earnings_quality
         default: disclosure_similarity
       outcome:
         description: "Forward market outcome"
@@ -79,7 +80,7 @@ jobs:
     steps:
       - name: Validate inputs
         run: |
-          [[ "${SIGNAL}" =~ ^(disclosure_similarity|risk_factor_expansion)$ ]]
+          [[ "${SIGNAL}" =~ ^(disclosure_similarity|risk_factor_expansion|earnings_quality)$ ]]
           [[ "${OUTCOME}" =~ ^(abnormal_return|realized_volatility)$ ]]
           [[ "${MAX_TICKERS}" =~ ^[1-9][0-9]*$ ]]
           [[ "${MIN_DOCUMENTS}" =~ ^[1-9][0-9]*$ ]]

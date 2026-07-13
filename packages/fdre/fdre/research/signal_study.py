@@ -17,7 +17,7 @@ from collections import defaultdict
 from math import sqrt
 from statistics import mean
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,6 +51,13 @@ class SignalWindowResult(BaseModel):
     long_short_adjusted_p_value: float | None = None
 
 
+class SignalConstituent(BaseModel):
+    ticker: str
+    name: str
+    value: float
+    side: str  # "long" (top quintile) | "short" (bottom quintile)
+
+
 class SignalStudyReport(BaseModel):
     experiment_key: str
     signal_name: str
@@ -62,6 +69,7 @@ class SignalStudyReport(BaseModel):
     config: EventStudyConfig
     event_count: int
     results: list[SignalWindowResult]
+    constituents: list[SignalConstituent] = Field(default_factory=list)
 
 
 def run_signal_study(

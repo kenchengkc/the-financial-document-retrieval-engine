@@ -3750,6 +3750,125 @@ main {
   }
 }
 
+.sig-constituents {
+  margin: 0 0 22px;
+  padding: 20px 20px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.sig-const-head h3 {
+  margin: 0 0 5px;
+  font: 600 15px var(--display);
+  color: var(--ink);
+}
+
+.sig-const-head p {
+  margin: 0 0 16px;
+  font: 12.5px / 1.55 var(--sans);
+  color: var(--prose);
+  max-width: 64ch;
+}
+
+.sig-const-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sig-const-col {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px 13px 8px;
+  background: var(--surface-muted);
+}
+
+.sig-const-col.long {
+  border-color: color-mix(in srgb, var(--cyan) 30%, var(--line));
+  background: var(--cyan-soft);
+}
+
+.sig-const-col.short {
+  border-color: color-mix(in srgb, var(--red) 26%, var(--line));
+  background: var(--red-soft);
+}
+
+.sig-const-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 9px;
+  font: 600 11px var(--sans);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sig-const-col.long .sig-const-title {
+  color: var(--cyan);
+}
+
+.sig-const-col.short .sig-const-title {
+  color: var(--red);
+}
+
+.sig-const-col ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sig-const-col li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 9px;
+  padding: 6px 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.sig-const-col li:first-child {
+  border-top: none;
+}
+
+.sig-const-tk {
+  font: 700 12px var(--sans);
+  color: var(--ink);
+}
+
+.sig-const-nm {
+  font: 11.5px / 1.3 var(--sans);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sig-const-v {
+  font: 600 12px var(--mono, var(--sans));
+  font-variant-numeric: tabular-nums;
+}
+
+.sig-const-v.good {
+  color: var(--cyan);
+}
+
+.sig-const-v.warn {
+  color: var(--red);
+}
+
+.sig-const-foot {
+  margin: 14px 0 0;
+  font: 11px / 1.5 var(--sans);
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .sig-const-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .sig-note {
   display: flex;
   gap: 10px;

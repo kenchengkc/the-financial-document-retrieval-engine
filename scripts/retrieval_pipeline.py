@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.config import get_settings
 from apps.api.app.db import create_db_engine
-from apps.api.app.models import Chunk, Company, Document, Embedding
+from apps.api.app.models import Chunk, Company, Document, Embedding, FinancialFact
 from apps.api.app.services.operations_service import build_data_quality_report
 from fdre.chunking import rebuild_document_chunks
 from fdre.demo import seed_demo_document
@@ -57,6 +57,7 @@ from fdre.research.panel import (
     write_research_panel,
 )
 from fdre.research.signal_study import (
+    SignalConstituent,
     SignalStudyReport,
     persist_signal_study,
     run_realized_volatility_signal_study,
@@ -169,7 +170,11 @@ def parse_args() -> argparse.Namespace:
     signal_parser.add_argument("--output", required=True)
     signal_parser.add_argument(
         "--signal",
-        choices=("disclosure_similarity", "risk_factor_expansion"),
+        choices=(
+            "disclosure_similarity",
+            "risk_factor_expansion",
+            "earnings_quality",
+        ),
         default="disclosure_similarity",
     )
     signal_parser.add_argument(
@@ -565,6 +570,107 @@ def _git_sha() -> str:
         return "unknown"
 
 
+_ACCRUAL_CONCEPTS = (
+    "NetIncomeLoss",
+    "NetCashProvidedByUsedInOperatingActivities",
+    "Assets",
+)
+
+
+def _earnings_quality_dataset(
+    session: Session, tickers: list[str]
+) -> tuple[list[FilingEvent], list[SignalConstituent], str]:
+    """Build point-in-time earnings-quality (accruals) events from 10-K facts.
+
+    Balance-sheet accruals = (net income - operating cash flow) / total assets.
+    Low accruals mean reported earnings are backed by cash, which historically
+    predicts stronger forward returns (Sloan 1996), so the study signal is the
+    *negated* accrual ratio -- a higher value is higher quality. Constituents are
+    the current highest/lowest-quality names by each issuer's most recent 10-K.
+    """
+    doc_rows = session.execute(
+        select(
+            Document.id,
+            Document.accession_number,
+            Document.available_at,
+            Document.sha256_hash,
+            Company.ticker,
+            Company.name,
+        )
+        .join(Company, Company.id == Document.company_id)
+        .where(
+            Document.form_type == "10-K",
+            Document.available_at.is_not(None),
+            Company.ticker.in_(tickers),
+        )
+        .order_by(Document.available_at, Document.id)
+    ).all()
+    doc_ids = [row.id for row in doc_rows]
+    if not doc_ids:
+        return [], [], hashlib.sha256(b"").hexdigest()[:16]
+    # Keep the most-recent (period_end) value per (document, concept): the filing's
+    # own fiscal year, not prior-year comparatives carried in the same statement.
+    best: dict[tuple[int, str], tuple[date, float]] = {}
+    for did, concept, value, period_end in session.execute(
+        select(
+            FinancialFact.document_id,
+            FinancialFact.concept,
+            FinancialFact.value,
+            FinancialFact.period_end,
+        ).where(
+            FinancialFact.document_id.in_(doc_ids),
+            FinancialFact.concept.in_(_ACCRUAL_CONCEPTS),
+            FinancialFact.value.is_not(None),
+        )
+    ).all():
+        key = (did, concept)
+        stamp = period_end or date.min
+        current = best.get(key)
+        if current is None or stamp > current[0]:
+            best[key] = (stamp, float(value))
+    events: list[FilingEvent] = []
+    used_docs: list[str] = []
+    # ticker -> (available_at, accrual_ratio, name) for the latest filing.
+    latest_by_ticker: dict[str, tuple[datetime, float, str]] = {}
+    for row in doc_rows:
+        ni = best.get((row.id, "NetIncomeLoss"))
+        ocf = best.get((row.id, "NetCashProvidedByUsedInOperatingActivities"))
+        assets = best.get((row.id, "Assets"))
+        if ni is None or ocf is None or assets is None or assets[1] == 0:
+            continue
+        accruals = (ni[1] - ocf[1]) / assets[1]
+        available_at = row.available_at
+        events.append(
+            FilingEvent(
+                ticker=row.ticker,
+                accession_number=row.accession_number,
+                available_at=available_at,
+                max_source_available_at=available_at,
+                feature_value=-accruals,
+            )
+        )
+        used_docs.append(f"{row.accession_number}:{row.sha256_hash or ''}")
+        prev = latest_by_ticker.get(row.ticker)
+        if prev is None or available_at > prev[0]:
+            latest_by_ticker[row.ticker] = (available_at, accruals, row.name)
+    dataset_version = hashlib.sha256(
+        "|".join(used_docs).encode("utf-8")
+    ).hexdigest()[:16]
+    # Rank current names by accrual ratio: lowest (cash-backed) = long, highest = short.
+    ranked = sorted(latest_by_ticker.items(), key=lambda kv: kv[1][1])
+    top_n = min(8, len(ranked) // 2)
+    constituents: list[SignalConstituent] = []
+    for ticker, (_, accruals, name) in ranked[:top_n]:
+        constituents.append(
+            SignalConstituent(ticker=ticker, name=name, value=accruals, side="long")
+        )
+    for ticker, (_, accruals, name) in (ranked[-top_n:] if top_n else []):
+        constituents.append(
+            SignalConstituent(ticker=ticker, name=name, value=accruals, side="short")
+        )
+    return events, constituents, dataset_version
+
+
 def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
     if (
         args.max_uncached_market_fetches is not None
@@ -583,24 +689,34 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             .limit(args.max_tickers)
         ).all()
         tickers = [row[0] for row in rows]
-    panel = build_research_panel(
-        session,
-        ResearchPanelQuery(
-            tickers=tickers,
-            features=_signal_panel_features(args.signal),
-            limit=10_000,
-        ),
-    )
-    events = [
-        FilingEvent(
-            ticker=row.ticker,
-            accession_number=row.accession_number,
-            available_at=row.available_at,
-            max_source_available_at=row.max_source_available_at,
-            feature_value=_signal_feature_value(row, args.signal),
+    constituents: list[SignalConstituent] = []
+    if args.signal == "earnings_quality":
+        # Accruals come from structured XBRL facts, not the disclosure panel.
+        events, constituents, dataset_version = _earnings_quality_dataset(
+            session, tickers
         )
-        for row in panel.rows
-    ]
+        feature_version = "accruals-v1"
+    else:
+        panel = build_research_panel(
+            session,
+            ResearchPanelQuery(
+                tickers=tickers,
+                features=_signal_panel_features(args.signal),
+                limit=10_000,
+            ),
+        )
+        events = [
+            FilingEvent(
+                ticker=row.ticker,
+                accession_number=row.accession_number,
+                available_at=row.available_at,
+                max_source_available_at=row.max_source_available_at,
+                feature_value=_signal_feature_value(row, args.signal),
+            )
+            for row in panel.rows
+        ]
+        dataset_version = panel.corpus_snapshot_id
+        feature_version = panel.feature_version
     scored = [event for event in events if event.feature_value is not None]
     if len(scored) < args.n_quantiles * 4:
         raise SystemExit(
@@ -660,8 +776,8 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             config,
             signal_name=args.signal,
             n_quantiles=args.n_quantiles,
-            dataset_version=panel.corpus_snapshot_id,
-            feature_version=panel.feature_version,
+            dataset_version=dataset_version,
+            feature_version=feature_version,
             code_sha=_git_sha(),
         )
     else:
@@ -671,11 +787,12 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             config,
             signal_name=args.signal,
             n_quantiles=args.n_quantiles,
-            dataset_version=panel.corpus_snapshot_id,
-            feature_version=panel.feature_version,
+            dataset_version=dataset_version,
+            feature_version=feature_version,
             code_sha=_git_sha(),
             outcome_name=args.outcome,
         )
+    report.constituents = constituents
     if report.event_count == 0:
         raise SystemExit(
             "No filing events had matching market data; refusing to publish an empty study."
