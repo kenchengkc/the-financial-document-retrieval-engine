@@ -4570,6 +4570,11 @@ main {
   .bdemo-url {
     padding: 6px 11px;
   }
+
+  .bdemo-funnel-row {
+    grid-template-columns: 96px minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
 }
 
 /* ============================================================
