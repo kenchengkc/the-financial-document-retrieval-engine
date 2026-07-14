@@ -175,20 +175,25 @@ def signal_studies(
             .limit(limit * 4)
         )
     )
-    payloads: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    # Dedupe to one study per (signal, outcome), keeping the most complete run
+    # (most filing events; newest breaks ties). A partial-coverage republish must
+    # never shadow a fuller study, even before the pruner deletes it.
+    best: dict[tuple[str, str], ResearchExperiment] = {}
     for experiment in experiments:
         report = experiment.results_json or {}
         key = (
             str(report.get("signal_name", "")),
             str(report.get("outcome_name", "abnormal_return")),
         )
-        if key in seen:
-            continue
-        seen.add(key)
-        payloads.append(_signal_study_payload(experiment))
-        if len(payloads) >= limit:
-            break
+        incumbent = best.get(key)
+        if incumbent is None or int(report.get("event_count", 0) or 0) > int(
+            (incumbent.results_json or {}).get("event_count", 0) or 0
+        ):
+            best[key] = experiment
+    ordered = sorted(
+        best.values(), key=lambda e: e.created_at, reverse=True
+    )[:limit]
+    payloads = [_signal_study_payload(experiment) for experiment in ordered]
     return {"studies": payloads}
 
 

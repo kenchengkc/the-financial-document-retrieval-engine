@@ -830,37 +830,46 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
 
 
 def _run_prune_signal_studies(session: Session) -> dict[str, Any]:
-    """Keep only the most recent signal_study experiment per (signal, outcome).
+    """Keep the most complete signal_study experiment per (signal, outcome).
 
-    A scheduled republish writes a fresh experiment each time coverage grows;
-    the API already dedupes to the latest, so older rows are pure cruft.
+    A scheduled republish writes a fresh experiment each time market-data
+    coverage grows. Keep the row with the most filing events (tie-break newest)
+    and drop the rest, so a partial-coverage run can never shrink the published
+    study. The API dedupes the same way.
     """
     from apps.api.app.models import ResearchExperiment
 
     experiments = list(
         session.scalars(
-            select(ResearchExperiment)
-            .where(ResearchExperiment.experiment_type == "signal_study")
-            .order_by(
-                ResearchExperiment.created_at.desc(), ResearchExperiment.id.desc()
+            select(ResearchExperiment).where(
+                ResearchExperiment.experiment_type == "signal_study"
             )
         )
     )
-    seen: set[tuple[str, str]] = set()
-    deleted = 0
+
+    def rank(experiment: ResearchExperiment) -> tuple[int, datetime]:
+        report = experiment.results_json or {}
+        return (int(report.get("event_count", 0) or 0), experiment.created_at)
+
+    best: dict[tuple[str, str], ResearchExperiment] = {}
     for experiment in experiments:
         report = experiment.results_json or {}
         key = (
             str(report.get("signal_name", "")),
             str(report.get("outcome_name", "abnormal_return")),
         )
-        if key in seen:
+        incumbent = best.get(key)
+        if incumbent is None or rank(experiment) > rank(incumbent):
+            best[key] = experiment
+
+    keep_ids = {experiment.id for experiment in best.values()}
+    deleted = 0
+    for experiment in experiments:
+        if experiment.id not in keep_ids:
             session.delete(experiment)
             deleted += 1
-        else:
-            seen.add(key)
     session.commit()
-    return {"kept": len(seen), "deleted": deleted}
+    return {"kept": len(keep_ids), "deleted": deleted}
 
 
 def _run_backfill_sectors(session: Session, args: argparse.Namespace) -> dict[str, Any]:

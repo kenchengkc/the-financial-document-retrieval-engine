@@ -292,6 +292,13 @@ def persist_signal_study(session: Session, report: SignalStudyReport) -> Researc
         )
         session.add(experiment)
     else:
+        # The experiment key is invariant to market-data coverage (it fingerprints
+        # the filing set, not which filings had bars), so a partial-coverage rerun
+        # hits the same row. Never let it overwrite a study built on more events —
+        # incremental Tiingo warming should only ever grow the published study.
+        existing_events = int((experiment.results_json or {}).get("event_count", 0) or 0)
+        if report.event_count < existing_events:
+            return experiment
         experiment.config_json = report.config.model_dump(mode="json")
         experiment.results_json = payload
     session.commit()
