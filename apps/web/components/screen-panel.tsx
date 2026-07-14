@@ -6,7 +6,7 @@ import {
   LoaderCircle,
   ScanSearch,
 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 
 import { runThematicScan } from "@/lib/api";
 import type { ThematicScanResponse } from "@/lib/types";
@@ -33,24 +33,12 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
   const [query, setQuery] = useState("");
   const [issuers, setIssuers] = useState(6);
   const [loading, setLoading] = useState(false);
-  const [stage, setStage] = useState(0);
   const [result, setResult] = useState<ThematicScanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [estimateMs, setEstimateMs] = useState(DEFAULT_SCAN_MS);
 
-  useEffect(() => {
-    if (!loading) return;
-    // Advance the qualitative stage labels across the expected duration.
-    const timer = window.setInterval(
-      () => setStage((current) => Math.min(current + 1, SCAN_STAGES.length - 1)),
-      Math.max(3000, estimateMs / SCAN_STAGES.length),
-    );
-    return () => window.clearInterval(timer);
-  }, [loading, estimateMs]);
-
   async function run(theme: string) {
     if (!theme.trim() || loading) return;
-    setStage(0);
     setLoading(true);
     setError(null);
     setResult(null);
@@ -149,17 +137,7 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
             <h3>Deep cross-sectional scan</h3>
             <p>{query}</p>
           </div>
-          <ScanProgress estimateMs={estimateMs} />
-          <ol aria-label="Scan stages">
-            {SCAN_STAGES.map((label, index) => (
-              <li
-                key={label}
-                className={index === stage ? "active" : index < stage ? "complete" : undefined}
-              >
-                {label}
-              </li>
-            ))}
-          </ol>
+          <ScanProgress estimateMs={estimateMs} stages={SCAN_STAGES} />
         </div>
       )}
 

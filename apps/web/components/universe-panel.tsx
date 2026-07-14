@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchCompanies } from "@/lib/api";
 import type { Company } from "@/lib/types";
 
+import { ScanProgress } from "./scan-progress";
+
 type SortKey = "chunk_count" | "document_count" | "ticker";
 
 export function UniversePanel() {
@@ -78,6 +80,14 @@ export function UniversePanel() {
             <h3>Loading the indexed universe</h3>
             <p>Reading company coverage from production…</p>
           </div>
+          <ScanProgress
+            estimateMs={8_000}
+            stages={[
+              "Connecting to the data service",
+              "Loading issuer coverage",
+              "Computing filing footprints",
+            ]}
+          />
         </div>
       </div>
     );

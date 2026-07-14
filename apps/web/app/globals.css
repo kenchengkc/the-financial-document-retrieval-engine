@@ -1334,58 +1334,20 @@ main {
   line-height: 1.55;
 }
 
-.loading-state ol {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  margin: 14px 0 0;
-  padding: 0;
-  background: var(--line);
-  list-style: none;
-}
-
-.loading-state li {
-  min-width: 0;
-  padding: 10px;
-  background: var(--surface-muted);
-  color: var(--muted);
-  font: 10px var(--mono);
-}
-
-.loading-state li.active {
-  color: var(--green-deep);
-  background: var(--green-soft);
-}
-
-.loading-state li.complete {
-  color: var(--green-deep);
-}
-
 .scan-progress {
   grid-column: 1 / -1;
   margin-top: 6px;
 }
 
 .scan-progress-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
   margin-bottom: 8px;
 }
 
 .scan-progress-pct {
-  font: 600 22px var(--display);
+  font: 600 24px var(--display);
   color: var(--green-deep);
   font-variant-numeric: tabular-nums;
   line-height: 1;
-}
-
-.scan-progress-time {
-  font: 11px var(--mono);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .scan-progress-track {
@@ -1403,8 +1365,58 @@ main {
   transition: width 0.2s linear;
 }
 
+.scan-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scan-stages li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font: 11px var(--mono);
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.scan-stages li.active {
+  background: var(--green-soft);
+  border-color: color-mix(in srgb, var(--green) 35%, var(--line));
+  color: var(--green-deep);
+}
+
+.scan-stages li.complete {
+  background: var(--cyan-soft);
+  border-color: color-mix(in srgb, var(--cyan) 30%, var(--line));
+  color: var(--cyan);
+}
+
+.scan-stage-icon {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  flex: none;
+}
+
+.scan-stage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .scan-progress-fill {
+  .scan-progress-fill,
+  .scan-stages li {
     transition: none;
   }
 }
@@ -2452,10 +2464,6 @@ main {
     grid-column: 1 / -1;
     width: 100%;
     justify-content: center;
-  }
-
-  .loading-state ol {
-    grid-template-columns: 1fr 1fr;
   }
 
   .evidence summary {

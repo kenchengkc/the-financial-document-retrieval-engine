@@ -82,7 +82,6 @@ export default function Home() {
   const [result, setResult] = useState<AnswerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingStage, setLoadingStage] = useState(0);
   const [answerMs, setAnswerMs] = useState(9_000);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
@@ -101,14 +100,6 @@ export default function Home() {
     }
   }, [loading, result, error]);
 
-  useEffect(() => {
-    if (!loading) return;
-    const timer = window.setInterval(() => {
-      setLoadingStage((stage) => Math.min(stage + 1, 3));
-    }, 6000);
-    return () => window.clearInterval(timer);
-  }, [loading]);
-
   function pushRun(run: SessionRun) {
     setHistory((previous) => [...previous, run]);
   }
@@ -126,7 +117,6 @@ export default function Home() {
     event.preventDefault();
     if (!question.trim() || loading) return;
     setMode("ask");
-    setLoadingStage(0);
     setLoading(true);
     setResult(null);
     setError(null);
@@ -268,7 +258,6 @@ export default function Home() {
                   result={result}
                   error={error}
                   loading={loading}
-                  loadingStage={loadingStage}
                   estimateMs={answerMs}
                   displayEvidence={displayEvidence}
                   funnel={funnel}
@@ -321,7 +310,6 @@ function AskWorkspace({
   result,
   error,
   loading,
-  loadingStage,
   estimateMs,
   displayEvidence,
   funnel,
@@ -334,7 +322,6 @@ function AskWorkspace({
   result: AnswerResponse | null;
   error: string | null;
   loading: boolean;
-  loadingStage: number;
   estimateMs: number;
   displayEvidence: AnswerResponse["evidence"];
   funnel: { retrieved: number; reranked: number; gatePassed: boolean; cited: number } | null;
@@ -387,26 +374,10 @@ function AskWorkspace({
                 <h3>Searching indexed SEC filings</h3>
                 <p>{question}</p>
               </div>
-              <ScanProgress estimateMs={estimateMs} />
-              <ol aria-label="Retrieval stages">
-                {["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"].map(
-                  (stage, index) => (
-                    <li
-                      key={stage}
-                      className={
-                        index === loadingStage
-                          ? "active"
-                          : index < loadingStage
-                            ? "complete"
-                            : undefined
-                      }
-                      aria-current={index === loadingStage ? "step" : undefined}
-                    >
-                      {stage}
-                    </li>
-                  ),
-                )}
-              </ol>
+              <ScanProgress
+                estimateMs={estimateMs}
+                stages={["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"]}
+              />
             </div>
           )}
 

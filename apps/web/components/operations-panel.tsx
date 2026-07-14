@@ -13,6 +13,8 @@ import { useEffect, useState } from "react";
 import { fetchOperationsQuality } from "@/lib/api";
 import type { OperationsQuality } from "@/lib/types";
 
+import { ScanProgress } from "./scan-progress";
+
 function pct(value: number) {
   return `${(value * 100).toFixed(2)}%`;
 }
@@ -83,6 +85,14 @@ export function OperationsPanel() {
             <h3>Reading the data-quality report</h3>
             <p>Auditing the production corpus live…</p>
           </div>
+          <ScanProgress
+            estimateMs={12_000}
+            stages={[
+              "Connecting to the data service",
+              "Auditing corpus integrity",
+              "Scoring coverage quality",
+            ]}
+          />
         </div>
       </div>
     );
