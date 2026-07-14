@@ -283,6 +283,10 @@ def parse_args() -> argparse.Namespace:
         "seed-demo",
         help="Load the checked-in sample filing and build its retrieval artifacts",
     )
+    subparsers.add_parser(
+        "prune-signal-studies",
+        help="Keep only the most recent signal_study experiment per (signal, outcome)",
+    )
     return parser.parse_args()
 
 
@@ -416,6 +420,8 @@ def main() -> None:
             print(_run_signal_study(session, args))
         elif args.command == "composite-study":
             print(_run_composite_study(session, args))
+        elif args.command == "prune-signal-studies":
+            print(_run_prune_signal_studies(session))
         elif args.command == "backfill-sectors":
             print(_run_backfill_sectors(session, args))
         elif args.command == "audit":
@@ -821,6 +827,40 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         "events": report.event_count,
         "missing_market_data": missing,
     }
+
+
+def _run_prune_signal_studies(session: Session) -> dict[str, Any]:
+    """Keep only the most recent signal_study experiment per (signal, outcome).
+
+    A scheduled republish writes a fresh experiment each time coverage grows;
+    the API already dedupes to the latest, so older rows are pure cruft.
+    """
+    from apps.api.app.models import ResearchExperiment
+
+    experiments = list(
+        session.scalars(
+            select(ResearchExperiment)
+            .where(ResearchExperiment.experiment_type == "signal_study")
+            .order_by(
+                ResearchExperiment.created_at.desc(), ResearchExperiment.id.desc()
+            )
+        )
+    )
+    seen: set[tuple[str, str]] = set()
+    deleted = 0
+    for experiment in experiments:
+        report = experiment.results_json or {}
+        key = (
+            str(report.get("signal_name", "")),
+            str(report.get("outcome_name", "abnormal_return")),
+        )
+        if key in seen:
+            session.delete(experiment)
+            deleted += 1
+        else:
+            seen.add(key)
+    session.commit()
+    return {"kept": len(seen), "deleted": deleted}
 
 
 def _run_backfill_sectors(session: Session, args: argparse.Namespace) -> dict[str, Any]:

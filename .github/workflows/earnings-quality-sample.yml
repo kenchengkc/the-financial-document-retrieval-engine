@@ -1,0 +1,118 @@
+name: Earnings-quality sample
+
+# Grows the earnings-quality (accruals) signal study toward full S&P 500 coverage
+# "over time." Tiingo's free tier throttles to ~50 fresh symbols per hour, so a
+# single run can only warm a slice; each run restores the shared market cache,
+# fetches up to 50 more uncached issuers, republishes the winsorized study with
+# whatever coverage exists so far, prunes older rows, then saves the cache. Over
+# ~8 runs it reaches full coverage, after which fetches are no-ops and it simply
+# keeps the study fresh. Cancel or widen the cron once the sample plateaus.
+#
+# The market cache key prefix (fdre-market-) is shared with signal-study.yml, so
+# bars fetched here also speed up the other studies and vice versa.
+
+on:
+  schedule:
+    - cron: "23 */2 * * *" # every 2 hours, offset to avoid top-of-hour contention
+  workflow_dispatch:
+    inputs:
+      max_uncached_market_fetches:
+        description: "Max fresh Tiingo symbol fetches this run"
+        default: "50"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-signal-study # serialize with signal-study.yml (shared cache + DB)
+  cancel-in-progress: false
+
+jobs:
+  earnings-quality-sample:
+    name: Warm + publish earnings-quality study
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      TIINGO_API_KEY: ${{ secrets.TIINGO_API_KEY }}
+      PYTHONPATH: .
+      MAX_UNCACHED_MARKET_FETCHES: ${{ github.event.inputs.max_uncached_market_fetches || '50' }}
+    steps:
+      - name: Check required secrets
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ -z "${TIINGO_API_KEY}" ]; then
+            echo "::error::TIINGO_API_KEY is required to warm market data."
+            exit 1
+          fi
+          [[ "${MAX_UNCACHED_MARKET_FETCHES}" =~ ^[0-9]+$ ]]
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Restore market cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fdre-market-${{ runner.os }}-
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Use direct database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Warm + publish earnings-quality study
+        run: |
+          python -m scripts.retrieval_pipeline signal-study \
+            --signal earnings_quality \
+            --outcome abnormal_return \
+            --output "data/processed/signals/earnings_quality-abnormal_return.json" \
+            --max-tickers 500 \
+            --min-documents 1 \
+            --benchmark SPY \
+            --windows 1:5 1:21 1:63 \
+            --winsorize 0.025 \
+            --market-start 2022-10-17 \
+            --market-end 2026-10-23 \
+            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}"
+
+      - name: Prune older signal-study rows
+        run: python -m scripts.retrieval_pipeline prune-signal-studies
+
+      - name: Upload signal-study report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: earnings-quality-${{ github.run_id }}
+          path: data/processed/signals/*.json
+          if-no-files-found: ignore
+
+      - name: Save market cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
