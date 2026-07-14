@@ -15,7 +15,8 @@ import { metadataValue, score, formatLatency, type SessionRun } from "./instrume
 import { ScanProgress } from "./scan-progress";
 
 // Starting guess before we have measured a real scan; refined adaptively below.
-const DEFAULT_SCAN_MS = 28_000;
+// Post-optimization prod scans run ~3.5-5.5s (plus a possible Neon cold start).
+const DEFAULT_SCAN_MS = 7_000;
 
 const SCAN_STAGES = [
   "Retrieving across the indexed universe",
@@ -190,7 +191,7 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
         <div className="empty-state compact">
           <ScanSearch size={26} />
           <h3>Scan a theme across the universe</h3>
-          <p>Pick an example or enter your own; deep scans take ~30s.</p>
+          <p>Pick an example or enter your own; a scan takes a few seconds.</p>
         </div>
       )}
     </div>
