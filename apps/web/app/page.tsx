@@ -28,6 +28,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { LandingHero } from "@/components/landing-hero";
 import { OperationsPanel } from "@/components/operations-panel";
 import { RetrievePanel } from "@/components/retrieve-panel";
+import { ScanProgress } from "@/components/scan-progress";
 import { ScreenPanel } from "@/components/screen-panel";
 import { SignalsPanel } from "@/components/signals-panel";
 import { UniversePanel } from "@/components/universe-panel";
@@ -82,6 +83,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
+  const [answerMs, setAnswerMs] = useState(9_000);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
   const questionRef = useRef<HTMLInputElement | null>(null);
@@ -128,8 +130,13 @@ export default function Home() {
     setLoading(true);
     setResult(null);
     setError(null);
+    const startedAt = performance.now();
     try {
       const response = await askQuestion(question.trim());
+      const observed = performance.now() - startedAt;
+      setAnswerMs((prev) =>
+        Math.min(45_000, Math.max(2_500, Math.round(prev * 0.4 + observed * 0.6))),
+      );
       setResult(response);
       setApiOnline(true);
       pushRun({
@@ -262,6 +269,7 @@ export default function Home() {
                   error={error}
                   loading={loading}
                   loadingStage={loadingStage}
+                  estimateMs={answerMs}
                   displayEvidence={displayEvidence}
                   funnel={funnel}
                   scope={scope}
@@ -314,6 +322,7 @@ function AskWorkspace({
   error,
   loading,
   loadingStage,
+  estimateMs,
   displayEvidence,
   funnel,
   scope,
@@ -326,6 +335,7 @@ function AskWorkspace({
   error: string | null;
   loading: boolean;
   loadingStage: number;
+  estimateMs: number;
   displayEvidence: AnswerResponse["evidence"];
   funnel: { retrieved: number; reranked: number; gatePassed: boolean; cited: number } | null;
   scope: { tickers: string[]; forms: string[]; asOf: string | null } | null;
@@ -377,6 +387,7 @@ function AskWorkspace({
                 <h3>Searching indexed SEC filings</h3>
                 <p>{question}</p>
               </div>
+              <ScanProgress estimateMs={estimateMs} />
               <ol aria-label="Retrieval stages">
                 {["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"].map(
                   (stage, index) => (

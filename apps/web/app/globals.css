@@ -1362,6 +1362,53 @@ main {
   color: var(--green-deep);
 }
 
+.scan-progress {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+}
+
+.scan-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.scan-progress-pct {
+  font: 600 22px var(--display);
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.scan-progress-time {
+  font: 11px var(--mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.scan-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+  transition: width 0.2s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-progress-fill {
+    transition: none;
+  }
+}
+
 .notice {
   display: flex;
   gap: 12px;

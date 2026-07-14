@@ -12,6 +12,10 @@ import { runThematicScan } from "@/lib/api";
 import type { ThematicScanResponse } from "@/lib/types";
 
 import { metadataValue, score, formatLatency, type SessionRun } from "./instruments";
+import { ScanProgress } from "./scan-progress";
+
+// Starting guess before we have measured a real scan; refined adaptively below.
+const DEFAULT_SCAN_MS = 28_000;
 
 const SCAN_STAGES = [
   "Retrieving across the indexed universe",
@@ -32,14 +36,17 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
   const [stage, setStage] = useState(0);
   const [result, setResult] = useState<ThematicScanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [estimateMs, setEstimateMs] = useState(DEFAULT_SCAN_MS);
 
   useEffect(() => {
     if (!loading) return;
-    const timer = window.setInterval(() => {
-      setStage((current) => Math.min(current + 1, SCAN_STAGES.length - 1));
-    }, 9000);
+    // Advance the qualitative stage labels across the expected duration.
+    const timer = window.setInterval(
+      () => setStage((current) => Math.min(current + 1, SCAN_STAGES.length - 1)),
+      Math.max(3000, estimateMs / SCAN_STAGES.length),
+    );
     return () => window.clearInterval(timer);
-  }, [loading]);
+  }, [loading, estimateMs]);
 
   async function run(theme: string) {
     if (!theme.trim() || loading) return;
@@ -47,8 +54,14 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
     setLoading(true);
     setError(null);
     setResult(null);
+    const startedAt = performance.now();
     try {
       const response = await runThematicScan(theme.trim(), issuers, 1);
+      // Calibrate the next scan's progress bar to what this one actually took.
+      const observed = performance.now() - startedAt;
+      setEstimateMs((prev) =>
+        Math.min(90_000, Math.max(6_000, Math.round(prev * 0.4 + observed * 0.6))),
+      );
       setResult(response);
       const top = Math.max(
         0,
@@ -136,6 +149,7 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
             <h3>Deep cross-sectional scan</h3>
             <p>{query}</p>
           </div>
+          <ScanProgress estimateMs={estimateMs} />
           <ol aria-label="Scan stages">
             {SCAN_STAGES.map((label, index) => (
               <li
