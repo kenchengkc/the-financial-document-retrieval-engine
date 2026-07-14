@@ -94,7 +94,8 @@ export default async function About() {
             <h2 id="see-it-work-title">A question in, audited evidence out</h2>
             <p>
               Every answer carries its citations, retrieval scores, and the discipline to abstain
-              when the filings do not support a claim. This is the live console, replayed.
+              when the filings do not support a claim. This is the live console, replayed — pick a
+              scenario or let it loop.
             </p>
           </div>
           <SearchDemo />
@@ -117,16 +118,16 @@ export default async function About() {
               <dt>
                 {coverage
                   ? `${coverage.sp500_indexed_count} / ${coverage.sp500_catalog_count}`
-                  : "495 / 499"}
+                  : "498 / 499"}
               </dt>
               <dd>S&amp;P 500 primary tickers indexed</dd>
             </div>
             <div>
-              <dt>{coverage ? coverage.document_count.toLocaleString() : "997"}</dt>
+              <dt>{coverage ? coverage.document_count.toLocaleString() : "2,762"}</dt>
               <dd>SEC filings parsed and chunked</dd>
             </div>
             <div>
-              <dt>{coverage ? coverage.chunk_count.toLocaleString() : "1,065,227"}</dt>
+              <dt>{coverage ? coverage.chunk_count.toLocaleString() : "2,712,277"}</dt>
               <dd>Chunks with stored embeddings</dd>
             </div>
             <div>
@@ -224,7 +225,7 @@ export default async function About() {
             <article>
               <DatabaseZap size={20} aria-hidden="true" />
               <h3>Indexed retrieval</h3>
-              <p>PostgreSQL GIN full-text search and partial HNSW cosine search over pgvector.</p>
+              <p>PostgreSQL GIN full-text search and float16 HNSW cosine search over pgvector.</p>
             </article>
             <article>
               <Clock3 size={20} aria-hidden="true" />
@@ -257,7 +258,7 @@ export default async function About() {
         <section className="workflow-band" aria-labelledby="research-workflows">
           <div className="proof-heading">
             <p className="eyebrow">Research workflows</p>
-            <h2 id="research-workflows">Five public demonstrations</h2>
+            <h2 id="research-workflows">Six public demonstrations</h2>
           </div>
           <ol>
             <li>
@@ -293,6 +294,16 @@ export default async function About() {
               <div>
                 <strong>Panel export and event study</strong>
                 <p>Export point-in-time features and run benchmark-adjusted statistical tests.</p>
+              </div>
+            </li>
+            <li>
+              <span>06</span>
+              <div>
+                <strong>Published signal studies</strong>
+                <p>
+                  Four point-in-time filing studies — disclosure, risk, composite, and earnings
+                  quality — with multiple-testing-adjusted inference and honest verdicts.
+                </p>
               </div>
             </li>
           </ol>

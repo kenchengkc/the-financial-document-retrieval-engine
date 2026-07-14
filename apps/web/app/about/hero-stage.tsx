@@ -77,7 +77,7 @@ export function HeroStage() {
       <div className={`ih-panel left ${videoLive ? "video-live" : ""}`}>
         <Image
           className="ih-poster"
-          src="/about/panel-left.png"
+          src="/about/panel-left.jpg"
           alt=""
           aria-hidden="true"
           fill
@@ -88,7 +88,7 @@ export function HeroStage() {
           ref={leftRef}
           className="ih-video"
           src="/about/panel-left.mp4"
-          poster="/about/panel-left.png"
+          poster="/about/panel-left.jpg"
           muted
           loop
           playsInline
@@ -121,7 +121,7 @@ export function HeroStage() {
       <div className={`ih-panel right ${videoLive ? "video-live" : ""}`}>
         <Image
           className="ih-poster"
-          src="/about/panel-right.png"
+          src="/about/panel-right.jpg"
           alt=""
           aria-hidden="true"
           fill
@@ -132,7 +132,7 @@ export function HeroStage() {
           ref={rightRef}
           className="ih-video"
           src="/about/panel-right.mp4"
-          poster="/about/panel-right.png"
+          poster="/about/panel-right.jpg"
           muted
           loop
           playsInline

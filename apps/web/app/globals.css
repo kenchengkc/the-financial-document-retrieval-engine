@@ -891,13 +891,13 @@ a {
 }
 
 .ih-panel.left {
-  background-image: url("/about/panel-left.png");
+  background-image: url("/about/panel-left.jpg");
   background-position: 42% 50%;
   background-size: cover;
 }
 
 .ih-panel.right {
-  background-image: url("/about/panel-right.png");
+  background-image: url("/about/panel-right.jpg");
   background-position: 53% 50%;
   background-size: cover;
 }
@@ -2305,7 +2305,7 @@ main {
 
 .workflow-band ol {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin: 36px 0 0;
   padding: 0;
@@ -2320,8 +2320,12 @@ main {
   border-right: 1px solid var(--line-strong);
 }
 
-.workflow-band li:last-child {
+.workflow-band li:nth-child(3n) {
   border-right: 0;
+}
+
+.workflow-band li:nth-child(n + 4) {
+  border-top: 1px solid var(--line-strong);
 }
 
 .workflow-band li > span {
@@ -2364,8 +2368,16 @@ main {
     grid-template-columns: 1fr 1fr;
   }
 
+  .workflow-band li:nth-child(2n + 1) {
+    border-right: 1px solid var(--line-strong);
+  }
+
   .workflow-band li:nth-child(2n) {
     border-right: 0;
+  }
+
+  .workflow-band li:nth-child(n + 3) {
+    border-top: 1px solid var(--line-strong);
   }
 
   .hd-nav {
@@ -2506,6 +2518,7 @@ main {
   .proof-grid article,
   .workflow-band li {
     border-right: 0;
+    border-top: 0;
     border-bottom: 1px solid var(--line-strong);
   }
 
@@ -4310,33 +4323,123 @@ main {
   background: var(--green-deep);
 }
 
-.bdemo-stages {
+.bdemo-tabs {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  justify-content: center;
+}
+
+.bdemo-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 12px var(--sans);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.bdemo-tabs button:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.bdemo-tabs button.on {
+  background: var(--green-soft);
+  border-color: color-mix(in srgb, var(--green) 35%, var(--line));
+  color: var(--green-deep);
+}
+
+.bdemo-funnel {
+  display: grid;
   gap: 7px;
   margin-top: 18px;
 }
 
-.bdemo-stages span {
-  padding: 7px 12px;
+.bdemo-funnel-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 10px;
+}
+
+.bdemo-funnel-label {
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
+.bdemo-funnel-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.bdemo-funnel-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+  transform-origin: left center;
+  animation: bdemoFunnel 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.bdemo-funnel.abstain .bdemo-funnel-row:not(:first-child) .bdemo-funnel-fill {
+  background: var(--amber);
+}
+
+.bdemo-funnel-value {
+  color: var(--green-deep);
+  font: 600 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bdemo-funnel.abstain .bdemo-funnel-value {
+  color: var(--amber);
+}
+
+@keyframes bdemoFunnel {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.bdemo-issuers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.bdemo-issuer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-muted);
-  color: var(--muted);
+  color: var(--prose);
   font: 10px var(--mono);
-  opacity: 0;
-  animation: bdemoStage 0.5s ease forwards;
 }
 
-@keyframes bdemoStage {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.bdemo-issuer strong {
+  color: var(--green-deep);
+}
+
+.bdemo-issuer em {
+  color: var(--cyan);
+  font-style: normal;
 }
 
 .bdemo-result {
