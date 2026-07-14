@@ -104,7 +104,7 @@ const SCENES: Scene[] = [
     date: "",
     answer: "Strongest passage per issuer, capped to one hit each so no filer dominates.",
     confidence: 0,
-    latency: "24 s",
+    latency: "4.1 s",
     sources: [],
     issuers: [
       { ticker: "DLR", name: "Digital Realty", score: "0.61" },
