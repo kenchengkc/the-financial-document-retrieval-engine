@@ -232,7 +232,7 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
     .toBeVisible();
   // The corpus counts are read live (ISR), so assert the stable labels, not values.
   await expect(page.getByText("S&P 500 primary tickers indexed")).toBeVisible();
-  await expect(page.getByText("Five public demonstrations")).toBeVisible();
+  await expect(page.getByText("Six public demonstrations")).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
