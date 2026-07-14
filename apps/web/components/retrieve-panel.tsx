@@ -12,7 +12,13 @@ import { FormEvent, useState } from "react";
 import { runSearch } from "@/lib/api";
 import type { SearchFilters, SearchResponse } from "@/lib/types";
 
-import { EvidenceCard, formatLatency, type SessionRun } from "./instruments";
+import {
+  EvidenceCard,
+  ResultAnalysis,
+  formatLatency,
+  rankDeltas,
+  type SessionRun,
+} from "./instruments";
 
 const FORM_OPTIONS = ["10-K", "10-Q", "8-K"];
 
@@ -166,16 +172,25 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
           {result.results.length === 0 ? (
             <p className="muted">No passages matched these filters.</p>
           ) : (
-            <div className="evidence-list">
-              {result.results.map((candidate, index) => (
-                <EvidenceCard
-                  key={candidate.chunk_id}
-                  candidate={candidate}
-                  index={index}
-                  defaultOpen={index === 0}
-                />
-              ))}
-            </div>
+            (() => {
+              const deltas = rankDeltas(result.results);
+              return (
+                <>
+                  <ResultAnalysis candidates={result.results} />
+                  <div className="evidence-list">
+                    {result.results.map((candidate, index) => (
+                      <EvidenceCard
+                        key={candidate.chunk_id}
+                        candidate={candidate}
+                        index={index}
+                        defaultOpen={index === 0}
+                        rankDelta={deltas.get(candidate.chunk_id)}
+                      />
+                    ))}
+                  </div>
+                </>
+              );
+            })()
           )}
         </div>
       )}

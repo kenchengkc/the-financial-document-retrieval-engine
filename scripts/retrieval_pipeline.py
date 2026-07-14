@@ -174,6 +174,8 @@ def parse_args() -> argparse.Namespace:
             "disclosure_similarity",
             "risk_factor_expansion",
             "earnings_quality",
+            "asset_growth",
+            "net_share_issuance",
         ),
         default="disclosure_similarity",
     )
@@ -583,24 +585,69 @@ def _git_sha() -> str:
         return "unknown"
 
 
-_ACCRUAL_CONCEPTS = (
-    "NetIncomeLoss",
-    "NetCashProvidedByUsedInOperatingActivities",
-    "Assets",
-)
+# Fundamental signals computed point-in-time from a single 10-K's XBRL facts.
+# Each metric is oriented so LOWER is better (long side); the study signal is
+# the negated metric. Growth metrics use the filing's own prior-year
+# comparative (a 10-K balance sheet/income statement reports 2-3 fiscal
+# periods), so no cross-filing join is needed and the value is knowable at
+# acceptance.
+#   earnings_quality   accruals anomaly (Sloan 1996)
+#   asset_growth       asset growth anomaly (Cooper, Gulen & Schill 2008)
+#   net_share_issuance issuance anomaly (Pontiff & Woodgate 2008)
+_FUNDAMENTAL_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "earnings_quality": (
+        "NetIncomeLoss",
+        "NetCashProvidedByUsedInOperatingActivities",
+        "Assets",
+    ),
+    "asset_growth": ("Assets",),
+    "net_share_issuance": ("WeightedAverageNumberOfDilutedSharesOutstanding",),
+}
+
+_FUNDAMENTAL_FEATURE_VERSIONS: dict[str, str] = {
+    "earnings_quality": "accruals-v1",
+    "asset_growth": "asset-growth-v1",
+    "net_share_issuance": "share-issuance-v1",
+}
 
 
-def _earnings_quality_dataset(
-    session: Session, tickers: list[str]
-) -> tuple[list[FilingEvent], list[SignalConstituent], str]:
-    """Build point-in-time earnings-quality (accruals) events from 10-K facts.
+def _fundamental_metric(
+    signal_name: str, values: dict[str, list[tuple[date, float]]]
+) -> float | None:
+    """Compute the lower-is-better metric for one filing, or None if unusable.
 
-    Balance-sheet accruals = (net income - operating cash flow) / total assets.
-    Low accruals mean reported earnings are backed by cash, which historically
-    predicts stronger forward returns (Sloan 1996), so the study signal is the
-    *negated* accrual ratio -- a higher value is higher quality. Constituents are
-    the current highest/lowest-quality names by each issuer's most recent 10-K.
+    ``values`` maps concept -> [(period_end, value)] sorted most-recent first.
     """
+    if signal_name == "earnings_quality":
+        try:
+            ni = values["NetIncomeLoss"][0][1]
+            ocf = values["NetCashProvidedByUsedInOperatingActivities"][0][1]
+            assets = values["Assets"][0][1]
+        except (KeyError, IndexError):
+            return None
+        if assets == 0:
+            return None
+        return (ni - ocf) / assets
+    concept = _FUNDAMENTAL_CONCEPTS[signal_name][0]
+    series = values.get(concept, [])
+    if len(series) < 2:
+        return None
+    latest, prior = series[0][1], series[1][1]
+    if prior <= 0:
+        return None
+    return latest / prior - 1.0
+
+
+def _fundamental_dataset(
+    session: Session, tickers: list[str], signal_name: str
+) -> tuple[list[FilingEvent], list[SignalConstituent], str]:
+    """Build point-in-time fundamental-signal events from 10-K facts.
+
+    Constituents are the current best/worst names by each issuer's most recent
+    10-K: the long side holds the lowest metric (cash-backed earnings, slow
+    asset growth, net buybacks), the short side the highest.
+    """
+    concepts = _FUNDAMENTAL_CONCEPTS[signal_name]
     doc_rows = session.execute(
         select(
             Document.id,
@@ -621,9 +668,9 @@ def _earnings_quality_dataset(
     doc_ids = [row.id for row in doc_rows]
     if not doc_ids:
         return [], [], hashlib.sha256(b"").hexdigest()[:16]
-    # Keep the most-recent (period_end) value per (document, concept): the filing's
-    # own fiscal year, not prior-year comparatives carried in the same statement.
-    best: dict[tuple[int, str], tuple[date, float]] = {}
+    # Collect every reported period per (document, concept), newest first, so
+    # growth signals can use the filing's own prior-year comparative.
+    by_doc: dict[int, dict[str, list[tuple[date, float]]]] = {}
     for did, concept, value, period_end in session.execute(
         select(
             FinancialFact.document_id,
@@ -632,26 +679,30 @@ def _earnings_quality_dataset(
             FinancialFact.period_end,
         ).where(
             FinancialFact.document_id.in_(doc_ids),
-            FinancialFact.concept.in_(_ACCRUAL_CONCEPTS),
+            FinancialFact.concept.in_(concepts),
             FinancialFact.value.is_not(None),
         )
     ).all():
-        key = (did, concept)
-        stamp = period_end or date.min
-        current = best.get(key)
-        if current is None or stamp > current[0]:
-            best[key] = (stamp, float(value))
+        by_doc.setdefault(did, {}).setdefault(concept, []).append(
+            (period_end or date.min, float(value))
+        )
+    for concept_values in by_doc.values():
+        for series in concept_values.values():
+            # Newest period first; collapse duplicate period_ends to one value.
+            series.sort(key=lambda item: item[0], reverse=True)
+            deduped: list[tuple[date, float]] = []
+            for stamp, value in series:
+                if not deduped or deduped[-1][0] != stamp:
+                    deduped.append((stamp, value))
+            series[:] = deduped
     events: list[FilingEvent] = []
     used_docs: list[str] = []
-    # ticker -> (available_at, accrual_ratio, name) for the latest filing.
+    # ticker -> (available_at, metric, name) for the latest filing.
     latest_by_ticker: dict[str, tuple[datetime, float, str]] = {}
     for row in doc_rows:
-        ni = best.get((row.id, "NetIncomeLoss"))
-        ocf = best.get((row.id, "NetCashProvidedByUsedInOperatingActivities"))
-        assets = best.get((row.id, "Assets"))
-        if ni is None or ocf is None or assets is None or assets[1] == 0:
+        metric = _fundamental_metric(signal_name, by_doc.get(row.id, {}))
+        if metric is None:
             continue
-        accruals = (ni[1] - ocf[1]) / assets[1]
         available_at = row.available_at
         events.append(
             FilingEvent(
@@ -659,27 +710,26 @@ def _earnings_quality_dataset(
                 accession_number=row.accession_number,
                 available_at=available_at,
                 max_source_available_at=available_at,
-                feature_value=-accruals,
+                feature_value=-metric,
             )
         )
         used_docs.append(f"{row.accession_number}:{row.sha256_hash or ''}")
         prev = latest_by_ticker.get(row.ticker)
         if prev is None or available_at > prev[0]:
-            latest_by_ticker[row.ticker] = (available_at, accruals, row.name)
+            latest_by_ticker[row.ticker] = (available_at, metric, row.name)
     dataset_version = hashlib.sha256(
         "|".join(used_docs).encode("utf-8")
     ).hexdigest()[:16]
-    # Rank current names by accrual ratio: lowest (cash-backed) = long, highest = short.
     ranked = sorted(latest_by_ticker.items(), key=lambda kv: kv[1][1])
     top_n = min(8, len(ranked) // 2)
     constituents: list[SignalConstituent] = []
-    for ticker, (_, accruals, name) in ranked[:top_n]:
+    for ticker, (_, metric, name) in ranked[:top_n]:
         constituents.append(
-            SignalConstituent(ticker=ticker, name=name, value=accruals, side="long")
+            SignalConstituent(ticker=ticker, name=name, value=metric, side="long")
         )
-    for ticker, (_, accruals, name) in (ranked[-top_n:] if top_n else []):
+    for ticker, (_, metric, name) in (ranked[-top_n:] if top_n else []):
         constituents.append(
-            SignalConstituent(ticker=ticker, name=name, value=accruals, side="short")
+            SignalConstituent(ticker=ticker, name=name, value=metric, side="short")
         )
     return events, constituents, dataset_version
 
@@ -703,12 +753,12 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         ).all()
         tickers = [row[0] for row in rows]
     constituents: list[SignalConstituent] = []
-    if args.signal == "earnings_quality":
-        # Accruals come from structured XBRL facts, not the disclosure panel.
-        events, constituents, dataset_version = _earnings_quality_dataset(
-            session, tickers
+    if args.signal in _FUNDAMENTAL_CONCEPTS:
+        # Fundamental signals come from structured XBRL facts, not the panel.
+        events, constituents, dataset_version = _fundamental_dataset(
+            session, tickers, args.signal
         )
-        feature_version = "accruals-v1"
+        feature_version = _FUNDAMENTAL_FEATURE_VERSIONS[args.signal]
     else:
         panel = build_research_panel(
             session,

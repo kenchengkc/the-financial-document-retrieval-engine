@@ -93,6 +93,7 @@ export function EvidenceCard({
   heat,
   commonTicker,
   commonSection,
+  rankDelta,
 }: {
   candidate: RetrievalCandidate;
   index: number;
@@ -101,6 +102,7 @@ export function EvidenceCard({
   heat?: number;
   commonTicker?: string | null;
   commonSection?: string | null;
+  rankDelta?: number | null;
 }) {
   const metadata = candidate.metadata;
   const ticker = metadataValue(metadata.ticker, "Document");
@@ -124,7 +126,10 @@ export function EvidenceCard({
           </span>
         </span>
         <span className={`evidence-section${sectionDim ? " dim" : ""}`}>{section}</span>
-        <span className="evidence-score">{score(candidate.rerank_score)} rerank</span>
+        <span className="evidence-score">
+          <RankDelta delta={rankDelta} />
+          {score(candidate.rerank_score)} rerank
+        </span>
         <ChevronDown size={16} aria-hidden="true" />
         <span className="evidence-heat" aria-hidden="true">
           <span style={{ width: `${Math.round(Math.max(0, Math.min(1, heat ?? 0)) * 100)}%` }} />
@@ -135,6 +140,124 @@ export function EvidenceCard({
         <ScoreRow candidate={candidate} />
       </div>
     </details>
+  );
+}
+
+/** Rank movement per chunk: hybrid-order rank minus displayed (rerank) rank.
+ * Positive = the cross-encoder promoted the passage; negative = demoted. */
+export function rankDeltas(candidates: RetrievalCandidate[]): Map<number, number> {
+  const byHybrid = [...candidates].sort(
+    (a, b) => (b.hybrid_score ?? 0) - (a.hybrid_score ?? 0),
+  );
+  const hybridRank = new Map(byHybrid.map((c, i) => [c.chunk_id, i]));
+  const deltas = new Map<number, number>();
+  candidates.forEach((candidate, displayedRank) => {
+    const from = hybridRank.get(candidate.chunk_id);
+    deltas.set(candidate.chunk_id, from === undefined ? 0 : from - displayedRank);
+  });
+  return deltas;
+}
+
+export function RankDelta({ delta }: { delta: number | null | undefined }) {
+  if (delta === null || delta === undefined) return null;
+  if (delta === 0) {
+    return (
+      <span className="rank-delta flat" title="Rerank kept the hybrid position">
+        =
+      </span>
+    );
+  }
+  const up = delta > 0;
+  return (
+    <span
+      className={`rank-delta ${up ? "up" : "down"}`}
+      title={`Cross-encoder ${up ? "promoted" : "demoted"} this passage ${Math.abs(delta)} place${Math.abs(delta) === 1 ? "" : "s"} vs hybrid order`}
+    >
+      {up ? "▲" : "▼"}
+      {Math.abs(delta)}
+    </span>
+  );
+}
+
+/** Set-level analysis of a ranked result list: score decay by rank against the
+ * evidence gate, plus composition facts (issuers, sections, date span) and how
+ * much the cross-encoder reshuffled the hybrid order. */
+export function ResultAnalysis({
+  candidates,
+  gateThreshold = 0.4,
+}: {
+  candidates: RetrievalCandidate[];
+  gateThreshold?: number;
+}) {
+  if (candidates.length === 0) return null;
+  const scores = candidates.map((c) => c.rerank_score ?? 0);
+  const top = Math.max(...scores);
+  const med = median(scores);
+  const scaleMax = Math.max(top, gateThreshold * 1.35, 0.0001);
+  const issuers = new Set(
+    candidates.map((c) => metadataValue(c.metadata.ticker, "?")),
+  );
+  const sections = new Map<string, number>();
+  for (const c of candidates) {
+    const s = metadataValue(c.metadata.section, "Unsectioned");
+    sections.set(s, (sections.get(s) ?? 0) + 1);
+  }
+  const topSection = [...sections.entries()].sort((a, b) => b[1] - a[1])[0];
+  const dates = candidates
+    .map((c) => metadataValue(c.metadata.filing_date, ""))
+    .filter(Boolean)
+    .sort();
+  const deltas = rankDeltas(candidates);
+  const shuffled = candidates.filter((c) => (deltas.get(c.chunk_id) ?? 0) !== 0).length;
+  const gatePct = Math.min(100, (gateThreshold / scaleMax) * 100);
+  const cells: { k: string; v: string; title?: string }[] = [
+    { k: "Top / median", v: `${top.toFixed(3)} / ${med.toFixed(3)}` },
+    { k: "Issuers", v: String(issuers.size) },
+    {
+      k: "Top section",
+      v: topSection ? `${topSection[0]}` : "—",
+      title: topSection ? `${topSection[1]} of ${candidates.length} passages` : undefined,
+    },
+    {
+      k: "Filing span",
+      v: dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : "—",
+    },
+    {
+      k: "Rerank moved",
+      v: `${shuffled}/${candidates.length}`,
+      title: "Passages whose position changed vs the hybrid-score order",
+    },
+  ];
+  return (
+    <div className="ranalysis" aria-label="Result-set analysis">
+      <div className="ra-chart" role="img" aria-label="Rerank score by rank position">
+        <span
+          className="ra-gate"
+          style={{ bottom: `${gatePct}%` }}
+          data-label={`evidence gate ${gateThreshold.toFixed(2)}`}
+        />
+        {candidates.map((c, i) => {
+          const value = c.rerank_score ?? 0;
+          const passed = value >= gateThreshold;
+          return (
+            <span
+              key={c.chunk_id}
+              className={`ra-bar${passed ? "" : " below"}`}
+              style={{ height: `${Math.max(3, (value / scaleMax) * 100)}%` }}
+              title={`#${i + 1} ${metadataValue(c.metadata.ticker, "?")} · rerank ${value.toFixed(3)}${passed ? "" : " · below gate"}`}
+            />
+          );
+        })}
+      </div>
+      <dl className="ra-cells">
+        {cells.map((cell) => (
+          <div key={cell.k} title={cell.title}>
+            <dt>{cell.k}</dt>
+            <dd>{cell.v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

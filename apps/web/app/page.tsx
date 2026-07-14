@@ -35,10 +35,12 @@ import { UniversePanel } from "@/components/universe-panel";
 import {
   ConfidenceRing,
   EvidenceCard,
+  ResultAnalysis,
   RetrievalFunnel,
   SessionTelemetry,
   formatLatency,
   metadataValue,
+  rankDeltas,
   resolvedScope,
   traceCount,
   type SessionRun,
@@ -332,6 +334,7 @@ function AskWorkspace({
 }) {
   const citedChunkIds = new Set(result?.citations.map((c) => c.chunk_id) ?? []);
   const maxRerank = Math.max(0.0001, ...displayEvidence.map((c) => c.rerank_score ?? 0));
+  const evidenceDeltas = rankDeltas(displayEvidence);
   const firstEvidence = displayEvidence[0];
   const commonTicker =
     firstEvidence && displayEvidence.length > 1 &&
@@ -433,6 +436,7 @@ function AskWorkspace({
                   {commonSection ? ` · ${commonSection}` : ""}
                 </span>
               </div>
+              {displayEvidence.length > 0 && <ResultAnalysis candidates={displayEvidence} />}
               <div className="evidence-list">
                 {displayEvidence.map((candidate, index) => (
                   <EvidenceCard
@@ -444,6 +448,7 @@ function AskWorkspace({
                     heat={(candidate.rerank_score ?? 0) / maxRerank}
                     commonTicker={commonTicker}
                     commonSection={commonSection}
+                    rankDelta={evidenceDeltas.get(candidate.chunk_id)}
                   />
                 ))}
                 {result.evidence.length === 0 && (

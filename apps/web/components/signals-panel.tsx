@@ -3,6 +3,7 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Briefcase,
   CheckCircle2,
   CircleAlert,
   CircleSlash,
@@ -37,6 +38,8 @@ const SIGNAL_LABELS: Record<string, string> = {
   risk_expansion: "Risk expansion",
   filing_lateness: "Filing lateness",
   earnings_quality: "Earnings quality",
+  asset_growth: "Asset growth",
+  net_share_issuance: "Share issuance",
   composite: "Composite",
 };
 
@@ -165,8 +168,8 @@ function studyVerdict(study: SignalStudyResponse) {
   if (sig.length === 0) {
     return {
       tone: "flat" as const,
-      headline: "No tradeable edge",
-      plain: `None of the ${results.length} holding horizons is statistically significant (best p = ${bestAdjustedP(results).toFixed(2)}). The pattern shows up directionally, but it is too weak and noisy to trade after costs.`,
+      headline: "No standalone edge",
+      plain: `None of the ${results.length} holding horizons is statistically significant (best p = ${bestAdjustedP(results).toFixed(2)}) — too weak and noisy to trade on its own after costs. That is a finding, not a failure: see how a desk would still use it below.`,
     };
   }
   const horizons = sig.map((w) => windowLabel(w.window)).join(", ");
@@ -292,12 +295,29 @@ function signalLabel(study: SignalStudyResponse) {
   if (study.report.signal_name === "earnings_quality") {
     return "Earnings quality -> returns";
   }
+  if (study.report.signal_name === "asset_growth") {
+    return "Asset growth -> returns";
+  }
+  if (study.report.signal_name === "net_share_issuance") {
+    return "Share issuance -> returns";
+  }
   return outcomeName(study) === "realized_volatility"
     ? "Disclosure similarity -> volatility"
     : "Disclosure similarity -> returns";
 }
 
-function studyCopy(study: SignalStudyResponse) {
+type StudyCopy = {
+  headlinePrefix: string;
+  headlineAccent: string;
+  headlineSuffix: string;
+  lede: string;
+  leftAxis: string;
+  rightAxis: string;
+  note: string;
+  desk: string[];
+};
+
+function studyCopy(study: SignalStudyResponse): StudyCopy {
   if (study.report.signal_name === "composite") {
     return {
       headlinePrefix: "Can combining weak signals ",
@@ -309,6 +329,11 @@ function studyCopy(study: SignalStudyResponse) {
       rightAxis: "composite bullish →",
       note:
         "The components are genuinely uncorrelated — the prerequisite for combination — but individually weak and sign-unstable across horizons, so naive equal-weighting does not beat the best single signal here. Sector-neutralizing the cross-section shrinks the raw ICs: part of a single signal's apparent edge was a sector tilt, not issuer-specific information. The realistic levers are breadth and IC-weighting the components out-of-sample, not a free lunch from averaging.",
+      desk: [
+        "IC-weight the sleeves, not equal-weight: weight each component by its out-of-sample rank skill so the weakest signal stops dragging the blend.",
+        "Breadth over conviction: at ~500 names the Fundamental Law says many small tilts beat a few large bets — apply the composite as basis-point overweights across the whole book.",
+        "Keep it sector-neutral (as here), so the tilt expresses issuer-specific information instead of a hidden sector bet.",
+      ],
     };
   }
   if (study.report.signal_name === "earnings_quality") {
@@ -321,7 +346,48 @@ function studyCopy(study: SignalStudyResponse) {
       leftAxis: "← low-quality (high accruals)",
       rightAxis: "high-quality (low accruals) →",
       note:
-        "Accruals is a real, published fundamental factor, but in this survivorship-biased S&P 500 large-cap sample it shows no significant edge. Forward returns are winsorized at the 2.5/97.5th percentile — and once a couple of highly volatile names are tamed, the raw long–short spread all but vanishes, which is exactly why the honest verdict is 'no edge.' The anomaly is historically strongest in smaller, less-liquid names outside this universe. Two cautions on the current constituents: banks carry large working-capital swings that inflate accruals for non-quality reasons, and hyper-growth firms build inventory and receivables ahead of sales, so a high reading there reflects expansion, not distress.",
+        "Accruals is a real, published fundamental factor, but in this survivorship-biased S&P 500 large-cap sample it shows no standalone edge after winsorizing forward returns at the 2.5/97.5th percentile — the anomaly is historically strongest in smaller, less-liquid names. Two cautions on the current constituents: banks carry large working-capital swings that inflate accruals for non-quality reasons, and hyper-growth firms build inventory and receivables ahead of sales, so a high reading there reflects expansion, not distress.",
+      desk: [
+        "Negative screen, not a long engine: historically most of the accrual anomaly's payoff came from the short leg — desks exclude or underweight the worst-accrual quintile rather than chase the best.",
+        "Defensive overlay: quality factors earn most of their keep in drawdowns (Asness–Frazzini–Pedersen's Quality-Minus-Junk), so a cash-backed-earnings tilt is sized as downside insurance, not alpha.",
+        "Sector-adjust before acting: financials and hyper-growth names read low-quality for structural reasons — raw accruals get neutralized against sector peers first.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "asset_growth") {
+    return {
+      headlinePrefix: "Does a ",
+      headlineAccent: "growing balance sheet",
+      headlineSuffix: " predict weaker returns?",
+      lede:
+        "A point-in-time test of the asset growth anomaly (Cooper, Gulen & Schill, 2008 — one of the few anomalies documented to survive in large caps). Each 10-K reports the current and prior-year balance sheet, so year-over-year total-asset growth is computable the day the filing lands. Historically, aggressive balance-sheet expansion — acquisitions, capacity build-outs — preceded weaker returns.",
+      leftAxis: "← high growth (expanding)",
+      rightAxis: "low growth (disciplined) →",
+      note:
+        "In this 2023–26 window the classic effect does not replicate — if anything it leans the other way, because the market paid up for balance-sheet expansion during the AI capex cycle (NVDA grew assets 85% and kept outperforming), and the extreme-growth tail is dominated by completed acquisitions (SNPS+Ansys, AMCR+Berry) rather than empire-building. A one-regime sample cannot reject a factor documented over 40 years; it can tell you the regime.",
+      desk: [
+        "Regime filter first: the anomaly's premise (expansion destroys value) held in normal regimes but inverted during the AI capex boom — desks condition the tilt on the capex cycle before deploying.",
+        "M&A integration flag: the extreme-growth tail is mostly closed deals — more useful routed to event-driven coverage as integration-risk names than naively shorted.",
+        "Condition on funding: expansion funded by operating cash flow behaves differently from expansion funded by issuance — cross this signal with share issuance (next tab) before tilting.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "net_share_issuance") {
+    return {
+      headlinePrefix: "Do ",
+      headlineAccent: "buybacks beat issuers",
+      headlineSuffix: "?",
+      lede:
+        "A point-in-time test of the net share issuance anomaly (Pontiff & Woodgate, 2008): firms shrinking their share count historically outperformed net issuers, an effect documented as robust even in large caps. Year-over-year change in weighted diluted shares comes straight from each 10-K's income statement, knowable at acceptance.",
+      leftAxis: "← net issuers (dilution)",
+      rightAxis: "net buybacks (shrinking) →",
+      note:
+        "This window produced the study's most interesting result: a statistically significant one-month effect (adjusted p ≈ 0.02) in the OPPOSITE direction of the literature — the biggest issuers outperformed buyback names. Look at who the issuers are: merger completions (Paramount–Skydance, Expand Energy, IP–DS Smith) and recovering turnarounds (Carvana issued 70% more shares and was one of the market's best performers). In 2023–26, big issuance marked corporate events the market rewarded, not value destruction. A significant inversion is information — it tells you the naive factor would have lost money this regime.",
+      desk: [
+        "Treat large issuance as an event flag, not a factor score: 40%+ share-count jumps are deal closes and recapitalizations — route them to event-driven and merger-arb coverage.",
+        "The buyback side still matters as carry: consistent net-buyback names compound per-share value slowly — desks hold it as a small, long-horizon tilt rather than a timing signal.",
+        "Inversion risk management: when a documented anomaly flips sign with significance, factor desks cut the sleeve's risk budget and investigate crowding/regime before re-arming it.",
+      ],
     };
   }
   if (
@@ -338,6 +404,11 @@ function studyCopy(study: SignalStudyResponse) {
       rightAxis: "more added risks →",
       note:
         "This is a reproducible risk-monitoring signal, not a trading claim. The outcome is raw realized volatility over each window; inference is bootstrap-based and remains sample-size sensitive.",
+      desk: [
+        "Position sizing input: forward volatility is the denominator of inverse-vol weighting — names with big net risk-factor expansions get mechanically smaller weights at the next rebalance.",
+        "Hedging trigger: predicted volatility without a return edge argues for buying protection (puts, collars) on affected names rather than selling the position.",
+        "Vol relative value: a filing-implied vol signal knowable at acceptance is exactly the kind of input options desks compare against implied vol to find rich/cheap protection.",
+      ],
     };
   }
   return {
@@ -350,11 +421,53 @@ function studyCopy(study: SignalStudyResponse) {
     rightAxis: "unchanged outperform →",
     note:
       "The signal is directionally consistent with Lazy Prices at short horizons but remains sample-size sensitive. Returns are market-adjusted gross of transaction costs and ignore borrow; the universe is survivorship-biased.",
+    desk: [
+      "Analyst triage: bottom-decile similarity (heavily revised filings) is a same-day reading list — the language changed for a reason, and someone should know why before the market does.",
+      "Composite ingredient: too weak alone, but uncorrelated with risk-expansion and lateness — exactly the profile worth z-scoring into a multi-signal blend (see Composite tab).",
+      "Event-risk sizing: a heavily revised filing marks elevated idiosyncratic risk — trim size or widen risk limits into the next print rather than taking a directional view.",
+    ],
   };
 }
 
-function Constituents({ constituents }: { constituents: SignalConstituent[] }) {
-  if (!constituents.length) {
+const CONSTITUENT_COPY: Record<
+  string,
+  { description: string; longTitle: string; shortTitle: string; footer: string }
+> = {
+  earnings_quality: {
+    description:
+      "The current highest- and lowest-quality names, ranked by balance-sheet accruals on each issuer's most recent 10-K. More negative means earnings are more fully backed by operating cash.",
+    longTitle: "Cash-backed · top quality",
+    shortTitle: "Accrual-heavy · watch quality",
+    footer:
+      "Accruals = (net income − operating cash flow) ÷ total assets, from reported XBRL facts.",
+  },
+  asset_growth: {
+    description:
+      "Year-over-year total-asset growth from each issuer's most recent 10-K. Negative means a shrinking balance sheet (usually divestitures); the largest readings are mostly completed acquisitions.",
+    longTitle: "Shrinking · disciplined",
+    shortTitle: "Expanding · watch integration",
+    footer:
+      "Asset growth = current-year ÷ prior-year total assets − 1, both reported in the same 10-K.",
+  },
+  net_share_issuance: {
+    description:
+      "Year-over-year change in weighted diluted shares outstanding from each issuer's most recent 10-K. Negative means net buybacks; large positive readings are typically merger stock or recapitalizations.",
+    longTitle: "Net buybacks · shrinking count",
+    shortTitle: "Net issuers · rising count",
+    footer:
+      "Issuance = current-year ÷ prior-year weighted diluted shares − 1, from the same 10-K.",
+  },
+};
+
+function Constituents({
+  constituents,
+  signalName,
+}: {
+  constituents: SignalConstituent[];
+  signalName: string;
+}) {
+  const copy = CONSTITUENT_COPY[signalName];
+  if (!constituents.length || !copy) {
     return null;
   }
   const longs = constituents.filter((c) => c.side === "long");
@@ -387,20 +500,44 @@ function Constituents({ constituents }: { constituents: SignalConstituent[] }) {
     <div className="sig-constituents">
       <div className="sig-const-head">
         <h3>Where the S&amp;P 500 sits today</h3>
-        <p>
-          The current highest- and lowest-quality names, ranked by balance-sheet accruals
-          on each issuer&rsquo;s most recent 10-K. More negative means earnings are more
-          fully backed by operating cash.
-        </p>
+        <p>{copy.description}</p>
       </div>
       <div className="sig-const-cols">
-        {column(longs, "long", ArrowDownRight, "Cash-backed · top quality")}
-        {column(shorts, "short", ArrowUpRight, "Accrual-heavy · watch quality")}
+        {column(longs, "long", ArrowDownRight, copy.longTitle)}
+        {column(shorts, "short", ArrowUpRight, copy.shortTitle)}
       </div>
       <p className="sig-const-foot">
-        Accruals = (net income − operating cash flow) ÷ total assets, from reported XBRL
-        facts. Illustrative factor research, not investment advice.
+        {copy.footer} Illustrative factor research, not investment advice.
       </p>
+    </div>
+  );
+}
+
+function DeskApplications({ items }: { items: string[] }) {
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <div className="sig-desk">
+      <div className="sig-desk-head">
+        <h3>
+          <Briefcase size={15} aria-hidden="true" /> How a desk would use this
+        </h3>
+        <p>
+          A signal without standalone alpha is not a dead end — it changes how you screen,
+          size, hedge, and combine. The realistic applications:
+        </p>
+      </div>
+      <ul>
+        {items.map((item) => {
+          const [lead, ...rest] = item.split(": ");
+          return (
+            <li key={lead}>
+              <strong>{lead}:</strong> {rest.join(": ")}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -608,7 +745,7 @@ export function SignalsPanel() {
       <Glossary isVolatility={isVol} />
 
       {report.constituents && report.constituents.length > 0 && (
-        <Constituents constituents={report.constituents} />
+        <Constituents constituents={report.constituents} signalName={report.signal_name} />
       )}
 
       <div className="sig-grid">
@@ -631,6 +768,8 @@ export function SignalsPanel() {
           neutralization={report.neutralization}
         />
       )}
+
+      <DeskApplications items={copy.desk} />
 
       <div className="sig-note">
         <FlaskConical size={14} aria-hidden="true" />
