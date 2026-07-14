@@ -11,9 +11,15 @@ from apps.api.app.schemas.companies import CompaniesResponse, CompanySummary, Co
 from fdre.ingestion.ticker_map import catalog_company_count, sp500_primary_tickers
 
 _DEMO_TICKERS = frozenset({"EXMPL"})
-_COVERAGE_CACHE_TTL_SECONDS = 60.0
+# The corpus only changes when ingest runs (daily), but these aggregates cost
+# ~10s of Neon compute over 2.7M embedding rows. Cache them long enough that
+# sparse traffic actually hits the cache instead of always paying cold price.
+_COVERAGE_CACHE_TTL_SECONDS = 900.0
 _coverage_cache: dict[int, tuple[float, CoverageResponse]] = {}
 _coverage_cache_lock = threading.Lock()
+_COMPANIES_CACHE_TTL_SECONDS = 900.0
+_companies_cache: dict[int, tuple[float, list[CompanySummary]]] = {}
+_companies_cache_lock = threading.Lock()
 
 
 def get_coverage(session: Session) -> CoverageResponse:
@@ -56,6 +62,8 @@ def get_coverage(session: Session) -> CoverageResponse:
 def clear_coverage_cache() -> None:
     with _coverage_cache_lock:
         _coverage_cache.clear()
+    with _companies_cache_lock:
+        _companies_cache.clear()
 
 
 def _indexed_company_tickers(session: Session) -> list[str]:
@@ -87,7 +95,7 @@ def list_companies(
     limit: int = 100,
     offset: int = 0,
 ) -> CompaniesResponse:
-    rows = _indexed_company_rows(session)
+    rows = _cached_company_rows(session)
     summaries = [
         CompanySummary(
             ticker=row.ticker,
@@ -103,6 +111,19 @@ def list_companies(
     ]
     page = summaries[offset : offset + limit]
     return CompaniesResponse(total=len(summaries), companies=page)
+
+
+def _cached_company_rows(session: Session) -> list[CompanySummary]:
+    cache_key = id(session.get_bind())
+    now = time.monotonic()
+    with _companies_cache_lock:
+        cached = _companies_cache.get(cache_key)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+    rows = _indexed_company_rows(session)
+    with _companies_cache_lock:
+        _companies_cache[cache_key] = (now + _COMPANIES_CACHE_TTL_SECONDS, rows)
+    return rows
 
 
 def _indexed_company_rows(session: Session) -> list[CompanySummary]:

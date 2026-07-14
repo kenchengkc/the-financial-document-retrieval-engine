@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -14,6 +15,8 @@ from fdre.retrieval.preprocess import load_company_references, preprocess_query
 from fdre.retrieval.query import PreprocessedQuery, RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +40,7 @@ def search_documents(
         companies=load_company_references(session),
         filters=filters,
     )
+    preprocess_done = perf_counter()
     provider = embedding_provider_from_settings(settings)
     retriever = HybridRetriever(DenseRetriever(provider), SparseRetriever())
     candidates = retriever.search(
@@ -45,6 +49,7 @@ def search_documents(
         filters=preprocessed.filters,
         limit=max(top_k, settings.rerank_top_n),
     )
+    retrieve_done = perf_counter()
     candidates = reranker_from_settings(settings).rerank(
         query,
         candidates,
@@ -56,7 +61,15 @@ def search_documents(
             for candidate in candidates
             if (candidate.rerank_score or 0.0) >= settings.min_rerank_score
         ]
+    rerank_done = perf_counter()
     latency_ms = round((perf_counter() - started) * 1000)
+    logger.info(
+        "search stages: preprocess=%dms retrieve=%dms rerank=%dms total=%dms",
+        round((preprocess_done - started) * 1000),
+        round((retrieve_done - preprocess_done) * 1000),
+        round((rerank_done - retrieve_done) * 1000),
+        latency_ms,
+    )
     retrieval_run = RetrievalRun(
         query=query,
         filters_json=preprocessed.filters.model_dump(mode="json"),

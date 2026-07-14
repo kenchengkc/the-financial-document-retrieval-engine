@@ -5,11 +5,13 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * Time-based progress for a request whose real progress we cannot observe
- * (the API returns a single response, not a stream). The percentage follows a
- * decelerating curve — quick early movement that keeps slowing, the way real
- * retrieval work feels — and asymptotically approaches (never reaches) 100%,
- * so a slower-than-usual run keeps crawling instead of stalling at a fake
- * "done." The parent unmounts this on completion, which is the real 100%.
+ * (the API returns a single response, not a stream). Instead of a smooth
+ * mathematical curve — which reads as fake — the bar is a random walk:
+ * irregular jumps, occasional bursts, and brief stalls, the way real work
+ * ticks over. A soft ceiling that tracks elapsed time keeps the walk honest:
+ * it climbs roughly linearly to ~98% at the expected duration, so there is no
+ * dramatic end-of-bar braking and no long park just under the top. The parent
+ * unmounts this on completion, which is the real 100%.
  *
  * The pipeline stages render as a checklist under the bar, driven by the same
  * fraction: done stages get a check, the current one a spinner.
@@ -21,21 +23,48 @@ export function ScanProgress({
   estimateMs: number;
   stages: string[];
 }) {
-  const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef(0);
+  const [fraction, setFraction] = useState(0.02);
+  const progressRef = useRef(0.02);
 
   useEffect(() => {
-    startRef.current = performance.now();
-    const id = window.setInterval(() => {
-      setElapsed(performance.now() - startRef.current);
-    }, 120);
-    return () => window.clearInterval(id);
-  }, []);
+    const start = performance.now();
+    let timer = 0;
+    let cancelled = false;
 
-  const ratio = elapsed / Math.max(1, estimateMs);
-  // 1 - e^(-2.2x): ~42% at a quarter of the estimate, ~67% at half, ~89% at
-  // the estimate, then a slow crawl toward (never past) 99%.
-  const fraction = Math.min(0.99, 1 - Math.exp(-2.2 * ratio));
+    const tick = () => {
+      if (cancelled) return;
+      const ratio = (performance.now() - start) / Math.max(1, estimateMs);
+      // Soft ceiling: roughly linear, ~98% at the expected duration, then a
+      // slow drift so an overrun still shows visible motion instead of parking.
+      const ceiling = Math.min(0.995, 0.08 + 0.9 * ratio);
+
+      // Scale the walk so its expected pace covers ~95% across the estimate,
+      // whether that is a 9s answer or a 30s deep scan.
+      const pace = Math.min(3, Math.max(0.5, 22_000 / Math.max(1, estimateMs)));
+      const roll = Math.random();
+      let step: number;
+      if (roll < 0.22) {
+        step = 0; // stall — work pauses sometimes
+      } else if (roll < 0.34) {
+        step = (0.035 + Math.random() * 0.045) * pace; // burst — a batch lands at once
+      } else {
+        step = (0.004 + Math.random() * 0.022) * pace; // ordinary irregular tick
+      }
+      const next = Math.min(ceiling, progressRef.current + step);
+      if (next > progressRef.current) {
+        progressRef.current = next;
+        setFraction(next);
+      }
+      timer = window.setTimeout(tick, 140 + Math.random() * 520);
+    };
+
+    timer = window.setTimeout(tick, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [estimateMs]);
+
   const pct = Math.round(fraction * 100);
   const activeStage = Math.min(stages.length - 1, Math.floor(fraction * stages.length));
 
