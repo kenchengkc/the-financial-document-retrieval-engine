@@ -113,7 +113,17 @@ async function mockApi(page: import("@playwright/test").Page) {
           },
         ],
         financial_facts: [],
-        retrieval_gate: { evidence_count: 2, max_score: 0.82, passed: true },
+        retrieval_gate: {
+          evidence_count: 2,
+          max_score: 0.82,
+          passed: true,
+          confidence: 0.92,
+          confidence_components: {
+            top_rerank: 0.82,
+            mean_citation_overlap: 1,
+            weights: { top_rerank: 0.6, citation_overlap: 0.4 },
+          },
+        },
         trace: [
           {
             node: "preprocess_query",
@@ -137,7 +147,7 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
   await expect(page.getByText("Searching indexed SEC filings")).toBeVisible();
-  await expect(page.getByRole("heading", { name: question })).toBeVisible();
+  await expect(page.getByText(question, { exact: true })).toBeVisible();
   await expect(page.locator(".answer").getByText("$26.77 billion", { exact: false })).toBeVisible();
   await expect(page.getByText("META · 10-Q · 2026-04-30")).toBeVisible();
 
@@ -147,14 +157,27 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
   await expect(evidence.nth(1)).not.toHaveAttribute("open", "");
   await expect(page.getByText("preprocess query")).not.toBeVisible();
 
-  // Instrument panel: retrieval funnel, resolved scope, and session telemetry.
-  await expect(page.getByText("Session telemetry")).toBeVisible();
+  // Instrument panel: retrieval funnel, resolved scope, and grounding confidence.
+  await expect(page.getByRole("heading", { name: "Run summary" })).toBeVisible();
   await expect(page.locator(".funnel")).toContainText("Retrieved");
   await expect(page.locator(".funnel")).toContainText("Cited");
   await expect(page.locator(".scope-list")).toContainText("10-Q");
+  await expect(page.getByRole("img", { name: "92 percent retrieval confidence" })).toBeVisible();
 
   await page.getByText("Workflow trace").click();
   await expect(page.getByText("preprocess query")).toBeVisible();
+});
+
+test("runs a flagship question with one click", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /META · earnings Latest quarter/i }).click();
+
+  await expect(page.getByRole("textbox", { name: "Ask a financial filing question" }))
+    .toHaveValue(question);
+  await expect(page.locator(".answer")).toContainText("$26.77 billion");
+  await expect(page.getByRole("img", { name: "92 percent retrieval confidence" })).toBeVisible();
 });
 
 test("labels unsupported forecast requests as no verified answer", async ({ page }) => {
@@ -206,7 +229,9 @@ test("labels unsupported forecast requests as no verified answer", async ({ page
     "FDRE does not forecast securities prices",
   );
   await expect(page.getByText("FDRE abstained")).not.toBeVisible();
-  await expect(page.getByText("No answer")).toBeVisible();
+  await expect(page.getByRole("img", { name: "0 percent retrieval confidence" })).toBeVisible();
+  await expect(page.locator(".funnel")).toContainText("Gate held");
+  await expect(page.getByText("No citations were returned.")).toBeVisible();
 });
 
 test("keeps the earnings result within a mobile viewport", async ({ page }) => {
@@ -215,7 +240,7 @@ test("keeps the earnings result within a mobile viewport", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("textbox", { name: "Ask a financial filing question" }).fill(question);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("heading", { name: question })).toBeVisible();
+  await expect(page.getByText(question, { exact: true })).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,

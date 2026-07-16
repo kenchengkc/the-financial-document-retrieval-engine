@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
@@ -91,6 +92,17 @@ def test_answer_endpoint_returns_and_persists_auditable_answer() -> None:
     assert payload["answer"]
     assert payload["citations"][0]["metadata"]["ticker"] == "AAPL"
     assert payload["evidence"][0]["rerank_score"] is not None
+    expected_confidence = round(
+        0.6 * payload["retrieval_gate"]["max_score"]
+        + 0.4 * payload["citations"][0]["confidence"],
+        4,
+    )
+    assert payload["confidence"] == pytest.approx(expected_confidence)
+    assert payload["retrieval_gate"]["confidence"] == pytest.approx(expected_confidence)
+    assert payload["retrieval_gate"]["confidence_components"]["weights"] == {
+        "top_rerank": 0.6,
+        "citation_overlap": 0.4,
+    }
     assert payload["trace"][-1]["node"] == "finalize_or_abstain"
     with Session(engine) as session:
         run = session.scalar(select(AnswerRun))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from statistics import mean
 from time import perf_counter
 from typing import Any
 
@@ -65,6 +66,15 @@ def answer_question(
         VerifiedCitation.model_validate(citation)
         for citation in state.get("citations", [])
     ]
+    retrieval_gate = dict(state.get("retrieval_gate", {}))
+    confidence = _grounding_confidence(answer, citations, retrieval_gate)
+    if confidence is not None:
+        retrieval_gate["confidence"] = confidence
+        retrieval_gate["confidence_components"] = {
+            "top_rerank": _bounded_score(retrieval_gate.get("max_score")),
+            "mean_citation_overlap": mean(citation.confidence for citation in citations),
+            "weights": {"top_rerank": 0.6, "citation_overlap": 0.4},
+        }
     latency_ms = round((perf_counter() - started) * 1000)
     trace = state.get("trace", [])
     answer_run = AnswerRun(
@@ -72,13 +82,13 @@ def answer_question(
         rewritten_queries_json=state.get("rewritten_queries", []),
         route_json={"routes": state.get("route", [])},
         answer_text=answer.answer_text if answer else None,
-        confidence=answer.confidence if answer else None,
+        confidence=confidence,
         abstained=bool(state.get("should_abstain")),
         abstention_reason=state.get("abstention_reason"),
         latency_ms=latency_ms,
         trace_json={
             "steps": trace,
-            "retrieval_gate": state.get("retrieval_gate", {}),
+            "retrieval_gate": retrieval_gate,
             "errors": state.get("errors", []),
             "financial_facts": state.get("financial_facts", []),
         },
@@ -103,13 +113,13 @@ def answer_question(
         rewritten_queries=state.get("rewritten_queries", []),
         route=state.get("route", []),
         answer=answer.answer_text if answer else None,
-        confidence=answer.confidence if answer else None,
+        confidence=confidence,
         abstained=bool(state.get("should_abstain")),
         abstention_reason=state.get("abstention_reason"),
         evidence=evidence,
         citations=citations,
         financial_facts=state.get("financial_facts", []),
-        retrieval_gate=state.get("retrieval_gate", {}),
+        retrieval_gate=retrieval_gate,
         trace=trace,
         latency_ms=latency_ms,
     )
@@ -121,3 +131,28 @@ def _optional_int(value: object) -> int | None:
 
 def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _grounding_confidence(
+    answer: GeneratedAnswer | None,
+    citations: list[VerifiedCitation],
+    retrieval_gate: dict[str, Any],
+) -> float | None:
+    """Combine ranked relevance with post-generation citation support.
+
+    The generator's selected passage score is not a retrieval confidence: it can
+    be lower than the gate's top hit when a numerically substantive passage is
+    selected for the answer. Keep retrieval relevance dominant and use verified
+    citation overlap as the grounding check.
+    """
+    if answer is None or not retrieval_gate.get("passed") or not citations:
+        return None
+    retrieval_score = _bounded_score(retrieval_gate.get("max_score"))
+    citation_score = mean(citation.confidence for citation in citations)
+    return round(0.6 * retrieval_score + 0.4 * citation_score, 4)
+
+
+def _bounded_score(value: object) -> float:
+    if not isinstance(value, int | float):
+        return 0.0
+    return min(1.0, max(0.0, float(value)))

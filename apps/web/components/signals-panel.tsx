@@ -10,6 +10,7 @@ import {
   FlaskConical,
   HelpCircle,
   LoaderCircle,
+  ShieldCheck,
   TrendingUp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -22,6 +23,8 @@ import type {
   SignalStudyResponse,
   SignalWindow,
 } from "@/lib/types";
+
+import { ExperimentAudit, SignalMonitor } from "./signal-research-views";
 
 const WINDOW_LABELS: Record<string, string> = {
   "0:1": "Filing day",
@@ -301,6 +304,11 @@ function signalLabel(study: SignalStudyResponse) {
   if (study.report.signal_name === "net_share_issuance") {
     return "Share issuance -> returns";
   }
+  if (study.report.signal_name === "filing_lateness") {
+    return outcomeName(study) === "realized_volatility"
+      ? "Filing lateness -> volatility"
+      : "Filing lateness -> returns";
+  }
   return outcomeName(study) === "realized_volatility"
     ? "Disclosure similarity -> volatility"
     : "Disclosure similarity -> returns";
@@ -390,6 +398,24 @@ function studyCopy(study: SignalStudyResponse): StudyCopy {
       ],
     };
   }
+  if (study.report.signal_name === "filing_lateness") {
+    return {
+      headlinePrefix: "Does filing later signal ",
+      headlineAccent: "unresolved operating risk",
+      headlineSuffix: "?",
+      lede:
+        "Each filing is scored by the elapsed days from fiscal period end to public acceptance, using only timestamps known when the filing arrived. The cross-section tests whether slower reporting is associated with weaker benchmark-adjusted returns or higher subsequent volatility.",
+      leftAxis: "← faster reporters",
+      rightAxis: "slower reporters →",
+      note:
+        "Reporting delay is a useful operational-risk feature, but raw delay also reflects filer status, form type, fiscal calendar, and transaction complexity. A production sleeve should neutralize those mechanical deadline effects and validate stability out of sample before assigning a directional interpretation.",
+      desk: [
+        "Exception queue: flag issuers whose delay widens versus their own history, then route them for accounting, control, or transaction review.",
+        "Event-risk sizing: a late filing can raise uncertainty even without a return edge, supporting smaller pre-event exposure or wider risk limits.",
+        "Composite input: combine standardized lateness with language change and risk-factor expansion so no single noisy disclosure feature dominates.",
+      ],
+    };
+  }
   if (
     study.report.signal_name === "risk_factor_expansion" &&
     outcomeName(study) === "realized_volatility"
@@ -408,6 +434,24 @@ function studyCopy(study: SignalStudyResponse): StudyCopy {
         "Position sizing input: forward volatility is the denominator of inverse-vol weighting — names with big net risk-factor expansions get mechanically smaller weights at the next rebalance.",
         "Hedging trigger: predicted volatility without a return edge argues for buying protection (puts, collars) on affected names rather than selling the position.",
         "Vol relative value: a filing-implied vol signal knowable at acceptance is exactly the kind of input options desks compare against implied vol to find rich/cheap protection.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "risk_factor_expansion") {
+    return {
+      headlinePrefix: "Do newly disclosed risks predict ",
+      headlineAccent: "future underperformance",
+      headlineSuffix: "?",
+      lede:
+        "Each filing is compared with its prior point-in-time comparable. The signal is net added Item 1A passages — additions minus removals — measured when the filing became public, then tested against benchmark-adjusted forward returns.",
+      leftAxis: "← fewer added risks",
+      rightAxis: "more added risks →",
+      note:
+        "Risk-factor expansion is partly disclosure behavior and partly real operating change. Boilerplate refreshes, acquisitions, and new regulation can all widen Item 1A without the same economic meaning, so passage-level attribution matters before this becomes a directional sleeve.",
+      desk: [
+        "Change triage: route the largest net additions into the filing-delta workbench and identify the exact new risk language before acting.",
+        "Catalyst map: connect newly disclosed risks with upcoming earnings, litigation, refinancing, or regulatory dates for scenario analysis.",
+        "Risk overlay: use expansion as a sizing or hedge input when it agrees with volatility and fundamental deterioration signals.",
       ],
     };
   }
@@ -631,84 +675,14 @@ function WindowCard({
   );
 }
 
-export function SignalsPanel() {
-  const [studies, setStudies] = useState<SignalStudyResponse[]>([]);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      const result = await fetchSignalStudies();
-      if (active) {
-        setStudies(result);
-        setActiveKey(result[0] ? studyKey(result[0]) : null);
-        setLoading(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="mode-panel">
-        <div className="loading-state" role="status">
-          <LoaderCircle className="spin" size={24} />
-          <div>
-            <h3>Loading the published signal studies</h3>
-            <p>Reading the latest event-study experiments…</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!studies.length) {
-    return (
-      <div className="mode-panel">
-        <div className="notice error" role="alert">
-          <CircleAlert size={19} />
-          <div>
-            <strong>No signal study published yet</strong>
-            <p>Run `retrieval_pipeline signal-study` to compute and publish one.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const study = studies.find((candidate) => studyKey(candidate) === activeKey) ?? studies[0];
+function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
   const report = study.report;
   const copy = studyCopy(study);
   const confidence = report.config.confidence_level ?? 0.95;
   const isVol = outcomeName(study) === "realized_volatility";
+
   return (
-    <div className="mode-panel">
-      {studies.length > 1 && (
-        <div className="sig-tabs" role="tablist" aria-label="Signal studies">
-          {studies.map((candidate) => {
-            const key = studyKey(candidate);
-            const { sig, total } = significantCount(candidate);
-            return (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={key === studyKey(study)}
-                className={key === studyKey(study) ? "on" : undefined}
-                onClick={() => setActiveKey(key)}
-              >
-                <span className="sig-tab-name">{signalLabel(candidate)}</span>
-                <span className={`sig-tab-verdict${sig > 0 ? " has" : ""}`}>
-                  {sig > 0 ? `${sig}/${total} horizons sig` : "no edge"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+    <>
       <div className="panel-intro">
         <p className="eyebrow">Point-in-time signal study</p>
         <h2>
@@ -741,7 +715,6 @@ export function SignalsPanel() {
       </dl>
 
       <SummaryTable results={report.results} isVolatility={isVol} />
-
       <Glossary isVolatility={isVol} />
 
       {report.constituents && report.constituents.length > 0 && (
@@ -762,7 +735,7 @@ export function SignalsPanel() {
 
       {report.components && report.components.length > 0 && (
         <ComponentsPanel
-          windows={report.results.map((w) => w.window)}
+          windows={report.results.map((window) => window.window)}
           components={report.components}
           correlations={report.signal_correlations ?? []}
           neutralization={report.neutralization}
@@ -784,6 +757,148 @@ export function SignalsPanel() {
         experiment {study.experiment_id} · code {study.code_sha.slice(0, 7)} · published{" "}
         {study.created_at.slice(0, 10)}
       </p>
+    </>
+  );
+}
+
+function SignalsModeIntro() {
+  return (
+    <div className="signals-mode-intro">
+      <p className="eyebrow">Event-study backtests</p>
+      <h2>Signals</h2>
+      <p className="panel-lede">
+        Point-in-time filing-behavior signals, tested as event studies with leakage-safe panels.
+      </p>
+    </div>
+  );
+}
+
+export function SignalsPanel() {
+  const [studies, setStudies] = useState<SignalStudyResponse[]>([]);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [view, setView] = useState<"study" | "monitor" | "audit">("study");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const result = await fetchSignalStudies();
+      if (active) {
+        setStudies(result);
+        setActiveKey(result[0] ? studyKey(result[0]) : null);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mode-panel">
+        <SignalsModeIntro />
+        <div className="loading-state" role="status">
+          <LoaderCircle className="spin" size={24} />
+          <div>
+            <h3>Loading the published signal studies</h3>
+            <p>Reading the latest event-study experiments…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!studies.length) {
+    return (
+      <div className="mode-panel">
+        <SignalsModeIntro />
+        <div className="notice error" role="alert">
+          <CircleAlert size={19} />
+          <div>
+            <strong>No signal study published yet</strong>
+            <p>Run `retrieval_pipeline signal-study` to compute and publish one.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const study = studies.find((candidate) => studyKey(candidate) === activeKey) ?? studies[0];
+  return (
+    <div className="mode-panel">
+      <div className="signals-topline">
+        <SignalsModeIntro />
+        <div className="signal-view-switch" role="tablist" aria-label="Signal workspace views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "study"}
+            className={view === "study" ? "on" : undefined}
+            onClick={() => setView("study")}
+          >
+            <FlaskConical size={14} aria-hidden="true" /> Study
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "monitor"}
+            className={view === "monitor" ? "on" : undefined}
+            onClick={() => setView("monitor")}
+          >
+            <TrendingUp size={14} aria-hidden="true" /> Monitor
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "audit"}
+            className={view === "audit" ? "on" : undefined}
+            onClick={() => setView("audit")}
+          >
+            <ShieldCheck size={14} aria-hidden="true" /> Audit
+          </button>
+        </div>
+      </div>
+      {view === "monitor" ? (
+        <SignalMonitor
+          studies={studies}
+          onOpenStudy={(candidate) => {
+            setActiveKey(studyKey(candidate));
+            setView("study");
+          }}
+        />
+      ) : (
+        <>
+          {studies.length > 1 && (
+            <div className="sig-tabs" role="tablist" aria-label="Signal studies">
+              {studies.map((candidate) => {
+                const key = studyKey(candidate);
+                const { sig, total } = significantCount(candidate);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={key === studyKey(study)}
+                    className={key === studyKey(study) ? "on" : undefined}
+                    onClick={() => setActiveKey(key)}
+                  >
+                    <span className="sig-tab-name">{signalLabel(candidate)}</span>
+                    <span className={`sig-tab-verdict${sig > 0 ? " has" : ""}`}>
+                      {sig > 0 ? `${sig}/${total} horizons sig` : "no edge"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {view === "audit" ? (
+            <ExperimentAudit study={study} />
+          ) : (
+            <SignalStudyDetail study={study} />
+          )}
+        </>
+      )}
     </div>
   );
 }

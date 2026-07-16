@@ -173,6 +173,7 @@ def parse_args() -> argparse.Namespace:
         choices=(
             "disclosure_similarity",
             "risk_factor_expansion",
+            "filing_lateness",
             "earnings_quality",
             "asset_growth",
             "net_share_issuance",
@@ -1075,6 +1076,8 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
 def _signal_panel_features(signal_name: str) -> list[PanelFeature]:
     if signal_name == "risk_factor_expansion":
         return ["risk_changes"]
+    if signal_name == "filing_lateness":
+        return ["filing_timing"]
     return ["disclosure_similarity"]
 
 
@@ -1083,6 +1086,12 @@ def _signal_feature_value(row: Any, signal_name: str) -> float | None:
         if row.risk_added_passages is None and row.risk_removed_passages is None:
             return None
         return float((row.risk_added_passages or 0) - (row.risk_removed_passages or 0))
+    if signal_name == "filing_lateness":
+        return (
+            float(row.filing_delay_days)
+            if row.filing_delay_days is not None
+            else None
+        )
     return cast(float | None, row.disclosure_similarity)
 
 

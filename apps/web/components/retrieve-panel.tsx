@@ -2,9 +2,13 @@
 
 import {
   ArrowRight,
+  Braces,
   CalendarClock,
   CircleAlert,
+  FileDiff,
+  Layers3,
   LoaderCircle,
+  Search,
   SlidersHorizontal,
 } from "lucide-react";
 import { FormEvent, useState } from "react";
@@ -19,8 +23,17 @@ import {
   rankDeltas,
   type SessionRun,
 } from "./instruments";
+import { RetrieveResearchTool } from "./retrieve-research-tool";
 
 const FORM_OPTIONS = ["10-K", "10-Q", "8-K"];
+type RetrieveTool = "search" | "delta" | "facts" | "panel";
+
+const RETRIEVE_TOOLS = [
+  { id: "search" as const, label: "Passage search", icon: Search },
+  { id: "delta" as const, label: "Filing delta", icon: FileDiff },
+  { id: "facts" as const, label: "Fact tape", icon: Braces },
+  { id: "panel" as const, label: "Panel export", icon: Layers3 },
+];
 
 function splitList(value: string): string[] {
   return value
@@ -30,10 +43,11 @@ function splitList(value: string): string[] {
 }
 
 export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
+  const [tool, setTool] = useState<RetrieveTool>("search");
   const [query, setQuery] = useState("");
   const [tickers, setTickers] = useState("");
   const [sections, setSections] = useState("");
-  const [forms, setForms] = useState<string[]>([]);
+  const [forms, setForms] = useState<string[]>(["10-K"]);
   const [asOf, setAsOf] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchResponse | null>(null);
@@ -79,130 +93,159 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Point-in-time RAG retrieval</p>
-        <h2>Hybrid RAG search with a knowable-as-of boundary</h2>
+        <p className="eyebrow">Hybrid search, point-in-time</p>
+        <h2>Retrieve</h2>
         <p className="panel-lede">
-          Dense vectors, lexical search, reranking, and citation-aware metadata over SEC filings.
-          Set an as-of date to constrain evidence to what was public on that day.
+          Dense + lexical search over every indexed filing, scoped by issuer, form and as-of date.
         </p>
       </div>
 
-      <form className="retrieve-form" onSubmit={submit}>
-        <div className="rf-query">
-          <SlidersHorizontal size={18} aria-hidden="true" />
-          <input
-            aria-label="Search query"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="e.g. data center capital expenditure commitments"
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}
-            {loading ? "Retrieving" : "Retrieve"}
-          </button>
-        </div>
+      <div className="retrieve-tools" role="tablist" aria-label="Retrieval research tools">
+        {RETRIEVE_TOOLS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tool === item.id}
+              className={tool === item.id ? "on" : undefined}
+              onClick={() => setTool(item.id)}
+            >
+              <Icon size={15} aria-hidden="true" />
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
 
-        <div className="rf-controls">
-          <label className="rf-field">
-            <span>Tickers</span>
-            <input
-              value={tickers}
-              onChange={(event) => setTickers(event.target.value)}
-              placeholder="AAPL, MSFT"
-            />
-          </label>
-          <label className="rf-field">
-            <span>Section contains</span>
-            <input
-              value={sections}
-              onChange={(event) => setSections(event.target.value)}
-              placeholder="Risk Factors"
-            />
-          </label>
-          <label className="rf-field rf-asof">
-            <span>
-              <CalendarClock size={12} aria-hidden="true" /> As-of date
-            </span>
-            <input
-              type="date"
-              value={asOf}
-              onChange={(event) => setAsOf(event.target.value)}
-            />
-          </label>
-          <div className="rf-field rf-forms">
-            <span>Form type</span>
-            <div className="rf-chips">
-              {FORM_OPTIONS.map((form) => (
-                <button
-                  key={form}
-                  type="button"
-                  className={forms.includes(form) ? "on" : undefined}
-                  onClick={() => toggleForm(form)}
-                >
-                  {form}
-                </button>
-              ))}
+      {tool === "search" ? (
+        <>
+          <form className="retrieve-form" onSubmit={submit}>
+            <div className="rf-query">
+              <SlidersHorizontal size={18} aria-hidden="true" />
+              <input
+                aria-label="Search query"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search filings — data center capacity constraints…"
+              />
+              <button type="submit" disabled={loading}>
+                {loading ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <ArrowRight size={16} />
+                )}
+                {loading ? "Retrieving" : "Retrieve"}
+              </button>
             </div>
-          </div>
-        </div>
-      </form>
 
-      {error && (
-        <div className="notice error" role="alert">
-          <CircleAlert size={19} />
-          <div>
-            <strong>Search failed</strong>
-            <p>{error}</p>
-          </div>
-        </div>
-      )}
+            <div className="rf-controls">
+              <label className="rf-field">
+                <span>Tickers</span>
+                <input
+                  value={tickers}
+                  onChange={(event) => setTickers(event.target.value)}
+                  placeholder="AAPL, MSFT"
+                />
+              </label>
+              <label className="rf-field">
+                <span>Section contains</span>
+                <input
+                  value={sections}
+                  onChange={(event) => setSections(event.target.value)}
+                  placeholder="Risk Factors"
+                />
+              </label>
+              <label className="rf-field rf-asof">
+                <span>
+                  <CalendarClock size={12} aria-hidden="true" /> As-of date
+                </span>
+                <input
+                  type="date"
+                  value={asOf}
+                  onChange={(event) => setAsOf(event.target.value)}
+                />
+              </label>
+              <div className="rf-field rf-forms">
+                <span>Form type</span>
+                <div className="rf-chips">
+                  {FORM_OPTIONS.map((form) => (
+                    <button
+                      key={form}
+                      type="button"
+                      className={forms.includes(form) ? "on" : undefined}
+                      onClick={() => toggleForm(form)}
+                    >
+                      {form}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </form>
 
-      {result && (
-        <div className="retrieve-results">
-          <div className="rr-summary">
-            <span>
-              <strong>{result.results.length}</strong> ranked passages
-            </span>
-            <span>{formatLatency(result.latency_ms)}</span>
-            <span className={asOf ? "pit-on" : "pit-off"}>
-              <CalendarClock size={13} aria-hidden="true" />
-              {asOf ? `Knowable as of ${asOf}` : "Latest available"}
-            </span>
-          </div>
-          {result.results.length === 0 ? (
-            <p className="muted">No passages matched these filters.</p>
-          ) : (
-            (() => {
-              const deltas = rankDeltas(result.results);
-              return (
-                <>
-                  <ResultAnalysis candidates={result.results} />
-                  <div className="evidence-list">
-                    {result.results.map((candidate, index) => (
-                      <EvidenceCard
-                        key={candidate.chunk_id}
-                        candidate={candidate}
-                        index={index}
-                        defaultOpen={index === 0}
-                        rankDelta={deltas.get(candidate.chunk_id)}
-                      />
-                    ))}
-                  </div>
-                </>
-              );
-            })()
+          {error && (
+            <div className="notice error" role="alert">
+              <CircleAlert size={19} />
+              <div>
+                <strong>Search failed</strong>
+                <p>{error}</p>
+              </div>
+            </div>
           )}
-        </div>
-      )}
 
-      {!result && !error && !loading && (
-        <div className="empty-state compact">
-          <CalendarClock size={26} />
-          <h3>Run a point-in-time retrieval</h3>
-          <p>
-            Try the same query with and without an as-of date to see lookahead evidence drop out.
-          </p>
-        </div>
+          {result && (
+            <div className="retrieve-results">
+              <div className="rr-summary">
+                <span>
+                  <strong>{result.results.length}</strong> ranked passages
+                </span>
+                <span>{formatLatency(result.latency_ms)}</span>
+                <span className={asOf ? "pit-on" : "pit-off"}>
+                  <CalendarClock size={13} aria-hidden="true" />
+                  {asOf ? `Knowable as of ${asOf}` : "Latest available"}
+                </span>
+              </div>
+              {result.results.length === 0 ? (
+                <p className="muted">No passages matched these filters.</p>
+              ) : (
+                (() => {
+                  const deltas = rankDeltas(result.results);
+                  return (
+                    <>
+                      <ResultAnalysis candidates={result.results} />
+                      <div className="evidence-list">
+                        {result.results.map((candidate, index) => (
+                          <EvidenceCard
+                            key={candidate.chunk_id}
+                            candidate={candidate}
+                            index={index}
+                            defaultOpen={index === 0}
+                            rankDelta={deltas.get(candidate.chunk_id)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()
+              )}
+            </div>
+          )}
+
+          {!result && !error && !loading && (
+            <div className="empty-state compact">
+              <CalendarClock size={26} />
+              <h3>Run a point-in-time retrieval</h3>
+              <p>
+                Try the same query with and without an as-of date to see lookahead evidence drop
+                out.
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        <RetrieveResearchTool tool={tool} />
       )}
     </div>
   );

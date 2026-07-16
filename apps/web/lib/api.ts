@@ -1,8 +1,12 @@
 import type {
   AnswerResponse,
+  CanonicalMetric,
   CompaniesResponse,
   CoverageResponse,
+  FilingDifference,
+  FinancialFactsResponse,
   OperationsQuality,
+  ResearchPanel,
   SearchFilters,
   SearchResponse,
   SignalStudiesResponse,
@@ -98,6 +102,20 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+function withQuery(path: string, values: Record<string, string | number | boolean | string[] | null | undefined>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      for (const item of value) params.append(key, item);
+    } else {
+      params.set(key, String(value));
+    }
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 export function runSearch(
   query: string,
   filters: SearchFilters,
@@ -124,6 +142,88 @@ export function fetchCompanies(): Promise<CompaniesResponse> {
 
 export function fetchOperationsQuality(): Promise<OperationsQuality> {
   return getJson<OperationsQuality>("/operations/quality");
+}
+
+export function fetchFilingDifference(
+  accessionNumber: string,
+  asOf?: string,
+): Promise<FilingDifference> {
+  const path = withQuery(
+    `/research/filing-differences/${encodeURIComponent(accessionNumber)}`,
+    { as_of: asOf ? `${asOf}T23:59:59+00:00` : undefined },
+  );
+  return getJson<FilingDifference>(path);
+}
+
+export function fetchFinancialFacts(options: {
+  tickers: string[];
+  metrics: CanonicalMetric[];
+  asOf?: string;
+  restatementPolicy: "latest" | "as_reported" | "all";
+  limit?: number;
+}): Promise<FinancialFactsResponse> {
+  return getJson<FinancialFactsResponse>(
+    withQuery("/research/facts", {
+      tickers: options.tickers,
+      metrics: options.metrics,
+      as_of: options.asOf ? `${options.asOf}T23:59:59+00:00` : undefined,
+      restatement_policy: options.restatementPolicy,
+      limit: options.limit ?? 100,
+    }),
+  );
+}
+
+export type ResearchPanelOptions = {
+  tickers: string[];
+  formTypes: string[];
+  periodEndFrom?: string;
+  periodEndTo?: string;
+  asOf?: string;
+  includeAmendments?: boolean;
+  limit?: number;
+};
+
+function panelPath(path: string, options: ResearchPanelOptions, outputFormat?: string) {
+  return withQuery(path, {
+    tickers: options.tickers,
+    form_types: options.formTypes,
+    period_end_from: options.periodEndFrom,
+    period_end_to: options.periodEndTo,
+    as_of: options.asOf ? `${options.asOf}T23:59:59+00:00` : undefined,
+    include_amendments: options.includeAmendments ?? false,
+    output_format: outputFormat,
+    limit: options.limit ?? 250,
+  });
+}
+
+export function fetchResearchPanel(options: ResearchPanelOptions): Promise<ResearchPanel> {
+  return getJson<ResearchPanel>(panelPath("/research/panel", options));
+}
+
+export async function downloadResearchPanel(
+  options: ResearchPanelOptions,
+  outputFormat: "csv" | "json" | "parquet",
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${panelPath("/research/panel/export", options, outputFormat)}`);
+  } catch {
+    throw new Error(
+      "The data service is temporarily unavailable. Please try again in a moment.",
+    );
+  }
+  if (!response.ok) throw new Error(await parseError(response));
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? `fdre-panel.${outputFormat}`;
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 0);
 }
 
 export async function fetchSignalStudy(): Promise<SignalStudyResponse | null> {

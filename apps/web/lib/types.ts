@@ -142,8 +142,20 @@ export type SignalStudyResponse = {
     signal_name: string;
     outcome_name?: string;
     n_quantiles: number;
+    dataset_version?: string;
+    feature_version?: string;
+    code_sha?: string;
     event_count: number;
-    config: { benchmark_ticker?: string; confidence_level?: number };
+    config: {
+      benchmark_ticker?: string;
+      confidence_level?: number;
+      bootstrap_iterations?: number;
+      random_seed?: number;
+      market_timezone?: string;
+      market_close?: string;
+      walk_forward_splits?: string[];
+      windows?: Array<{ start: number; end: number; label: string }>;
+    };
     results: SignalWindow[];
     component_signals?: string[];
     components?: ComponentResult[];
@@ -155,6 +167,107 @@ export type SignalStudyResponse = {
 
 export type SignalStudiesResponse = {
   studies: SignalStudyResponse[];
+};
+
+export type FilingPassageChange = {
+  change_type: "added" | "removed" | "materially_changed";
+  section: string;
+  before_text: string | null;
+  after_text: string | null;
+  before_fingerprint: string | null;
+  after_fingerprint: string | null;
+  similarity: number | null;
+};
+
+export type FilingDifference = {
+  company_ticker: string;
+  current_accession: string;
+  previous_accession: string;
+  current_available_at: string | null;
+  previous_available_at: string | null;
+  comparison_basis: string;
+  changes: FilingPassageChange[];
+  added_count: number;
+  removed_count: number;
+  materially_changed_count: number;
+};
+
+export type CanonicalMetric =
+  | "revenue"
+  | "operating_income"
+  | "net_income"
+  | "eps"
+  | "cash"
+  | "debt"
+  | "shares"
+  | "capex"
+  | "operating_cash_flow";
+
+export type FinancialFact = {
+  ticker: string;
+  canonical_metric: CanonicalMetric;
+  concept: string;
+  label: string | null;
+  value: string;
+  unit: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  period_type: string | null;
+  fiscal_year: number | null;
+  fiscal_period: string | null;
+  form_type: string | null;
+  accession_number: string;
+  filed_at: string | null;
+  available_at: string | null;
+  is_amendment: boolean;
+  is_restatement: boolean;
+  source_url: string | null;
+  narrative_evidence: {
+    accession_number: string;
+    section: string | null;
+    quote: string;
+    ticker: string | null;
+  } | null;
+};
+
+export type FinancialFactsResponse = {
+  query: Record<string, unknown>;
+  facts: FinancialFact[];
+};
+
+export type ResearchPanelRow = {
+  ticker: string;
+  cik: string;
+  accession_number: string;
+  form_type: string;
+  period_end: string | null;
+  accepted_at: string | null;
+  available_at: string;
+  is_amendment: boolean;
+  filing_length_tokens: number | null;
+  disclosure_similarity: number | null;
+  risk_added_passages: number | null;
+  risk_removed_passages: number | null;
+  table_density: number | null;
+  numeric_density: number | null;
+  filing_delay_days: number | null;
+  revenue_growth: number | null;
+  operating_margin: number | null;
+  net_margin: number | null;
+  capex_to_revenue: number | null;
+  operating_cash_flow_to_revenue: number | null;
+  source_accessions: string[];
+  feature_provenance: Record<string, string[]>;
+  calculation_version: string;
+  corpus_snapshot_id: string;
+  max_source_available_at: string;
+};
+
+export type ResearchPanel = {
+  query: Record<string, unknown>;
+  feature_version: string;
+  corpus_snapshot_id: string;
+  rows: ResearchPanelRow[];
 };
 
 export type UnchunkedDocument = {

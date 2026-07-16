@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Libre_Franklin, Newsreader, Public_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import "./research-console.css";
 
 const newsreader = Newsreader({
   subsets: ["latin"],

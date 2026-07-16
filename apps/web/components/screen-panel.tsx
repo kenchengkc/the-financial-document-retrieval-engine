@@ -80,11 +80,11 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Cross-sectional scan</p>
-        <h2>One theme, diversified across issuers</h2>
+        <p className="eyebrow">Cross-sectional theme scan</p>
+        <h2>Screen</h2>
         <p className="panel-lede">
-          Retrieve the strongest passage per company for a research theme, capped to one hit per
-          issuer so a single filer cannot dominate the result set.
+          Scan the whole universe for a theme and rank issuers by the strength of their disclosure
+          evidence.
         </p>
       </div>
 

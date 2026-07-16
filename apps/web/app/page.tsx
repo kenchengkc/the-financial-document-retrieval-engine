@@ -3,16 +3,12 @@
 import {
   Activity,
   ArrowRight,
-  ArrowUpRight,
-  Building2,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
   Database,
   FileText,
   Filter,
-  GaugeCircle,
   Layers,
   LineChart,
   LoaderCircle,
@@ -23,21 +19,18 @@ import {
   ShieldCheck,
   Timer,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 
-import { LandingHero } from "@/components/landing-hero";
-import { OperationsPanel } from "@/components/operations-panel";
+import { DataFoundation } from "@/components/data-foundation";
 import { RetrievePanel } from "@/components/retrieve-panel";
 import { ScanProgress } from "@/components/scan-progress";
 import { ScreenPanel } from "@/components/screen-panel";
 import { SignalsPanel } from "@/components/signals-panel";
-import { UniversePanel } from "@/components/universe-panel";
 import {
   ConfidenceRing,
   EvidenceCard,
   ResultAnalysis,
   RetrievalFunnel,
-  SessionTelemetry,
   formatLatency,
   metadataValue,
   rankDeltas,
@@ -45,7 +38,7 @@ import {
   traceCount,
   type SessionRun,
 } from "@/components/instruments";
-import { askQuestion, checkHealth } from "@/lib/api";
+import { askQuestion } from "@/lib/api";
 import type { AnswerResponse } from "@/lib/types";
 
 const exampleChips = [
@@ -67,15 +60,21 @@ const exampleChips = [
   },
 ];
 
-type ModeId = "ask" | "retrieve" | "screen" | "signals" | "universe" | "operations";
+type ModeId = "ask" | "retrieve" | "screen" | "signals";
 
 const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] = [
-  { id: "ask", label: "Ask", hint: "Cited answers", icon: MessageSquareText },
-  { id: "retrieve", label: "Retrieve", hint: "Hybrid RAG search", icon: CalendarClock },
-  { id: "screen", label: "Screen", hint: "Cross-sectional scan", icon: ScanSearch },
-  { id: "signals", label: "Signals", hint: "Event-study backtest", icon: LineChart },
-  { id: "universe", label: "Universe", hint: "Coverage explorer", icon: Building2 },
-  { id: "operations", label: "Operations", hint: "Data quality", icon: GaugeCircle },
+  { id: "ask", label: "Ask", hint: "Cited answers from filings", icon: MessageSquareText },
+  { id: "retrieve", label: "Retrieve", hint: "Hybrid search, point-in-time", icon: Search },
+  { id: "screen", label: "Screen", hint: "Cross-sectional theme scan", icon: ScanSearch },
+  { id: "signals", label: "Signals", hint: "Event-study backtests", icon: LineChart },
+];
+
+const STACK_STEPS = [
+  { title: "Route", detail: "Issuer & date-aware query routing" },
+  { title: "Retrieve", detail: "Dense + lexical SEC retrieval" },
+  { title: "Rerank", detail: "Cross-encoder evidence gate" },
+  { title: "Verify", detail: "Citation check before answering" },
+  { title: "Study", detail: "Point-in-time panels & signals" },
 ];
 
 export default function Home() {
@@ -85,22 +84,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [answerMs, setAnswerMs] = useState(9_000);
-  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
-  const questionRef = useRef<HTMLInputElement | null>(null);
-  const consoleRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      setApiOnline(await checkHealth());
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (loading || result || error) {
-      consoleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [loading, result, error]);
 
   function pushRun(run: SessionRun) {
     setHistory((previous) => [...previous, run]);
@@ -108,29 +92,24 @@ export default function Home() {
 
   function selectMode(next: ModeId) {
     setMode(next);
-    if (next !== "ask") {
-      window.requestAnimationFrame(() =>
-        consoleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      );
-    }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!question.trim() || loading) return;
+  async function runQuestion(nextQuestion: string) {
+    const normalizedQuestion = nextQuestion.trim();
+    if (!normalizedQuestion || loading) return;
+    setQuestion(normalizedQuestion);
     setMode("ask");
     setLoading(true);
     setResult(null);
     setError(null);
     const startedAt = performance.now();
     try {
-      const response = await askQuestion(question.trim());
+      const response = await askQuestion(normalizedQuestion);
       const observed = performance.now() - startedAt;
       setAnswerMs((prev) =>
         Math.min(45_000, Math.max(2_500, Math.round(prev * 0.4 + observed * 0.6))),
       );
       setResult(response);
-      setApiOnline(true);
       pushRun({
         mode: "ask",
         latencyMs: response.latency_ms,
@@ -141,11 +120,15 @@ export default function Home() {
       });
     } catch (cause) {
       setResult(null);
-      setApiOnline(false);
       setError(cause instanceof Error ? cause.message : "The request failed.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void runQuestion(question);
   }
 
   const citedChunkIds = new Set(result?.citations.map((citation) => citation.chunk_id) ?? []);
@@ -178,23 +161,16 @@ export default function Home() {
   const scope = result ? resolvedScope(result.trace) : null;
 
   return (
-    <div className="site-shell">
-      <LandingHero
-        apiOnline={apiOnline}
-        onExplore={() => {
-          setMode("ask");
-          window.requestAnimationFrame(() =>
-            consoleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-          );
-        }}
-      />
+    <div className="site-shell research-shell">
+      <main className="research-main">
+        <header className="console-title">
+          <p className="eyebrow">Research console</p>
+          <h1>One engine, four ways in</h1>
+        </header>
 
-      <main>
-        {history.length > 0 && <SessionTelemetry runs={history} />}
-
-        <div className="console" ref={consoleRef}>
-          <div className="console-rail" role="tablist" aria-label="Research modes">
-            {MODES.map((item) => {
+        <section className="console research-console">
+          <div className="console-rail mode-switcher" role="tablist" aria-label="Research modes">
+            {MODES.map((item, index) => {
               const Icon = item.icon;
               return (
                 <button
@@ -202,41 +178,51 @@ export default function Home() {
                   type="button"
                   role="tab"
                   aria-selected={mode === item.id}
-                  className={`console-tab${mode === item.id ? " on" : ""}`}
+                  className={`console-tab mode-tab${mode === item.id ? " on" : ""}`}
                   onClick={() => selectMode(item.id)}
                 >
-                  <Icon size={17} aria-hidden="true" />
-                  <span>
+                  <span className="mode-icon">
+                    <Icon size={17} aria-hidden="true" />
+                  </span>
+                  <span className="mode-copy">
                     <strong>{item.label}</strong>
                     <small>{item.hint}</small>
                   </span>
+                  <kbd aria-hidden="true">{index + 1}</kbd>
                 </button>
               );
             })}
           </div>
 
-          <div className="console-body">
+          <div className="console-body research-console-body" role="tabpanel">
             {mode === "ask" && (
-              <>
-                <form className="hd-search console-search" onSubmit={submit}>
+              <div className="mode-panel ask-mode">
+                <div className="panel-intro ask-intro">
+                  <p className="eyebrow">Cited answers from filings</p>
+                  <h2>Ask</h2>
+                  <p className="panel-lede">
+                    Ask a question in plain language. FDRE retrieves, reranks, verifies citations —
+                    and declines when the filings do not support an answer.
+                  </p>
+                </div>
+                <form className="hd-search research-query console-search" onSubmit={submit}>
                   <Search size={20} aria-hidden="true" />
                   <label className="sr-only" htmlFor="question">
                     Ask a financial filing question
                   </label>
                   <input
                     id="question"
-                    ref={questionRef}
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
-                    placeholder="Ask about a filing, table, risk factor, or financial fact…"
+                    placeholder="What did META report for earnings last quarter?"
                   />
-                  <button className="go" type="submit" disabled={loading}>
+                  <button className="go" type="submit" disabled={loading} aria-label="Search">
                     {loading ? (
                       <LoaderCircle className="spin" size={17} />
                     ) : (
                       <ArrowRight size={17} strokeWidth={1.8} />
                     )}
-                    {loading ? "Retrieving" : "Search"}
+                    {loading ? "Retrieving" : "Ask"}
                   </button>
                 </form>
                 <div className="hd-chips console-chips" aria-label="Example questions">
@@ -245,9 +231,9 @@ export default function Home() {
                       key={chip.tag}
                       type="button"
                       className={`hd-chip${chip.abstain ? " ab" : ""}`}
+                      disabled={loading}
                       onClick={() => {
-                        setQuestion(chip.question);
-                        questionRef.current?.focus();
+                        void runQuestion(chip.question);
                       }}
                     >
                       <span className="k">{chip.tag}</span>
@@ -268,40 +254,44 @@ export default function Home() {
                   primaryForm={primaryForm}
                   primaryDate={primaryDate}
                 />
-              </>
+              </div>
             )}
             {mode === "retrieve" && <RetrievePanel onRun={pushRun} />}
             {mode === "screen" && <ScreenPanel onRun={pushRun} />}
             {mode === "signals" && <SignalsPanel />}
-            {mode === "universe" && <UniversePanel />}
-            {mode === "operations" && <OperationsPanel />}
           </div>
-        </div>
+        </section>
 
-        <section className="architecture">
-          <div>
-            <p className="eyebrow">RAG search stack</p>
-            <h2>Ground retrieval before generation</h2>
+        <DataFoundation runs={history} />
+
+        <section className="research-stack" aria-labelledby="research-stack-title">
+          <div className="stack-heading">
+            <div>
+              <p className="eyebrow">RAG search stack</p>
+              <h2 id="research-stack-title">Ground retrieval before generation</h2>
+            </div>
             <p>
-              FDRE resolves issuers and dates, searches dense and lexical indexes, reranks
-              evidence, verifies citations, and declines unsupported requests.
+              FDRE resolves issuers and dates, searches dense and lexical indexes, reranks evidence,
+              verifies citations, and declines unsupported requests.
             </p>
           </div>
-          <ol>
-            <li>Issuer and date-aware query routing</li>
-            <li>Dense plus lexical SEC retrieval</li>
-            <li>Rerank and evidence-gate candidates</li>
-            <li>Citation verification before answers</li>
-            <li>Point-in-time panels and signal studies</li>
+          <ol className="stack-steps">
+            {STACK_STEPS.map((step, index) => (
+              <li key={step.title}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{step.title}</strong>
+                <small>{step.detail}</small>
+              </li>
+            ))}
           </ol>
-          <a
-            href="https://github.com/kenchengkc/the-financial-document-retrieval-engine#architecture"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Architecture <ArrowUpRight size={15} />
-          </a>
         </section>
+
+        <footer className="research-footer">
+          <span>FDRE — Financial Document Retrieval Engine</span>
+          <span>
+            <span className="foundation-live" aria-hidden="true" /> SEC research infrastructure
+          </span>
+        </footer>
       </main>
     </div>
   );
@@ -346,6 +336,9 @@ function AskWorkspace({
     displayEvidence.every((c) => c.metadata.section === firstEvidence.metadata.section)
       ? metadataValue(firstEvidence.metadata.section, "") || null
       : null;
+  const displayedConfidence = Number(
+    result?.retrieval_gate.confidence ?? result?.confidence ?? 0,
+  );
   return (
     <div aria-live="polite">
       {error && (
@@ -360,15 +353,14 @@ function AskWorkspace({
 
       <div className={`result-grid${result ? " has-result" : ""}`}>
         <section className="result-column">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">{result ? "Research answer" : "Ask workspace"}</p>
-              <h2>
-                {result ? result.question : loading ? "Retrieving evidence" : "Ready for a query"}
-              </h2>
+          {!result && (
+            <div className="section-heading workspace-heading">
+              <div>
+                <p className="eyebrow">Ask workspace</p>
+                <h2>{loading ? "Retrieving evidence" : "Ready for a query"}</h2>
+              </div>
             </div>
-            {result && <span className="run-id">Run {result.answer_run_id}</span>}
-          </div>
+          )}
 
           {loading && (
             <div className="loading-state" role="status">
@@ -407,8 +399,9 @@ function AskWorkspace({
               <div className="answer-meta">
                 <CheckCircle2 size={17} />
                 <span>Citation verified</span>
-                <span>{Math.round((result.confidence ?? 0) * 100)}% retrieval confidence</span>
+                <span>· {formatLatency(result.latency_ms)}</span>
               </div>
+              <p className="answer-question">{result.question}</p>
               <p>{result.answer}</p>
               <footer>
                 <span>
@@ -419,6 +412,7 @@ function AskWorkspace({
                   <Timer size={14} aria-hidden="true" />
                   {formatLatency(result.latency_ms)}
                 </span>
+                <span className="answer-run">run_{result.answer_run_id}</span>
               </footer>
             </div>
           )}
@@ -426,10 +420,7 @@ function AskWorkspace({
           {result && (
             <>
               <div className="section-heading evidence-title">
-                <div>
-                  <p className="eyebrow">Primary sources</p>
-                  <h2>Sources supporting this answer</h2>
-                </div>
+                <p className="eyebrow">Primary sources</p>
                 <span>
                   {result.evidence.length} sources
                   {commonTicker ? ` · ${commonTicker}` : ""}
@@ -467,8 +458,11 @@ function AskWorkspace({
                 <h2>Run summary</h2>
               </div>
               <div className="run-dash">
-                <div className="conf-block">
-                  <ConfidenceRing value={result.confidence ?? 0} />
+                <div
+                  className="conf-block"
+                  title="60% top rerank relevance + 40% verified citation support"
+                >
+                  <ConfidenceRing value={displayedConfidence} />
                   <span className="conf-caption">retrieval confidence</span>
                 </div>
                 <dl className="run-stats">
