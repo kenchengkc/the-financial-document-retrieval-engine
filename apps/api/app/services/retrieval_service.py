@@ -11,7 +11,11 @@ from apps.api.app.models import RetrievalResult, RetrievalRun
 from fdre.indexing.embeddings import embedding_provider_from_settings
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
-from fdre.retrieval.preprocess import load_company_references, preprocess_query
+from fdre.retrieval.preprocess import (
+    apply_latest_filing_filter,
+    load_company_references,
+    preprocess_query,
+)
 from fdre.retrieval.query import PreprocessedQuery, RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
@@ -35,10 +39,14 @@ def search_documents(
     top_k: int,
 ) -> SearchServiceResult:
     started = perf_counter()
-    preprocessed = preprocess_query(
+    preprocessed = apply_latest_filing_filter(
+        session,
         query,
-        companies=load_company_references(session),
-        filters=filters,
+        preprocess_query(
+            query,
+            companies=load_company_references(session),
+            filters=filters,
+        ),
     )
     preprocess_done = perf_counter()
     provider = embedding_provider_from_settings(settings)

@@ -24,7 +24,7 @@ from apps.api.app.schemas.answer import AnswerResponse
 
 # Bump when the answer pipeline logic changes in a way that should invalidate
 # previously cached answers but isn't captured by a settings value below.
-_PIPELINE_VERSION = "2"
+_PIPELINE_VERSION = "3"
 
 
 def answer_cache_key(question: str, settings: Settings) -> str:

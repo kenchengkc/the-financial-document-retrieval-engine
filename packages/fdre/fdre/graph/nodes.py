@@ -15,7 +15,11 @@ from fdre.research.financial_facts import FinancialFactQuery, query_financial_fa
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.neighbors import expand_with_neighbors
-from fdre.retrieval.preprocess import load_company_references, preprocess_query
+from fdre.retrieval.preprocess import (
+    apply_latest_filing_filter,
+    load_company_references,
+    preprocess_query,
+)
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
@@ -129,9 +133,13 @@ class WorkflowContext:
 
 
 def preprocess_query_node(context: WorkflowContext, state: AgentState) -> AgentState:
-    result = preprocess_query(
+    result = apply_latest_filing_filter(
+        context.session,
         state["user_query"],
-        companies=load_company_references(context.session),
+        preprocess_query(
+            state["user_query"],
+            companies=load_company_references(context.session),
+        ),
     )
     return {
         "rewritten_queries": result.rewritten_queries,

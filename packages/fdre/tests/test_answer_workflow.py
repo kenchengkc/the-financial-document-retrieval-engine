@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
@@ -175,6 +175,71 @@ def test_answer_workflow_returns_verified_citations_and_trace() -> None:
         "verify_citations",
         "finalize_or_abstain",
     ]
+
+
+def test_latest_query_only_retrieves_the_newest_indexed_filing() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed(session)
+        company = session.scalar(select(Company).where(Company.ticker == "AAPL"))
+        assert company is not None
+        older_document = Document(
+            company=company,
+            source_type="sec",
+            form_type="10-K",
+            filing_date=date(2024, 11, 1),
+            accepted_at=datetime(2024, 11, 1, 6, tzinfo=UTC),
+            available_at=datetime(2024, 11, 1, 6, tzinfo=UTC),
+            accession_number="0000320193-24-000123",
+        )
+        older_element = DocumentElement(
+            document=older_document,
+            element_type="text",
+            section="Risk Factors",
+            text=(
+                "Supply chain changes involve significant risks and uncertainties "
+                "for Apple and its outsourcing partners."
+            ),
+            reading_order=1,
+        )
+        older_document.chunks.append(
+            Chunk(
+                element=older_element,
+                chunk_text=older_element.text or "",
+                chunk_type="text",
+                section=older_element.section,
+                token_count=12,
+                metadata_json={
+                    "ticker": "AAPL",
+                    "cik": "0000320193",
+                    "company_name": "Apple Inc.",
+                    "form_type": "10-K",
+                    "filing_date": "2024-11-01",
+                    "section": "Risk Factors",
+                    "element_type": "text",
+                    "page_number": 1,
+                },
+            )
+        )
+        session.add(older_document)
+        session.commit()
+        rebuild_embeddings(session, LocalHashEmbeddingProvider())
+
+        state = run_answer_workflow(
+            _context(session),
+            "What supply-chain risks did Apple disclose in its latest 10-K?",
+        )
+
+    evidence_dates = {
+        candidate["metadata"].get("filing_date") for candidate in state["evidence"]
+    }
+    assert evidence_dates == {"2025-10-31"}
+    preprocess_trace = next(
+        step for step in state["trace"] if step["node"] == "preprocess_query"
+    )
+    assert preprocess_trace["details"]["filters"]["filing_date_from"] == "2025-10-31"
+    assert preprocess_trace["details"]["filters"]["filing_date_to"] == "2025-10-31"
 
 
 def test_answer_workflow_routes_tables_and_financial_facts() -> None:

@@ -45,8 +45,9 @@ import type { AnswerResponse } from "@/lib/types";
 const exampleChips = [
   {
     tag: "AAPL · text",
-    label: "Supply-chain risk",
-    question: "What did Apple say about supply chain risk in its latest 10-K?",
+    label: "Supply-chain changes",
+    question:
+      "In its latest 10-K, what significant risks and uncertainties does Apple associate with changes or additions to its supply chain?",
   },
   {
     tag: "META · earnings",

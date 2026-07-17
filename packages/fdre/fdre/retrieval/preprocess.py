@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.api.app.models import Company
+from apps.api.app.models import Chunk, Company, Document
 from fdre.retrieval.query import PreprocessedQuery, RouteName, SearchFilters
 
 FORM_PATTERNS = {
@@ -37,6 +37,7 @@ FINANCIAL_RESULTS_PATTERN = re.compile(
     r"\b(?:earnings|eps|financial results?|quarterly results?)\b",
     re.I,
 )
+LATEST_FILING_PATTERN = re.compile(r"\b(?:latest|most recent|last)\b", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +133,65 @@ def preprocess_query(
         rewritten_queries=list(dict.fromkeys(rewritten)),
         filters=merged_filters,
         routes=list(dict.fromkeys(routes)),
+    )
+
+
+def apply_latest_filing_filter(
+    session: Session,
+    query: str,
+    preprocessed: PreprocessedQuery,
+) -> PreprocessedQuery:
+    """Constrain a single-issuer query to its newest indexed filing.
+
+    A global filing-date sort is not enough: repeated disclosure can make an
+    older filing outrank the current one. Only resolve unambiguous issuer/form
+    queries, and preserve explicit date bounds supplied by API callers.
+    """
+    filters = preprocessed.filters
+    if (
+        not LATEST_FILING_PATTERN.search(query)
+        or len(filters.tickers) != 1
+        or len(filters.form_types) != 1
+        or filters.filing_date_from is not None
+        or filters.filing_date_to is not None
+    ):
+        return preprocessed
+
+    statement = (
+        select(Document.filing_date)
+        .join(Company, Document.company_id == Company.id)
+        .join(Chunk, Chunk.document_id == Document.id)
+        .where(
+            Company.ticker == filters.tickers[0],
+            Document.form_type == filters.form_types[0],
+            Document.filing_date.is_not(None),
+        )
+    )
+    if filters.as_of is not None:
+        statement = statement.where(Document.available_at <= filters.as_of)
+    if filters.amendment_policy == "exclude":
+        statement = statement.where(Document.is_amendment.is_(False))
+    elif filters.amendment_policy == "only":
+        statement = statement.where(Document.is_amendment.is_(True))
+
+    latest_date = session.scalar(
+        statement.order_by(
+            Document.filing_date.desc(),
+            Document.accepted_at.desc(),
+        ).limit(1)
+    )
+    if latest_date is None:
+        return preprocessed
+
+    return preprocessed.model_copy(
+        update={
+            "filters": filters.model_copy(
+                update={
+                    "filing_date_from": latest_date,
+                    "filing_date_to": latest_date,
+                }
+            )
+        }
     )
 
 

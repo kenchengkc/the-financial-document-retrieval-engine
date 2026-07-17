@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 const question = "What did META report for earnings last quarter?";
+const appleQuestion =
+  "In its latest 10-K, what significant risks and uncertainties does Apple associate with changes or additions to its supply chain?";
 
 async function mockHealthAndCoverage(page: import("@playwright/test").Page) {
   await page.route("**/health", (route) =>
@@ -184,6 +186,26 @@ test("runs a flagship question with one click", async ({ page }) => {
     .toHaveValue(question);
   await expect(page.locator(".answer")).toContainText("$26.77 billion");
   await expect(page.getByRole("img", { name: "92 percent retrieval confidence" })).toBeVisible();
+});
+
+test("submits the benchmarked Apple flagship question with one click", async ({ page }) => {
+  await mockHealthAndCoverage(page);
+  let submittedQuestion = "";
+  await page.route("**/answer", (route) => {
+    submittedQuestion = JSON.parse(route.request().postData() ?? "{}").question ?? "";
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Test response" }),
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /AAPL · text Supply-chain changes/i }).click();
+
+  await expect(page.getByRole("textbox", { name: "Ask a financial filing question" }))
+    .toHaveValue(appleQuestion);
+  await expect.poll(() => submittedQuestion).toBe(appleQuestion);
 });
 
 test("labels unsupported forecast requests as no verified answer", async ({ page }) => {

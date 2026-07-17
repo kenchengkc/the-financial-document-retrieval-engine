@@ -54,17 +54,18 @@ const SCENES: Scene[] = [
   {
     tab: "Cited answer",
     icon: Search,
-    query: "What did Apple say about supply chain risk in its latest 10-K?",
+    query:
+      "In its latest 10-K, what significant risks and uncertainties does Apple associate with changes or additions to its supply chain?",
     ticker: "AAPL",
     form: "10-K",
     date: "2025-10-31",
     answer:
-      "Although most components essential to the Company's business are generally available from multiple sources, certain components are currently obtained from single or limited sources.",
-    confidence: 57,
-    latency: "0.9 s",
+      "Changes or additions to the Company's supply chain require considerable time and resources and involve significant risks and uncertainties, including exposure to additional regulatory and operational risks.",
+    confidence: 89,
+    latency: "3.9 s",
     sources: [
-      { ticker: "AAPL", form: "10-K", section: "Risk Factors", score: "0.574" },
-      { ticker: "AAPL", form: "10-K", section: "Business", score: "0.512" },
+      { ticker: "AAPL", form: "10-K", section: "Risk Factors", score: "0.820" },
+      { ticker: "AAPL", form: "10-K", section: "Risk Factors", score: "0.652" },
     ],
     funnel: [
       { label: "Indexed chunks", value: "2.71M", width: 100 },
