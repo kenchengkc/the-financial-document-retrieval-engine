@@ -449,7 +449,7 @@ function studyCopy(study: SignalStudyResponse): StudyCopy {
       note:
         "Risk-factor expansion is partly disclosure behavior and partly real operating change. Boilerplate refreshes, acquisitions, and new regulation can all widen Item 1A without the same economic meaning, so passage-level attribution matters before this becomes a directional sleeve.",
       desk: [
-        "Change triage: route the largest net additions into the filing-delta workbench and identify the exact new risk language before acting.",
+        "Change triage: route the largest net additions into the filing comparison workspace and identify the exact new risk language before acting.",
         "Catalyst map: connect newly disclosed risks with upcoming earnings, litigation, refinancing, or regulatory dates for scenario analysis.",
         "Risk overlay: use expansion as a sizing or hedge input when it agrees with volatility and fundamental deterioration signals.",
       ],

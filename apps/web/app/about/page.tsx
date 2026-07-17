@@ -292,8 +292,11 @@ export default async function About() {
             <li>
               <span>05</span>
               <div>
-                <strong>Panel export and event study</strong>
-                <p>Export point-in-time features and run benchmark-adjusted statistical tests.</p>
+                <strong>Research datasets and event studies</strong>
+                <p>
+                  Build point-in-time issuer-period data and run benchmark-adjusted statistical
+                  tests.
+                </p>
               </div>
             </li>
             <li>

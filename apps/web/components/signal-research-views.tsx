@@ -34,7 +34,7 @@ const SIGNAL_NAMES: Record<string, string> = {
 
 const FEATURE_LIBRARY = [
   { key: "disclosure_similarity", family: "Language", name: "Disclosure similarity", source: "Comparable filings", stage: "ready" },
-  { key: "risk_factor_expansion", family: "Language", name: "Risk-factor expansion", source: "Item 1A passage delta", stage: "ready" },
+  { key: "risk_factor_expansion", family: "Language", name: "Risk-factor expansion", source: "Item 1A additions minus removals", stage: "ready" },
   { key: "filing_lateness", family: "Timing", name: "Filing lateness", source: "Acceptance vs period end", stage: "ready" },
   { key: "earnings_quality", family: "Fundamental", name: "Earnings quality", source: "NI, CFO, assets", stage: "ready" },
   { key: "asset_growth", family: "Fundamental", name: "Asset growth", source: "Comparative XBRL", stage: "ready" },

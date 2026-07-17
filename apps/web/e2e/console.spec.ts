@@ -89,7 +89,7 @@ test("runs a point-in-time retrieval and forwards the as-of filter", async ({ pa
   await page.getByLabel("As-of date").fill("2026-01-01");
   await page.locator(".retrieve-form button[type=submit]").click();
 
-  await expect(page.locator(".rr-summary")).toContainText("Knowable as of 2026-01-01");
+  await expect(page.locator(".rr-summary")).toContainText("Information cutoff: 2026-01-01");
   await expect(page.locator(".retrieve-results .evidence").first()).toBeVisible();
   expect(sentBody.filters?.as_of).toBe("2026-01-01T00:00:00+00:00");
 });
@@ -285,18 +285,18 @@ test("compares a filing to its point-in-time comparable", async ({ page }) => {
 
   await page.goto("/");
   await page.getByRole("tab", { name: /Retrieve/ }).click();
-  await page.getByRole("tab", { name: "Filing delta" }).click();
+  await page.getByRole("tab", { name: "Compare filings" }).click();
   await page.getByLabel("Filing accession number").fill("0000320193-25-000079");
-  await page.getByLabel("Filing delta as-of date").fill("2025-12-31");
-  await page.getByRole("button", { name: "Compare" }).click();
+  await page.getByLabel("Comparison information cutoff").fill("2025-12-31");
+  await page.getByRole("button", { name: "Compare filing" }).click();
 
   await expect(page.locator(".delta-stats")).toContainText("Rewritten");
   await expect(page.locator(".delta-change")).toContainText("Item 1A · Risk Factors");
-  await expect(page.locator(".delta-result")).toContainText("point-in-time gate passed");
+  await expect(page.locator(".delta-result")).toContainText("point-in-time check passed");
   expect(requestUrl).toContain("as_of=2025-12-31T23%3A59%3A59%2B00%3A00");
 });
 
-test("queries original-vintage facts and builds a leakage-checked panel", async ({ page }) => {
+test("queries originally reported facts and builds a point-in-time dataset", async ({ page }) => {
   await mockBase(page);
   await page.route("**/research/facts**", (route) =>
     route.fulfill({
@@ -373,15 +373,15 @@ test("queries original-vintage facts and builds a leakage-checked panel", async 
 
   await page.goto("/");
   await page.getByRole("tab", { name: /Retrieve/ }).click();
-  await page.getByRole("tab", { name: "Fact tape" }).click();
-  await page.getByLabel("Fact tape tickers").fill("MSFT");
-  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByRole("tab", { name: "Financial facts" }).click();
+  await page.getByLabel("Financial fact tickers").fill("MSFT");
+  await page.getByRole("button", { name: "Query facts" }).click();
   await expect(page.locator(".facts-table")).toContainText("245.12B");
-  await expect(page.locator(".facts-result")).toContainText("original-vintage values");
+  await expect(page.locator(".facts-result")).toContainText("originally reported values");
 
-  await page.getByRole("tab", { name: "Panel export" }).click();
-  await page.getByLabel("Panel tickers").fill("MSFT");
-  await page.getByRole("button", { name: "Build preview" }).click();
+  await page.getByRole("tab", { name: "Build dataset" }).click();
+  await page.getByLabel("Dataset tickers").fill("MSFT");
+  await page.getByRole("button", { name: "Preview dataset" }).click();
   await expect(page.locator(".panel-manifest")).toContainText("fdre-panel-v1");
   await expect(page.locator(".panel-manifest")).toContainText("Passed");
   await expect(page.locator(".panel-table")).toContainText("44.0%");

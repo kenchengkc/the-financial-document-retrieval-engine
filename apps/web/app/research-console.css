@@ -530,9 +530,9 @@
 }
 
 .retrieve-tools {
-  width: fit-content;
+  width: 100%;
   display: grid;
-  grid-template-columns: repeat(4, auto);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 3px;
   margin: 0 0 18px;
   padding: 3px;
@@ -555,6 +555,36 @@
   color: var(--muted);
   font: 600 11px var(--sans);
   cursor: pointer;
+}
+
+.retrieve-tools button {
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.retrieve-tool-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.retrieve-tool-copy strong,
+.retrieve-tool-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retrieve-tool-copy strong {
+  color: inherit;
+  font: inherit;
+}
+
+.retrieve-tool-copy small {
+  color: var(--muted);
+  font: 9px/1.25 var(--sans);
 }
 
 .retrieve-tools button:hover,

@@ -27,7 +27,7 @@ import type {
   ResearchPanel,
 } from "@/lib/types";
 
-type ResearchTool = "delta" | "facts" | "panel";
+type ResearchTool = "compare" | "facts" | "dataset";
 
 const METRICS: Array<{ value: CanonicalMetric; label: string }> = [
   { value: "revenue", label: "Revenue" },
@@ -70,7 +70,13 @@ function ToolError({ message }: { message: string }) {
   );
 }
 
-function FilingDeltaTool() {
+function comparisonBasisLabel(value: string) {
+  if (value === "prior_annual_period") return "vs. prior annual filing";
+  if (value === "prior_period") return "vs. prior comparable filing";
+  return readable(value);
+}
+
+function FilingComparisonTool() {
   const [accession, setAccession] = useState("");
   const [asOf, setAsOf] = useState("");
   const [result, setResult] = useState<FilingDifference | null>(null);
@@ -93,13 +99,17 @@ function FilingDeltaTool() {
   }
 
   return (
-    <section className="retrieve-lab" aria-labelledby="filing-delta-title">
+    <section className="retrieve-lab" aria-labelledby="filing-comparison-title">
       <header className="lab-heading">
         <span className="lab-icon"><FileDiff size={17} aria-hidden="true" /></span>
         <div>
-          <p className="eyebrow">Disclosure change detection</p>
-          <h3 id="filing-delta-title">Filing delta</h3>
-          <p>Compare a filing with its point-in-time comparable and inspect passage-level changes.</p>
+          <p className="eyebrow">Disclosure change analysis</p>
+          <h3 id="filing-comparison-title">Compare filing disclosures</h3>
+          <p>
+            Compare a filing with the prior comparable filing for that issuer. Review added,
+            removed, and materially rewritten passages using only information available by the
+            cutoff date.
+          </p>
         </div>
       </header>
 
@@ -114,9 +124,9 @@ function FilingDeltaTool() {
           />
         </label>
         <label>
-          <span>Knowable as of</span>
+          <span>Information cutoff</span>
           <input
-            aria-label="Filing delta as-of date"
+            aria-label="Comparison information cutoff"
             type="date"
             value={asOf}
             onChange={(event) => setAsOf(event.target.value)}
@@ -124,7 +134,7 @@ function FilingDeltaTool() {
         </label>
         <button className="lab-primary" type="submit" disabled={loading || !accession.trim()}>
           {loading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}
-          {loading ? "Comparing" : "Compare"}
+          {loading ? "Comparing" : "Compare filing"}
         </button>
       </form>
 
@@ -132,15 +142,15 @@ function FilingDeltaTool() {
       {result && (
         <div className="delta-result">
           <div className="lab-statusbar">
-            <span><strong>{result.company_ticker}</strong> {readable(result.comparison_basis)}</span>
+            <span><strong>{result.company_ticker}</strong> {comparisonBasisLabel(result.comparison_basis)}</span>
             <span>{dateLabel(result.previous_available_at)} → {dateLabel(result.current_available_at)}</span>
-            <span className="gate-pass"><ShieldCheck size={13} /> point-in-time gate passed</span>
+            <span className="gate-pass"><ShieldCheck size={13} /> point-in-time check passed</span>
           </div>
           <dl className="delta-stats">
             <div><dt>Added</dt><dd>{result.added_count}</dd></div>
             <div><dt>Removed</dt><dd>{result.removed_count}</dd></div>
             <div><dt>Rewritten</dt><dd>{result.materially_changed_count}</dd></div>
-            <div><dt>Total delta</dt><dd>{result.changes.length}</dd></div>
+            <div><dt>Total changes</dt><dd>{result.changes.length}</dd></div>
           </dl>
           <div className="delta-list">
             {result.changes.length === 0 ? (
@@ -182,7 +192,7 @@ function formatFactValue(value: string, unit: string | null, metric: CanonicalMe
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(numeric)}${unit ? ` ${unit}` : ""}`;
 }
 
-function FactTapeTool() {
+function FinancialFactsTool() {
   const [tickers, setTickers] = useState("");
   const [metric, setMetric] = useState<CanonicalMetric | "all">("revenue");
   const [asOf, setAsOf] = useState("");
@@ -213,13 +223,16 @@ function FactTapeTool() {
   }
 
   return (
-    <section className="retrieve-lab" aria-labelledby="fact-tape-title">
+    <section className="retrieve-lab" aria-labelledby="financial-facts-title">
       <header className="lab-heading">
         <span className="lab-icon"><Braces size={17} aria-hidden="true" /></span>
         <div>
-          <p className="eyebrow">Structured XBRL</p>
-          <h3 id="fact-tape-title">Point-in-time fact tape</h3>
-          <p>Query canonical fundamentals with explicit restatement and availability policies.</p>
+          <p className="eyebrow">Normalized XBRL fundamentals</p>
+          <h3 id="financial-facts-title">Query reported financials</h3>
+          <p>
+            Pull standardized filing values for selected issuers and metrics as they were known at
+            a chosen date. Select original values, latest restatements, or every reported version.
+          </p>
         </div>
       </header>
 
@@ -227,7 +240,7 @@ function FactTapeTool() {
         <label>
           <span>Tickers</span>
           <input
-            aria-label="Fact tape tickers"
+            aria-label="Financial fact tickers"
             value={tickers}
             onChange={(event) => setTickers(event.target.value)}
             placeholder="AAPL, MSFT"
@@ -241,20 +254,20 @@ function FactTapeTool() {
           </select>
         </label>
         <label>
-          <span>Restatements</span>
+          <span>Value version</span>
           <select aria-label="Restatement policy" value={policy} onChange={(event) => setPolicy(event.target.value as typeof policy)}>
-            <option value="as_reported">As originally reported</option>
-            <option value="latest">Latest restatement</option>
-            <option value="all">Show all versions</option>
+            <option value="as_reported">Original filing value</option>
+            <option value="latest">Latest available restatement</option>
+            <option value="all">All reported versions</option>
           </select>
         </label>
         <label>
-          <span>Knowable as of</span>
-          <input aria-label="Fact tape as-of date" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
+          <span>Information cutoff</span>
+          <input aria-label="Financial fact information cutoff" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
         </label>
         <button className="lab-primary" type="submit" disabled={loading || !tickers.trim()}>
           {loading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}
-          {loading ? "Loading" : "Run query"}
+          {loading ? "Loading" : "Query facts"}
         </button>
       </form>
 
@@ -263,8 +276,8 @@ function FactTapeTool() {
         <div className="facts-result">
           <div className="lab-statusbar">
             <span><strong>{result.facts.length}</strong> reported facts</span>
-            <span>{policy === "as_reported" ? "original-vintage values" : readable(policy)}</span>
-            <span className="gate-pass"><CheckCircle2 size={13} /> source accession retained</span>
+            <span>{policy === "as_reported" ? "originally reported values" : readable(policy)}</span>
+            <span className="gate-pass"><CheckCircle2 size={13} /> source filing retained</span>
           </div>
           <div className="lab-table-wrap">
             <table className="lab-table facts-table">
@@ -283,14 +296,14 @@ function FactTapeTool() {
               </tbody>
             </table>
           </div>
-          {result.facts.length === 0 && <p className="lab-empty">No reported facts matched this point-in-time query.</p>}
+          {result.facts.length === 0 && <p className="lab-empty">No reported facts matched these issuers, metrics, and date controls.</p>}
         </div>
       )}
     </section>
   );
 }
 
-function PanelExportTool() {
+function ResearchDatasetTool() {
   const [tickers, setTickers] = useState("");
   const [forms, setForms] = useState(["10-K", "10-Q"]);
   const [from, setFrom] = useState("");
@@ -328,7 +341,7 @@ function PanelExportTool() {
       setResult(await fetchResearchPanel(options()));
     } catch (cause) {
       setResult(null);
-      setError(cause instanceof Error ? cause.message : "The panel build failed.");
+      setError(cause instanceof Error ? cause.message : "The dataset preview failed.");
     } finally {
       setLoading(false);
     }
@@ -341,41 +354,45 @@ function PanelExportTool() {
     try {
       await downloadResearchPanel(options(), format);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The panel export failed.");
+      setError(cause instanceof Error ? cause.message : "The dataset download failed.");
     } finally {
       setDownloading(false);
     }
   }
 
   return (
-    <section className="retrieve-lab" aria-labelledby="panel-export-title">
+    <section className="retrieve-lab" aria-labelledby="research-dataset-title">
       <header className="lab-heading">
         <span className="lab-icon"><Layers3 size={17} aria-hidden="true" /></span>
         <div>
-          <p className="eyebrow">Leakage-safe research dataset</p>
-          <h3 id="panel-export-title">Panel builder</h3>
-          <p>Materialize issuer-period text and XBRL features with source-level provenance.</p>
+          <p className="eyebrow">Analysis-ready issuer-period data</p>
+          <h3 id="research-dataset-title">Build a research dataset</h3>
+          <p>
+            Create one row per filing with disclosure-change and fundamental features, filtered to
+            information available by the cutoff date. Preview the rows, then download CSV, JSON,
+            or Parquet.
+          </p>
         </div>
       </header>
 
       <form className="lab-form panel-form" onSubmit={build}>
         <label>
-          <span>Tickers · blank = universe</span>
-          <input aria-label="Panel tickers" value={tickers} onChange={(event) => setTickers(event.target.value)} placeholder="AAPL, MSFT" />
+          <span>Tickers (blank for all issuers)</span>
+          <input aria-label="Dataset tickers" value={tickers} onChange={(event) => setTickers(event.target.value)} placeholder="AAPL, MSFT" />
         </label>
-        <label><span>Period from</span><input aria-label="Panel period from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-        <label><span>Period to</span><input aria-label="Panel period to" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-        <label><span>Knowable as of</span><input aria-label="Panel as-of date" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label>
+        <label><span>Fiscal period from</span><input aria-label="Dataset fiscal period from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+        <label><span>Fiscal period to</span><input aria-label="Dataset fiscal period to" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+        <label><span>Information cutoff</span><input aria-label="Dataset information cutoff" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label>
         <div className="lab-control">
-          <span>Forms</span>
+          <span>Filing types</span>
           <div className="lab-chips">
             {FORM_OPTIONS.map((form) => <button key={form} type="button" className={forms.includes(form) ? "on" : undefined} onClick={() => toggleForm(form)}>{form}</button>)}
           </div>
         </div>
-        <label><span>Row limit</span><input aria-label="Panel row limit" type="number" min={25} max={10000} step={25} value={limit} onChange={(event) => setLimit(Math.min(10000, Math.max(25, Number(event.target.value) || 25)))} /></label>
+        <label><span>Maximum rows</span><input aria-label="Dataset row limit" type="number" min={25} max={10000} step={25} value={limit} onChange={(event) => setLimit(Math.min(10000, Math.max(25, Number(event.target.value) || 25)))} /></label>
         <button className="lab-primary" type="submit" disabled={loading || forms.length === 0}>
           {loading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}
-          {loading ? "Building" : "Build preview"}
+          {loading ? "Building" : "Preview dataset"}
         </button>
       </form>
 
@@ -385,17 +402,17 @@ function PanelExportTool() {
           <div className="panel-manifest">
             <div><span>Rows</span><strong>{result.rows.length.toLocaleString()}</strong></div>
             <div><span>Feature version</span><strong>{result.feature_version}</strong></div>
-            <div><span>Corpus snapshot</span><strong title={result.corpus_snapshot_id}>{result.corpus_snapshot_id.slice(0, 12)}</strong></div>
-            <div className="manifest-gate"><ShieldCheck size={16} /><span>Point-in-time validation</span><strong>Passed</strong></div>
-            <label className="export-format"><span>Format</span><select aria-label="Panel export format" value={format} onChange={(event) => setFormat(event.target.value as typeof format)}><option value="parquet">Parquet</option><option value="csv">CSV</option><option value="json">JSON</option></select></label>
-            <button type="button" className="lab-download" onClick={download} disabled={downloading} title="Download research panel">
+            <div><span>Data snapshot</span><strong title={result.corpus_snapshot_id}>{result.corpus_snapshot_id.slice(0, 12)}</strong></div>
+            <div className="manifest-gate"><ShieldCheck size={16} /><span>Point-in-time check</span><strong>Passed</strong></div>
+            <label className="export-format"><span>Format</span><select aria-label="Dataset download format" value={format} onChange={(event) => setFormat(event.target.value as typeof format)}><option value="parquet">Parquet</option><option value="csv">CSV</option><option value="json">JSON</option></select></label>
+            <button type="button" className="lab-download" onClick={download} disabled={downloading} title="Download research dataset">
               {downloading ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />}
-              {downloading ? "Preparing" : "Export"}
+              {downloading ? "Preparing" : "Download"}
             </button>
           </div>
           <div className="lab-table-wrap">
             <table className="lab-table panel-table">
-              <thead><tr><th>Issuer</th><th>Period</th><th>Form</th><th className="num">Similarity</th><th className="num">Risk Δ</th><th className="num">Op. margin</th><th>Available</th></tr></thead>
+              <thead><tr><th>Issuer</th><th>Period</th><th>Filing</th><th className="num">Disclosure similarity</th><th className="num">Net risk passages</th><th className="num">Operating margin</th><th>Available</th></tr></thead>
               <tbody>
                 {result.rows.slice(0, 8).map((row) => (
                   <tr key={row.accession_number}>
@@ -411,7 +428,7 @@ function PanelExportTool() {
               </tbody>
             </table>
           </div>
-          {result.rows.length === 0 && <p className="lab-empty">No issuer-period rows matched these controls.</p>}
+          {result.rows.length === 0 && <p className="lab-empty">No issuer-period rows matched these filters.</p>}
         </div>
       )}
     </section>
@@ -419,7 +436,7 @@ function PanelExportTool() {
 }
 
 export function RetrieveResearchTool({ tool }: { tool: ResearchTool }) {
-  if (tool === "delta") return <FilingDeltaTool />;
-  if (tool === "facts") return <FactTapeTool />;
-  return <PanelExportTool />;
+  if (tool === "compare") return <FilingComparisonTool />;
+  if (tool === "facts") return <FinancialFactsTool />;
+  return <ResearchDatasetTool />;
 }

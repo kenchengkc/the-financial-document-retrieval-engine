@@ -26,13 +26,33 @@ import {
 import { RetrieveResearchTool } from "./retrieve-research-tool";
 
 const FORM_OPTIONS = ["10-K", "10-Q", "8-K"];
-type RetrieveTool = "search" | "delta" | "facts" | "panel";
+type RetrieveTool = "search" | "compare" | "facts" | "dataset";
 
 const RETRIEVE_TOOLS = [
-  { id: "search" as const, label: "Passage search", icon: Search },
-  { id: "delta" as const, label: "Filing delta", icon: FileDiff },
-  { id: "facts" as const, label: "Fact tape", icon: Braces },
-  { id: "panel" as const, label: "Panel export", icon: Layers3 },
+  {
+    id: "search" as const,
+    label: "Search text",
+    description: "Rank relevant passages",
+    icon: Search,
+  },
+  {
+    id: "compare" as const,
+    label: "Compare filings",
+    description: "Review disclosure changes",
+    icon: FileDiff,
+  },
+  {
+    id: "facts" as const,
+    label: "Financial facts",
+    description: "Query reported values",
+    icon: Braces,
+  },
+  {
+    id: "dataset" as const,
+    label: "Build dataset",
+    description: "Export issuer-period rows",
+    icon: Layers3,
+  },
 ];
 
 function splitList(value: string): string[] {
@@ -93,10 +113,11 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Hybrid search, point-in-time</p>
+        <p className="eyebrow">Point-in-time research retrieval</p>
         <h2>Retrieve</h2>
         <p className="panel-lede">
-          Dense + lexical search over every indexed filing, scoped by issuer, form and as-of date.
+          Search filing text, compare disclosures, query normalized financials, or build
+          analysis-ready issuer-period datasets.
         </p>
       </div>
 
@@ -108,12 +129,16 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
               key={item.id}
               type="button"
               role="tab"
+              aria-label={item.label}
               aria-selected={tool === item.id}
               className={tool === item.id ? "on" : undefined}
               onClick={() => setTool(item.id)}
             >
               <Icon size={15} aria-hidden="true" />
-              {item.label}
+              <span className="retrieve-tool-copy">
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+              </span>
             </button>
           );
         })}
@@ -204,7 +229,7 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
                 <span>{formatLatency(result.latency_ms)}</span>
                 <span className={asOf ? "pit-on" : "pit-off"}>
                   <CalendarClock size={13} aria-hidden="true" />
-                  {asOf ? `Knowable as of ${asOf}` : "Latest available"}
+                  {asOf ? `Information cutoff: ${asOf}` : "Latest available"}
                 </span>
               </div>
               {result.results.length === 0 ? (
