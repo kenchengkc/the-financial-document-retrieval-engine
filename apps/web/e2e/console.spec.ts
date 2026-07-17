@@ -124,6 +124,14 @@ test("keeps AAPL search controls from overlapping on mobile", async ({ page }) =
 
 test("renders the coverage universe in the data foundation", async ({ page }) => {
   await mockBase(page);
+  let releaseOperations = () => {};
+  const operationsPending = new Promise<void>((resolve) => {
+    releaseOperations = resolve;
+  });
+  await page.route("**/operations/quality**", async (route) => {
+    await operationsPending;
+    await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+  });
   await page.route("**/companies**", (route) =>
     route.fulfill({
       status: 200,
@@ -140,7 +148,9 @@ test("renders the coverage universe in the data foundation", async ({ page }) =>
 
   await page.goto("/");
   await expect(page.locator(".data-foundation")).toContainText("Data foundation");
+  await expect(page.locator(".foundation-stat").first()).toContainText("495");
   await expect(page.locator(".foundation-company").first()).toContainText("KKR");
+  releaseOperations();
 });
 
 test("renders the published signal study", async ({ page }) => {

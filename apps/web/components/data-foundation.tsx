@@ -4,6 +4,7 @@ import {
   Activity,
   Building2,
   ChevronDown,
+  CircleAlert,
   Database,
   Gauge,
   ShieldCheck,
@@ -72,18 +73,31 @@ function CoverageMeter({
 export function DataFoundation({ runs }: { runs: SessionRun[] }) {
   const [open, setOpen] = useState(true);
   const [data, setData] = useState<FoundationData>(EMPTY_DATA);
+  const [pendingSources, setPendingSources] = useState(3);
 
   useEffect(() => {
     let active = true;
+    const finish = () => {
+      if (active) setPendingSources((current) => Math.max(0, current - 1));
+    };
 
-    void (async () => {
-      const [coverage, companies, operations] = await Promise.all([
-        fetchCoverage(),
-        fetchCompanies().then((response) => response.companies).catch(() => []),
-        fetchOperationsQuality().catch(() => null),
-      ]);
-      if (active) setData({ coverage, companies, operations });
-    })();
+    void fetchCoverage()
+      .then((coverage) => {
+        if (active) setData((current) => ({ ...current, coverage }));
+      })
+      .finally(finish);
+    void fetchCompanies()
+      .then((response) => {
+        if (active) setData((current) => ({ ...current, companies: response.companies }));
+      })
+      .catch(() => undefined)
+      .finally(finish);
+    void fetchOperationsQuality()
+      .then((operations) => {
+        if (active) setData((current) => ({ ...current, operations }));
+      })
+      .catch(() => undefined)
+      .finally(finish);
 
     return () => {
       active = false;
@@ -118,9 +132,15 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
     { label: "Freshness ratio", value: operations?.freshness_ratio },
     { label: "Ingestion success", value: operations?.recent_ingestion_success_rate },
   ];
+  const unavailable =
+    pendingSources === 0 && !data.coverage && !data.companies.length && !data.operations;
 
   return (
-    <section className={`data-foundation${open ? " open" : ""}`} aria-label="Data foundation">
+    <section
+      className={`data-foundation${open ? " open" : ""}${unavailable ? " unavailable" : ""}`}
+      aria-label="Data foundation"
+      aria-busy={pendingSources > 0}
+    >
       <button
         type="button"
         className="foundation-bar"
@@ -147,6 +167,14 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
 
       {open && (
         <div className="foundation-details" id="foundation-details">
+          {unavailable && (
+            <div className="foundation-service-error" role="status">
+              <CircleAlert size={16} aria-hidden="true" />
+              <span>
+                <strong>Live data service unavailable.</strong> Corpus metrics could not be loaded.
+              </span>
+            </div>
+          )}
           <section className="foundation-column">
             <h3>
               <Building2 size={16} aria-hidden="true" /> Universe

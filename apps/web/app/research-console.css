@@ -1516,6 +1516,11 @@
   box-shadow: 0 0 0 3px rgba(95, 174, 147, 0.18);
 }
 
+.data-foundation.unavailable .foundation-live {
+  background: #c98772;
+  box-shadow: 0 0 0 3px rgba(201, 135, 114, 0.18);
+}
+
 .foundation-stats {
   display: grid;
   grid-template-columns: repeat(6, minmax(76px, 1fr));
@@ -1574,6 +1579,27 @@
   display: grid;
   grid-template-columns: 1fr 1.12fr;
   border-top: 1px solid rgba(241, 231, 239, 0.14);
+}
+
+.foundation-service-error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 26px;
+  border-bottom: 1px solid rgba(241, 231, 239, 0.14);
+  background: rgba(201, 135, 114, 0.08);
+  color: rgba(241, 231, 239, 0.72);
+  font: 11px/1.5 var(--lede);
+}
+
+.foundation-service-error svg {
+  flex: none;
+  color: #e9b48f;
+}
+
+.foundation-service-error strong {
+  color: #fffdfb;
 }
 
 .foundation-column {
