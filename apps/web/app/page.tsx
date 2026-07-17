@@ -19,9 +19,10 @@ import {
   ShieldCheck,
   Timer,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { DataFoundation } from "@/components/data-foundation";
+import { LandingHero } from "@/components/landing-hero";
 import { RetrievePanel } from "@/components/retrieve-panel";
 import { ScanProgress } from "@/components/scan-progress";
 import { ScreenPanel } from "@/components/screen-panel";
@@ -38,7 +39,7 @@ import {
   traceCount,
   type SessionRun,
 } from "@/components/instruments";
-import { askQuestion } from "@/lib/api";
+import { askQuestion, checkHealth } from "@/lib/api";
 import type { AnswerResponse } from "@/lib/types";
 
 const exampleChips = [
@@ -84,7 +85,15 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [answerMs, setAnswerMs] = useState(9_000);
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
+  const researchRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      setApiOnline(await checkHealth());
+    })();
+  }, []);
 
   function pushRun(run: SessionRun) {
     setHistory((previous) => [...previous, run]);
@@ -110,6 +119,7 @@ export default function Home() {
         Math.min(45_000, Math.max(2_500, Math.round(prev * 0.4 + observed * 0.6))),
       );
       setResult(response);
+      setApiOnline(true);
       pushRun({
         mode: "ask",
         latencyMs: response.latency_ms,
@@ -120,6 +130,7 @@ export default function Home() {
       });
     } catch (cause) {
       setResult(null);
+      setApiOnline(false);
       setError(cause instanceof Error ? cause.message : "The request failed.");
     } finally {
       setLoading(false);
@@ -161,14 +172,25 @@ export default function Home() {
   const scope = result ? resolvedScope(result.trace) : null;
 
   return (
-    <div className="site-shell research-shell">
-      <main className="research-main">
-        <header className="console-title">
-          <p className="eyebrow">Research console</p>
-          <h1>One engine, four ways in</h1>
-        </header>
+    <div className="site-shell">
+      <LandingHero
+        apiOnline={apiOnline}
+        onExplore={() => {
+          setMode("ask");
+          window.requestAnimationFrame(() =>
+            researchRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          );
+        }}
+      />
 
-        <section className="console research-console">
+      <main className="research-shell home-research" ref={researchRef}>
+        <div className="research-main">
+          <header className="console-title">
+            <p className="eyebrow">Research console</p>
+            <h1>One engine, four ways in</h1>
+          </header>
+
+          <section className="console research-console">
           <div className="console-rail mode-switcher" role="tablist" aria-label="Research modes">
             {MODES.map((item, index) => {
               const Icon = item.icon;
@@ -260,38 +282,32 @@ export default function Home() {
             {mode === "screen" && <ScreenPanel onRun={pushRun} />}
             {mode === "signals" && <SignalsPanel />}
           </div>
-        </section>
+          </section>
 
-        <DataFoundation runs={history} />
+          <DataFoundation runs={history} />
 
-        <section className="research-stack" aria-labelledby="research-stack-title">
-          <div className="stack-heading">
-            <div>
-              <p className="eyebrow">RAG search stack</p>
-              <h2 id="research-stack-title">Ground retrieval before generation</h2>
+          <section className="research-stack" aria-labelledby="research-stack-title">
+            <div className="stack-heading">
+              <div>
+                <p className="eyebrow">RAG search stack</p>
+                <h2 id="research-stack-title">Ground retrieval before generation</h2>
+              </div>
+              <p>
+                FDRE resolves issuers and dates, searches dense and lexical indexes, reranks
+                evidence, verifies citations, and declines unsupported requests.
+              </p>
             </div>
-            <p>
-              FDRE resolves issuers and dates, searches dense and lexical indexes, reranks evidence,
-              verifies citations, and declines unsupported requests.
-            </p>
-          </div>
-          <ol className="stack-steps">
-            {STACK_STEPS.map((step, index) => (
-              <li key={step.title}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <strong>{step.title}</strong>
-                <small>{step.detail}</small>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <footer className="research-footer">
-          <span>FDRE — Financial Document Retrieval Engine</span>
-          <span>
-            <span className="foundation-live" aria-hidden="true" /> SEC research infrastructure
-          </span>
-        </footer>
+            <ol className="stack-steps">
+              {STACK_STEPS.map((step, index) => (
+                <li key={step.title}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{step.title}</strong>
+                  <small>{step.detail}</small>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
       </main>
     </div>
   );

@@ -265,3 +265,19 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
   }));
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
 });
+
+test("keeps the original landing hero and About navigation", async ({ page }) => {
+  await mockHealthAndCoverage(page);
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("heading", { name: "Financial Document Retrieval Engine" }),
+  ).toBeVisible();
+  const aboutLink = page.getByRole("link", { name: "About", exact: true });
+  await expect(aboutLink).toHaveAttribute("href", "/about");
+
+  await aboutLink.click();
+  await expect(
+    page.getByRole("heading", { name: "Research infrastructure that shows its work" }),
+  ).toBeVisible();
+});

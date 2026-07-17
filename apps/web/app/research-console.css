@@ -20,6 +20,13 @@
   background: var(--canvas);
 }
 
+.research-shell.home-research {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  scroll-margin-top: 0;
+}
+
 .research-shell .research-main {
   width: min(1920px, calc(100% - 64px));
   margin: 0 auto;
