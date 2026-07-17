@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 async function mockBase(page: Page) {
   await page.route("**/health", (route) =>
@@ -153,10 +153,88 @@ test("renders the coverage universe in the data foundation", async ({ page }) =>
   );
 
   await page.goto("/");
-  await expect(page.locator(".data-foundation")).toContainText("Data foundation");
+  const foundation = page.locator(".data-foundation");
+  await expect(foundation).toContainText("Data foundation");
   await expect(page.locator(".foundation-stat").first()).toContainText("495");
   await expect(page.locator(".foundation-company").first()).toContainText("KKR");
+  await expect(
+    page.locator(".foundation-stat").filter({ hasText: "embedding coverage" }).locator("strong"),
+  ).toHaveText("Loading");
+  await expect(foundation).not.toContainText("N/A");
   releaseOperations();
+});
+
+test("keeps the last verified foundation snapshot while refreshes are pending", async ({ page }) => {
+  const cachedAt = Date.now();
+  await page.addInitScript(
+    ({ savedAt }) => {
+      window.localStorage.setItem(
+        "fdre.foundation.v1",
+        JSON.stringify({
+          savedAt,
+          data: {
+            coverage: {
+              catalog_count: 5794,
+              sp500_catalog_count: 499,
+              indexed_count: 498,
+              sp500_indexed_count: 498,
+              document_count: 2766,
+              chunk_count: 2715610,
+              indexed_tickers: ["AAPL", "MSFT"],
+            },
+            companies: [
+              { ticker: "ARE", cik: "1", name: "Alexandria", exchange: "NYSE", document_count: 13, chunk_count: 42236, indexed: true },
+              { ticker: "AAPL", cik: "2", name: "Apple", exchange: "Nasdaq", document_count: 13, chunk_count: 6056, indexed: true },
+            ],
+            operations: {
+              generated_at: "2026-07-17T04:53:23Z",
+              company_count: 499,
+              document_count: 2766,
+              chunk_count: 2715610,
+              embedding_count: 2715610,
+              stale_after_days: 150,
+              stale_tickers: [],
+              missing_expected_filings: [],
+              duplicate_accession_groups: 0,
+              documents_without_chunks: 0,
+              unchunked_documents: [],
+              chunks_without_embeddings: 0,
+              facts_without_documents: 0,
+              freshness_ratio: 0.998,
+              document_chunk_coverage: 1,
+              embedding_coverage: 1,
+              recent_ingestion_success_rate: 1,
+              latest_ingestion_completed_at: "2026-07-16T11:30:33Z",
+            },
+          },
+        }),
+      );
+    },
+    { savedAt: cachedAt },
+  );
+
+  let releaseRequests = () => {};
+  const requestsPending = new Promise<void>((resolve) => {
+    releaseRequests = resolve;
+  });
+  const holdRequest = async (route: Route) => {
+    await requestsPending;
+    await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+  };
+  await page.route("**/health", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok" }) }),
+  );
+  await page.route("**/coverage", holdRequest);
+  await page.route("**/companies**", holdRequest);
+  await page.route("**/operations/quality**", holdRequest);
+
+  await page.goto("/");
+  const foundation = page.locator(".data-foundation");
+  await expect(page.locator(".foundation-stat").first()).toContainText("498");
+  await expect(foundation).toContainText("100.0%");
+  await expect(foundation).toContainText("42,236 chunks");
+  await expect(foundation).not.toContainText("N/A");
+  releaseRequests();
 });
 
 test("renders the published signal study", async ({ page }) => {

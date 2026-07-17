@@ -1573,6 +1573,12 @@
   white-space: nowrap;
 }
 
+.foundation-stat strong.loading {
+  color: rgba(241, 231, 239, 0.64);
+  font: 600 9px var(--mono);
+  text-transform: uppercase;
+}
+
 .foundation-stat small {
   overflow: hidden;
   color: rgba(241, 231, 239, 0.56);
@@ -1722,6 +1728,26 @@
   background: linear-gradient(90deg, #3a8a70, #5fae93);
 }
 
+.foundation-track > span.loading {
+  background: linear-gradient(
+    90deg,
+    rgba(241, 231, 239, 0.06),
+    rgba(233, 180, 143, 0.72),
+    rgba(241, 231, 239, 0.06)
+  );
+  animation: foundationLoading 1.4s ease-in-out infinite;
+}
+
+@keyframes foundationLoading {
+  from {
+    transform: translateX(-130%);
+  }
+
+  to {
+    transform: translateX(360%);
+  }
+}
+
 .foundation-company code,
 .foundation-meter code {
   color: rgba(241, 231, 239, 0.68);
@@ -1746,6 +1772,10 @@
   margin: 0;
   color: rgba(241, 231, 239, 0.58);
   font: 11px var(--mono);
+}
+
+.foundation-unavailable.loading {
+  color: rgba(241, 231, 239, 0.72);
 }
 
 .research-stack {
@@ -2180,6 +2210,8 @@
   .research-shell *,
   .data-foundation * {
     scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
