@@ -94,7 +94,7 @@ export default async function About() {
             <h2 id="see-it-work-title">A question in, audited evidence out</h2>
             <p>
               Every answer carries its citations, retrieval scores, and the discipline to abstain
-              when the filings do not support a claim. This is the live console, replayed — pick a
+              when the filings do not support a claim. This is the live console, replayed. Pick a
               scenario or let it loop.
             </p>
           </div>
@@ -143,7 +143,7 @@ export default async function About() {
             <h2 id="specimen-title">What a single result looks like</h2>
             <p>
               A typed financial fact resolved to its filing, and the bounded retrieval run that
-              produced a verified answer — the artifacts behind every console response.
+              produced a verified answer: the artifacts behind every console response.
             </p>
           </div>
           <div className="specimen-grid">
@@ -301,8 +301,8 @@ export default async function About() {
               <div>
                 <strong>Published signal studies</strong>
                 <p>
-                  Four point-in-time filing studies — disclosure, risk, composite, and earnings
-                  quality — with multiple-testing-adjusted inference and honest verdicts.
+                  Four point-in-time filing studies covering disclosure, risk, composite, and earnings
+                  quality, with multiple-testing-adjusted inference and honest verdicts.
                 </p>
               </div>
             </li>

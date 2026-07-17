@@ -121,7 +121,7 @@ export function OperationsPanel() {
           <span className="accent">{new Date(report.generated_at).toISOString().slice(0, 10)}</span>
         </h2>
         <p className="panel-lede">
-          Computed on request against the production database — coverage ratios, ingestion health,
+          Computed on request against the production database: coverage ratios, ingestion health,
           and integrity checks. Last ingestion {timeAgo(report.latest_ingestion_completed_at)}.
         </p>
       </div>

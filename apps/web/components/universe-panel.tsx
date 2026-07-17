@@ -173,7 +173,7 @@ export function UniversePanel() {
                 {company.name}
               </span>
               <span role="cell" className="ut-exch">
-                {company.exchange ?? "—"}
+                {company.exchange ?? "N/A"}
               </span>
               <span role="cell" className="ut-num">
                 {company.document_count}
@@ -187,7 +187,7 @@ export function UniversePanel() {
         <p className="ut-foot">
           <Building2 size={12} aria-hidden="true" />
           {rows.length > 120
-            ? `Showing top 120 of ${rows.length.toLocaleString()} matching issuers — refine the filter to narrow.`
+            ? `Showing top 120 of ${rows.length.toLocaleString()} matching issuers. Refine the filter to narrow.`
             : `${rows.length.toLocaleString()} matching issuers`}
         </p>
       </div>

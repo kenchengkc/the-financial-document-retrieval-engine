@@ -49,7 +49,7 @@ type Scene = {
 
 // Funnel counts mirror the live console's retrieval funnel: the indexed corpus,
 // hybrid candidates, the reranked shortlist, and what survived citation
-// verification. The abstention scene collapses to zero — the story of the gate.
+// verification. The abstention scene collapses to zero, showing the gate at work.
 const SCENES: Scene[] = [
   {
     tab: "Cited answer",
@@ -126,7 +126,7 @@ const SCENES: Scene[] = [
     tab: "Abstention",
     icon: ShieldCheck,
     query: "What will NVIDIA's stock price be next quarter?",
-    ticker: "—",
+    ticker: "N/A",
     form: "abstained",
     date: "",
     answer: "FDRE does not forecast securities prices or provide trading recommendations.",

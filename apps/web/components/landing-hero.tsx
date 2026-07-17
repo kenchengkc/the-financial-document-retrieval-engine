@@ -79,7 +79,7 @@ export function LandingHero({
             Retrieval <em>Engine</em>
           </h1>
           <p className="ld-lede">
-            Extracting market-moving insights from filings — accurately, verifiably, and at
+            Extracting market-moving insights from filings accurately, verifiably, and at
             scale. Every answer opens straight to its source.
           </p>
           <div className="ld-cta">

@@ -96,7 +96,7 @@ export default function Contact() {
           <h1>Let&rsquo;s talk.</h1>
           <p className="contact-lede">
             FDRE is designed and built by <strong>Ken Cheng</strong>. Reach out about the
-            project, the research, or quant/engineering roles — I&rsquo;m happy to walk through the
+            project, the research, or quant/engineering roles. I&rsquo;m happy to walk through the
             architecture or the data.
           </p>
         </div>

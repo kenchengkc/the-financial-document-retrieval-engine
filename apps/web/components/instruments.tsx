@@ -215,12 +215,12 @@ export function ResultAnalysis({
     { k: "Issuers", v: String(issuers.size) },
     {
       k: "Top section",
-      v: topSection ? `${topSection[0]}` : "—",
+      v: topSection ? `${topSection[0]}` : "N/A",
       title: topSection ? `${topSection[1]} of ${candidates.length} passages` : undefined,
     },
     {
       k: "Filing span",
-      v: dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : "—",
+      v: dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : "N/A",
     },
     {
       k: "Rerank moved",

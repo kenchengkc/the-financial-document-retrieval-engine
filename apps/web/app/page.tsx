@@ -224,7 +224,7 @@ export default function Home() {
                   <p className="eyebrow">Cited answers from filings</p>
                   <h2>Ask</h2>
                   <p className="panel-lede">
-                    Ask a question in plain language. FDRE retrieves, reranks, verifies citations —
+                    Ask a question in plain language. FDRE retrieves, reranks, verifies citations,
                     and declines when the filings do not support an answer.
                   </p>
                 </div>

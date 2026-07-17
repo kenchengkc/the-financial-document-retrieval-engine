@@ -138,9 +138,9 @@ export function SignalMonitor({
                 <td><strong>{SIGNAL_NAMES[study.report.signal_name] ?? study.report.signal_name}</strong><small>{study.report.feature_version ?? "versioned feature"}</small></td>
                 <td>{outcomeLabel(study)}</td>
                 <td className="num">{study.report.event_count.toLocaleString()}</td>
-                <td>{item.best ? windowLabel(item.best.window) : "—"}</td>
-                <td className="num">{item.peakIc ? item.peakIc.toFixed(3) : "—"}</td>
-                <td className="num">{item.bestP === null ? "—" : item.bestP.toFixed(3)}</td>
+                <td>{item.best ? windowLabel(item.best.window) : "N/A"}</td>
+                <td className="num">{item.peakIc ? item.peakIc.toFixed(3) : "N/A"}</td>
+                <td className="num">{item.bestP === null ? "N/A" : item.bestP.toFixed(3)}</td>
                 <td>
                   <span className="stability-meter"><i style={{ width: `${item.signStability * 100}%` }} /></span>
                   <small>{Math.round(item.signStability * 100)}%</small>

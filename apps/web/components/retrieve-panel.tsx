@@ -128,7 +128,7 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
                 aria-label="Search query"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search filings — data center capacity constraints…"
+                placeholder="Search filings: data center capacity constraints…"
               />
               <button type="submit" disabled={loading}>
                 {loading ? (

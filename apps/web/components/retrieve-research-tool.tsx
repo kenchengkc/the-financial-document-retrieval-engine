@@ -275,7 +275,7 @@ function FactTapeTool() {
                     <td><strong>{fact.ticker}</strong><small>{fact.form_type ?? "filing"}</small></td>
                     <td>{readable(fact.canonical_metric)}<small>{fact.is_restatement ? "restated" : fact.concept}</small></td>
                     <td className="num"><strong>{formatFactValue(fact.value, fact.unit, fact.canonical_metric)}</strong></td>
-                    <td>{fact.fiscal_year ?? "—"} {fact.fiscal_period ?? ""}<small>{dateLabel(fact.period_end)}</small></td>
+                    <td>{fact.fiscal_year ?? "N/A"} {fact.fiscal_period ?? ""}<small>{dateLabel(fact.period_end)}</small></td>
                     <td>{dateLabel(fact.available_at)}</td>
                     <td><span className="mono-clip" title={fact.accession_number}>{fact.accession_number}</span></td>
                   </tr>
@@ -402,9 +402,9 @@ function PanelExportTool() {
                     <td><strong>{row.ticker}</strong></td>
                     <td>{dateLabel(row.period_end)}</td>
                     <td>{row.form_type}</td>
-                    <td className="num">{row.disclosure_similarity === null ? "—" : row.disclosure_similarity.toFixed(3)}</td>
+                    <td className="num">{row.disclosure_similarity === null ? "N/A" : row.disclosure_similarity.toFixed(3)}</td>
                     <td className="num">{(row.risk_added_passages ?? 0) - (row.risk_removed_passages ?? 0)}</td>
-                    <td className="num">{row.operating_margin === null ? "—" : `${(row.operating_margin * 100).toFixed(1)}%`}</td>
+                    <td className="num">{row.operating_margin === null ? "N/A" : `${(row.operating_margin * 100).toFixed(1)}%`}</td>
                     <td>{dateLabel(row.available_at)}</td>
                   </tr>
                 ))}

@@ -7,7 +7,7 @@
   --prose: #463a4b;
   --line: #e8ded9;
   --line-strong: #d9cdc7;
-  /* Sunset identity — one plum primary used for text accents and buttons,
+  /* Sunset identity: one plum primary used for text accents and buttons,
      with teal/gold/rose from the FDRE wordmark gradient as supporting accents. */
   --green: #6d3d63;
   --green-deep: #4f2c49;
@@ -100,7 +100,7 @@ a {
 }
 
 /* ============================================================
-   Hero — refined sunset scene (design: Hero Directions, A)
+   Hero: refined sunset scene (design: Hero Directions, A)
    ============================================================ */
 .hero {
   position: relative;
@@ -119,7 +119,7 @@ a {
   pointer-events: none;
 }
 
-/* sunset sky — the indigo→plum→gold dusk; green lives ONLY in the sea.
+/* Sunset sky uses indigo→plum→gold dusk; green lives ONLY in the sea.
    Densely-eased stops (catmull-rom) so no Mach-band lines appear at stop boundaries. */
 .gh-sky {
   position: absolute;
@@ -141,7 +141,7 @@ a {
   mix-blend-mode: screen;
 }
 
-/* the disc above the waterline (lower half clipped — it continues underwater) */
+/* The disc above the waterline (lower half clipped because it continues underwater). */
 .gh-sun {
   position: absolute;
   left: 74%;
@@ -195,7 +195,7 @@ a {
   }
 }
 
-/* thin cloud streaks — horizontal bands parallel to the horizon, gathered near the sun */
+/* Thin cloud streaks: horizontal bands parallel to the horizon, gathered near the sun. */
 .gh-cloud {
   position: absolute;
   height: 16px;
@@ -251,7 +251,7 @@ a {
   }
 }
 
-/* soft glowing horizon — a diffuse hot band, no crisp stroke (sun sits above it) */
+/* Soft glowing horizon: a diffuse hot band, no crisp stroke (sun sits above it). */
 .gh-horizon {
   position: absolute;
   left: 0;
@@ -270,7 +270,7 @@ a {
   z-index: 2;
 }
 
-/* ---- sea: soft swells (blurred, low-contrast — no hard strips) ---- */
+/* ---- Sea: soft swells (blurred, low-contrast with no hard strips) ---- */
 .gh-sea {
   position: absolute;
   left: 0;
@@ -359,7 +359,7 @@ a {
   }
 }
 
-/* the submerged half of the sun — refracted, flattened, dissolving into the water */
+/* The submerged half of the sun is refracted, flattened, and dissolving into the water. */
 .gh-sun-sub {
   position: absolute;
   left: 74%;
@@ -387,7 +387,7 @@ a {
   }
 }
 
-/* molten reflection — a clean shimmering column straight below the sun */
+/* Molten reflection: a clean shimmering column straight below the sun. */
 .gh-reflect {
   position: absolute;
   left: 74%;
@@ -674,7 +674,7 @@ a {
   margin: 0 0 20px;
 }
 
-/* The chips sit in the light console, not the dark hero — override the hero
+/* The chips sit in the light console, not the dark hero. Override the hero
    styling so the labels are readable on cream. */
 .console-chips .hd-chip {
   color: var(--prose);
@@ -800,7 +800,7 @@ a {
 }
 
 /* ============================================================
-   About hero — real imagery, arched nature windows (design: B)
+   About hero: real imagery, arched nature windows (design: B)
    ============================================================ */
 .about-hero {
   position: relative;
@@ -1120,7 +1120,7 @@ a {
   font: 600 18px var(--mono);
 }
 
-/* centre arch — deep forest card */
+/* Centre arch: deep forest card. */
 .ih-card {
   position: relative;
   overflow: hidden;
@@ -1168,7 +1168,7 @@ a {
   max-width: 46ch;
 }
 
-/* meta row — quiet pillars of the product, replaces homepage search/chips */
+/* Meta row: quiet pillars of the product, replaces homepage search/chips. */
 .ih-meta {
   margin-top: 30px;
   display: flex;
@@ -1700,7 +1700,7 @@ main {
   opacity: 0.5;
 }
 
-/* The cited source(s) — flag the proof the answer actually rests on. */
+/* The cited sources flag the proof the answer actually rests on. */
 .evidence-cited {
   flex: none;
   padding: 1px 7px;
@@ -2633,7 +2633,7 @@ main {
 }
 
 /* ============================================================
-   Research console — mode rail + panels
+   Research console: mode rail + panels
    ============================================================ */
 .console {
   margin-top: 8px;
@@ -3661,7 +3661,7 @@ main {
   background: linear-gradient(90deg, var(--cyan), var(--green));
 }
 
-/* The extreme quantiles (Q1 / Qn) are the long-short legs — make them read first. */
+/* The extreme quantiles (Q1 / Qn) are the long-short legs, so make them read first. */
 .sig-qrow.edge .sig-qlabel {
   color: var(--ink);
   font-weight: 600;
@@ -3851,7 +3851,7 @@ main {
 }
 
 /* Mobile: 4 columns don't fit a phone. Drop the most technical column
-   (rank skill / IC — still shown in the glossary and charts) and compact. */
+   (rank skill / IC, still shown in the glossary and charts) and compact. */
 @media (max-width: 640px) {
   .sig-summary th,
   .sig-summary td {
@@ -4271,7 +4271,7 @@ main {
 }
 
 /* ============================================================
-   About — animated demo (browser box) + specimen band
+   About: animated demo (browser box) + specimen band
    ============================================================ */
 .demo-band,
 .specimen-band {
@@ -5004,7 +5004,7 @@ main {
   margin: 0 auto;
 }
 .ld-nav { display: flex; align-items: center; gap: 40px; padding: 30px 0; }
-/* The actual FDRE logo asset — white version on the dark nav (the colored
+/* The actual FDRE logo asset uses the white version on the dark nav (the colored
    version, public/fdre-logo-color.png, is for light backgrounds). */
 .ld-brand-img {
   height: 40px;

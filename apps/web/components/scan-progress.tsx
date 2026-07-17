@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Time-based progress for a request whose real progress we cannot observe
  * (the API returns a single response, not a stream). Instead of a smooth
- * mathematical curve — which reads as fake — the bar is a random walk:
+ * mathematical curve because it reads as fake. The bar is a random walk:
  * irregular jumps, occasional bursts, and brief stalls, the way real work
  * ticks over. A soft ceiling that tracks elapsed time keeps the walk honest:
  * it climbs roughly linearly to ~98% at the expected duration, so there is no
@@ -44,9 +44,9 @@ export function ScanProgress({
       const roll = Math.random();
       let step: number;
       if (roll < 0.22) {
-        step = 0; // stall — work pauses sometimes
+        step = 0; // Stall while work pauses.
       } else if (roll < 0.34) {
-        step = (0.035 + Math.random() * 0.045) * pace; // burst — a batch lands at once
+        step = (0.035 + Math.random() * 0.045) * pace; // Burst when a batch lands at once.
       } else {
         step = (0.004 + Math.random() * 0.022) * pace; // ordinary irregular tick
       }

@@ -29,7 +29,7 @@ const EMPTY_DATA: FoundationData = {
 };
 
 function compactNumber(value: number | null | undefined) {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "N/A";
   return new Intl.NumberFormat("en", {
     notation: value >= 100_000 ? "compact" : "standard",
     maximumFractionDigits: 1,
@@ -37,11 +37,11 @@ function compactNumber(value: number | null | undefined) {
 }
 
 function percent(value: number | null | undefined) {
-  return value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
+  return value === null || value === undefined ? "N/A" : `${(value * 100).toFixed(1)}%`;
 }
 
 function timeAgo(iso: string | null | undefined) {
-  if (!iso) return "—";
+  if (!iso) return "N/A";
   const elapsedMinutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
   if (elapsedMinutes < 60) return `${elapsedMinutes} min`;
   const elapsedHours = Math.round(elapsedMinutes / 60);
@@ -120,7 +120,7 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
   const issuerCount = data.coverage?.indexed_count ?? operations?.company_count;
   const filingCount = data.coverage?.document_count ?? operations?.document_count;
   const chunkCount = data.coverage?.chunk_count ?? operations?.chunk_count;
-  const answerP50 = runs.length ? formatLatency(median(runs.map((run) => run.latencyMs))) : "—";
+  const answerP50 = runs.length ? formatLatency(median(runs.map((run) => run.latencyMs))) : "N/A";
   const strip = [
     { label: "issuers indexed", value: compactNumber(issuerCount) },
     { label: "filings", value: compactNumber(filingCount) },
@@ -187,13 +187,13 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
             </p>
             <div className="foundation-split">
               <span>
-                <strong>{nyse || "—"}</strong> NYSE
+                <strong>{nyse || "N/A"}</strong> NYSE
               </span>
               <span>
-                <strong>{nasdaq || "—"}</strong> Nasdaq
+                <strong>{nasdaq || "N/A"}</strong> Nasdaq
               </span>
               <span>
-                <strong>{data.coverage?.sp500_indexed_count ?? "—"}</strong> S&amp;P 500
+                <strong>{data.coverage?.sp500_indexed_count ?? "N/A"}</strong> S&amp;P 500
               </span>
             </div>
             <div className="foundation-company-list" role="list" aria-label="Largest filing footprints">
@@ -231,7 +231,7 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
               </span>
               <span>
                 <ShieldCheck size={13} aria-hidden="true" />
-                <strong>{operations?.documents_without_chunks ?? "—"}</strong> unchunked docs
+                <strong>{operations?.documents_without_chunks ?? "N/A"}</strong> unchunked docs
               </span>
               <span>
                 <Database size={13} aria-hidden="true" />
