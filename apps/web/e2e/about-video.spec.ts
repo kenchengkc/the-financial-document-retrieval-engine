@@ -52,3 +52,46 @@ test("keeps about hero posters visible until both videos are playing", async ({ 
   await expect(rightPanel.locator(".ih-video")).toHaveCSS("opacity", "1");
   expect(consoleErrors).toEqual([]);
 });
+
+test("replays the current four-mode research console", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/_vercel/insights/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
+  );
+
+  await page.goto("/about");
+
+  const demo = page.locator(".bdemo");
+  const tabs = demo.getByRole("tab");
+  await expect(tabs).toHaveCount(4);
+  await expect(tabs.nth(0)).toContainText("Ask");
+  await expect(tabs.nth(1)).toContainText("Retrieve");
+  await expect(tabs.nth(2)).toContainText("Screen");
+  await expect(tabs.nth(3)).toContainText("Signals");
+
+  await expect(demo.getByRole("heading", { name: "Run summary" })).toBeVisible();
+  await expect(demo).toContainText("Citation verified");
+  await expect(demo).toContainText("Primary sources");
+
+  await tabs.nth(1).click();
+  await expect(demo.getByRole("heading", { name: "Query reported financials" })).toBeVisible();
+  await expect(demo).toContainText("Financial facts");
+  await expect(demo).toContainText("$26.77B");
+
+  await tabs.nth(2).click();
+  await expect(demo.getByRole("heading", { name: "Screen" })).toBeVisible();
+  await expect(demo).toContainText("Ranked issuers");
+  await expect(demo).toContainText("Digital Realty");
+
+  await tabs.nth(3).click();
+  await expect(demo.getByRole("heading", { name: "Signals" })).toBeVisible();
+  await expect(demo).toContainText("-5.01%");
+  await expect(demo).toContainText("Significant inversion");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(demo).toBeVisible();
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(horizontalOverflow).toBe(false);
+});

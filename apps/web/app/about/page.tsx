@@ -91,11 +91,10 @@ export default async function About() {
         <section className="demo-band" id="see-it-work" aria-labelledby="see-it-work-title">
           <div className="proof-heading">
             <p className="eyebrow">See it work</p>
-            <h2 id="see-it-work-title">A question in, audited evidence out</h2>
+            <h2 id="see-it-work-title">The research console, replayed</h2>
             <p>
-              Every answer carries its citations, retrieval scores, and the discipline to abstain
-              when the filings do not support a claim. This is the live console, replayed. Pick a
-              scenario or let it loop.
+              Move through cited answers, point-in-time retrieval, cross-sectional screening, and
+              signal studies. Pick a mode or let the replay advance.
             </p>
           </div>
           <SearchDemo />
