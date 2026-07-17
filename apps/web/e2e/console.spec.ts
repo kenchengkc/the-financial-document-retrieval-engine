@@ -19,6 +19,12 @@ async function mockBase(page: Page) {
       }),
     }),
   );
+  await page.route("**/companies**", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
+  await page.route("**/operations/quality**", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
 }
 
 function candidate(date: string, form: string, chunkId: number) {

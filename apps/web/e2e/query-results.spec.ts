@@ -25,6 +25,12 @@ async function mockHealthAndCoverage(page: import("@playwright/test").Page) {
       }),
     }),
   );
+  await page.route("**/companies**", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
+  await page.route("**/operations/quality**", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
 }
 
 async function mockApi(page: import("@playwright/test").Page) {

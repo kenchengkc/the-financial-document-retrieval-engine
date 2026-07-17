@@ -81,23 +81,26 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
       if (active) setPendingSources((current) => Math.max(0, current - 1));
     };
 
-    void fetchCoverage()
+    const coverageRequest = fetchCoverage()
       .then((coverage) => {
         if (active) setData((current) => ({ ...current, coverage }));
       })
       .finally(finish);
-    void fetchCompanies()
+    const companiesRequest = fetchCompanies()
       .then((response) => {
         if (active) setData((current) => ({ ...current, companies: response.companies }));
       })
       .catch(() => undefined)
       .finally(finish);
-    void fetchOperationsQuality()
-      .then((operations) => {
-        if (active) setData((current) => ({ ...current, operations }));
-      })
-      .catch(() => undefined)
-      .finally(finish);
+    void Promise.allSettled([coverageRequest, companiesRequest]).then(() => {
+      if (!active) return;
+      void fetchOperationsQuality()
+        .then((operations) => {
+          if (active) setData((current) => ({ ...current, operations }));
+        })
+        .catch(() => undefined)
+        .finally(finish);
+    });
 
     return () => {
       active = false;
