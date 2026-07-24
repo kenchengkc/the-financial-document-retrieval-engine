@@ -237,6 +237,7 @@ def test_coverage_reuses_cached_database_counts(
         )
 
         first = get_coverage(session)
+        clear_coverage_cache()
         session.execute(delete(Company))
         session.commit()
         second = get_coverage(session)

@@ -42,7 +42,9 @@ def test_vercel_demo_database_initialization_is_idempotent(
 def test_railway_runs_migrations_before_starting_the_api() -> None:
     config = tomllib.loads((REPO_ROOT / "railway.toml").read_text())
 
-    assert config["deploy"]["preDeployCommand"] == "alembic upgrade head"
+    predeploy = config["deploy"]["preDeployCommand"]
+    assert predeploy.startswith("alembic upgrade head")
+    assert "scripts.refresh_research_console_metrics" in predeploy
     assert "alembic" not in config["deploy"]["startCommand"]
     assert "uvicorn" in config["deploy"]["startCommand"]
     assert config["deploy"]["startCommand"].startswith("sh -c ")

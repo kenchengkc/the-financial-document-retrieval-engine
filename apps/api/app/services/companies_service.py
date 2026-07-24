@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models import Chunk, Company, Document, Embedding
 from apps.api.app.schemas.companies import CompaniesResponse, CompanySummary, CoverageResponse
+from apps.api.app.services.metric_snapshot_service import (
+    read_metric_snapshot,
+    write_metric_snapshot,
+)
 from fdre.ingestion.ticker_map import catalog_company_count, sp500_primary_tickers
 
 _DEMO_TICKERS = frozenset({"EXMPL"})
@@ -20,6 +24,8 @@ _coverage_cache_lock = threading.Lock()
 _COMPANIES_CACHE_TTL_SECONDS = 900.0
 _companies_cache: dict[int, tuple[float, list[CompanySummary]]] = {}
 _companies_cache_lock = threading.Lock()
+_COVERAGE_SNAPSHOT_KEY = "research-console:coverage"
+_COMPANIES_SNAPSHOT_KEY = "research-console:companies"
 
 
 def get_coverage(session: Session) -> CoverageResponse:
@@ -31,6 +37,29 @@ def get_coverage(session: Session) -> CoverageResponse:
         if cached is not None and cached[0] > now:
             return cached[1].model_copy(deep=True)
 
+    payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
+    response = (
+        CoverageResponse.model_validate(payload)
+        if payload is not None
+        else _build_coverage(session)
+    )
+    if payload is None:
+        write_metric_snapshot(
+            session,
+            metric_key=_COVERAGE_SNAPSHOT_KEY,
+            payload=response.model_dump(mode="json"),
+        )
+        session.commit()
+
+    with _coverage_cache_lock:
+        _coverage_cache[cache_key] = (
+            now + _COVERAGE_CACHE_TTL_SECONDS,
+            response.model_copy(deep=True),
+        )
+    return response
+
+
+def _build_coverage(session: Session) -> CoverageResponse:
     indexed_tickers = [
         ticker for ticker in _indexed_company_tickers(session) if ticker not in _DEMO_TICKERS
     ]
@@ -42,7 +71,7 @@ def get_coverage(session: Session) -> CoverageResponse:
         select(func.count(func.distinct(Embedding.chunk_id))).select_from(Embedding)
     ) or 0
 
-    response = CoverageResponse(
+    return CoverageResponse(
         catalog_count=catalog_company_count(),
         sp500_catalog_count=len(sp500_catalog),
         indexed_count=len(indexed_tickers),
@@ -51,12 +80,6 @@ def get_coverage(session: Session) -> CoverageResponse:
         chunk_count=chunk_count,
         indexed_tickers=indexed_tickers,
     )
-    with _coverage_cache_lock:
-        _coverage_cache[cache_key] = (
-            now + _COVERAGE_CACHE_TTL_SECONDS,
-            response.model_copy(deep=True),
-        )
-    return response
 
 
 def clear_coverage_cache() -> None:
@@ -120,10 +143,41 @@ def _cached_company_rows(session: Session) -> list[CompanySummary]:
         cached = _companies_cache.get(cache_key)
         if cached is not None and cached[0] > now:
             return cached[1]
-    rows = _indexed_company_rows(session)
+    payload = read_metric_snapshot(session, _COMPANIES_SNAPSHOT_KEY)
+    if payload is None:
+        rows = _indexed_company_rows(session)
+        response = CompaniesResponse(total=len(rows), companies=rows)
+        write_metric_snapshot(
+            session,
+            metric_key=_COMPANIES_SNAPSHOT_KEY,
+            payload=response.model_dump(mode="json"),
+        )
+        session.commit()
+    else:
+        rows = CompaniesResponse.model_validate(payload).companies
     with _companies_cache_lock:
         _companies_cache[cache_key] = (now + _COMPANIES_CACHE_TTL_SECONDS, rows)
     return rows
+
+
+def refresh_company_snapshots(
+    session: Session,
+) -> tuple[CoverageResponse, list[CompanySummary]]:
+    coverage = _build_coverage(session)
+    rows = _indexed_company_rows(session)
+    write_metric_snapshot(
+        session,
+        metric_key=_COVERAGE_SNAPSHOT_KEY,
+        payload=coverage.model_dump(mode="json"),
+    )
+    write_metric_snapshot(
+        session,
+        metric_key=_COMPANIES_SNAPSHOT_KEY,
+        payload=CompaniesResponse(total=len(rows), companies=rows).model_dump(mode="json"),
+    )
+    session.commit()
+    clear_coverage_cache()
+    return coverage, rows
 
 
 def _indexed_company_rows(session: Session) -> list[CompanySummary]:

@@ -8,6 +8,7 @@ from apps.api.app.models.evals import EvalQuestion, EvalResult
 from apps.api.app.models.financial_facts import FinancialFact
 from apps.api.app.models.ingestion_runs import IngestionRun
 from apps.api.app.models.research_experiments import ResearchExperiment
+from apps.api.app.models.research_metric_snapshots import ResearchMetricSnapshot
 from apps.api.app.models.retrieval_runs import RetrievalResult, RetrievalRun
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "FinancialFact",
     "IngestionRun",
     "ResearchExperiment",
+    "ResearchMetricSnapshot",
     "RetrievalResult",
     "RetrievalRun",
 ]

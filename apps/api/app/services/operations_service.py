@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -17,6 +18,13 @@ from apps.api.app.models import (
     IngestionRun,
 )
 from apps.api.app.schemas.operations import DataQualityReport, UnchunkedDocument
+from apps.api.app.services.metric_snapshot_service import (
+    read_metric_snapshot,
+    write_metric_snapshot,
+)
+
+logger = logging.getLogger(__name__)
+DEFAULT_STALE_AFTER_DAYS = 150
 
 
 def start_ingestion_run(
@@ -69,6 +77,12 @@ def finish_ingestion_run(
     run.completed_at = datetime.now(UTC)
     session.commit()
     session.refresh(run)
+    if status == "completed":
+        try:
+            refresh_research_console_snapshots(session)
+        except Exception:
+            session.rollback()
+            logger.exception("Could not refresh Research Console metric snapshots")
     return run
 
 
@@ -223,6 +237,47 @@ def build_data_quality_report(
             recent_runs[0].completed_at if recent_runs else None
         ),
     )
+
+
+def get_data_quality_report(
+    session: Session,
+    *,
+    stale_after_days: int = DEFAULT_STALE_AFTER_DAYS,
+) -> DataQualityReport:
+    metric_key = _quality_snapshot_key(stale_after_days)
+    payload = read_metric_snapshot(session, metric_key)
+    if payload is not None:
+        return DataQualityReport.model_validate(payload)
+    return refresh_data_quality_snapshot(
+        session,
+        stale_after_days=stale_after_days,
+    )
+
+
+def refresh_data_quality_snapshot(
+    session: Session,
+    *,
+    stale_after_days: int = DEFAULT_STALE_AFTER_DAYS,
+) -> DataQualityReport:
+    report = build_data_quality_report(session, stale_after_days=stale_after_days)
+    write_metric_snapshot(
+        session,
+        metric_key=_quality_snapshot_key(stale_after_days),
+        payload=report.model_dump(mode="json"),
+    )
+    session.commit()
+    return report
+
+
+def refresh_research_console_snapshots(session: Session) -> DataQualityReport:
+    from apps.api.app.services.companies_service import refresh_company_snapshots
+
+    refresh_company_snapshots(session)
+    return refresh_data_quality_snapshot(session)
+
+
+def _quality_snapshot_key(stale_after_days: int) -> str:
+    return f"research-console:quality:{stale_after_days}"
 
 
 def _unchunked_reason(*, local_path: str | None, element_count: int) -> str:

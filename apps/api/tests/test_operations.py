@@ -3,14 +3,22 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
-from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
+from apps.api.app.models import (
+    Chunk,
+    Company,
+    Document,
+    DocumentElement,
+    Embedding,
+    ResearchMetricSnapshot,
+)
 from apps.api.app.services.operations_service import (
     build_data_quality_report,
     finish_ingestion_run,
+    get_data_quality_report,
     start_ingestion_run,
 )
 
@@ -78,6 +86,8 @@ def test_ingestion_manifest_and_quality_report() -> None:
             estimated_cost_usd=Decimal("0.000001"),
         )
         report = build_data_quality_report(session, stale_after_days=150)
+        cached_report = get_data_quality_report(session, stale_after_days=150)
+        snapshot_keys = set(session.scalars(select(ResearchMetricSnapshot.metric_key)))
 
     assert finished.status == "completed"
     assert finished.retry_count == 1
@@ -89,3 +99,11 @@ def test_ingestion_manifest_and_quality_report() -> None:
     assert report.stale_tickers == ["OLD"]
     assert "CURR:10-Q" in report.missing_expected_filings
     assert report.recent_ingestion_success_rate == 1.0
+    assert cached_report.model_dump(exclude={"generated_at"}) == report.model_dump(
+        exclude={"generated_at"}
+    )
+    assert snapshot_keys == {
+        "research-console:companies",
+        "research-console:coverage",
+        "research-console:quality:150",
+    }
