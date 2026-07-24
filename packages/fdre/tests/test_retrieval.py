@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import respx
 from httpx import Response
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
@@ -116,9 +116,18 @@ def test_expand_with_neighbors_adds_adjacent_chunks() -> None:
         hit = RetrievalCandidate(
             chunk_id=middle.id, text=middle.chunk_text, metadata={}, rerank_score=0.9
         )
+        statements: list[str] = []
+        event.listen(
+            engine,
+            "before_cursor_execute",
+            lambda _conn, _cursor, statement, _params, _context, _many: statements.append(
+                statement
+            ),
+        )
         expanded = expand_with_neighbors(session, [hit], window=1)
 
         assert {c.chunk_id for c in expanded} == {chunks[0].id, chunks[1].id, chunks[2].id}
+        assert len(statements) == 2
         neighbors = [c for c in expanded if c.metadata.get("neighbor_expanded")]
         assert len(neighbors) == 2
         # the original hit is preserved and not flagged as a neighbor

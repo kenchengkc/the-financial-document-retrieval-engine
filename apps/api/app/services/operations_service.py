@@ -271,7 +271,9 @@ def refresh_data_quality_snapshot(
 
 def refresh_research_console_snapshots(session: Session) -> DataQualityReport:
     from apps.api.app.services.companies_service import refresh_company_snapshots
+    from apps.api.app.services.research_cache import invalidate_research_query_cache
 
+    invalidate_research_query_cache(session)
     refresh_company_snapshots(session)
     return refresh_data_quality_snapshot(session)
 

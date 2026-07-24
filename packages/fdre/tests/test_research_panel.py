@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
@@ -120,6 +120,14 @@ def test_research_panel_builds_reproducible_point_in_time_features(
     with Session(engine) as session:
         session.add(company)
         session.commit()
+        statements: list[str] = []
+        event.listen(
+            engine,
+            "before_cursor_execute",
+            lambda _conn, _cursor, statement, _params, _context, _many: statements.append(
+                statement
+            ),
+        )
         panel = build_research_panel(
             session,
             ResearchPanelQuery(
@@ -128,6 +136,7 @@ def test_research_panel_builds_reproducible_point_in_time_features(
             ),
         )
 
+    assert len(statements) == 4
     row = next(row for row in panel.rows if row.accession_number == current.accession_number)
     assert len(panel.rows) == 2
     assert row.revenue_growth == pytest.approx(0.2)

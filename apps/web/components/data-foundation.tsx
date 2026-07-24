@@ -143,8 +143,14 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
         if (!active) return;
         setData(cached.data);
         setCacheLoaded(true);
+        setSourceStatuses({ companies: "ready", coverage: "ready", operations: "ready" });
       }, 0);
       retryWaits.set(restoreTimer, () => undefined);
+      return () => {
+        active = false;
+        window.clearTimeout(restoreTimer);
+        retryWaits.clear();
+      };
     }
 
     const waitForRetry = (delayMs: number) =>

@@ -194,7 +194,9 @@ function panelPath(path: string, options: ResearchPanelOptions, outputFormat?: s
 }
 
 export function fetchResearchPanel(options: ResearchPanelOptions): Promise<ResearchPanel> {
-  return getJson<ResearchPanel>(panelPath("/research/panel", options));
+  return getJson<ResearchPanel>(
+    panelPath("/research/panel", { ...options, limit: Math.min(options.limit ?? 25, 25) }),
+  );
 }
 
 export async function downloadResearchPanel(

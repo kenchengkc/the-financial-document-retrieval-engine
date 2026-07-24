@@ -1,4 +1,7 @@
+from datetime import date
+
 from fdre.retrieval.preprocess import CompanyReference, preprocess_query
+from fdre.retrieval.query import SearchFilters
 
 COMPANIES = [
     CompanyReference(ticker="AAPL", name="Apple Inc."),
@@ -83,3 +86,28 @@ def test_preprocess_keeps_finance_expansion_for_ticker_queries() -> None:
     assert any(
         "SEC filing financial results" in variant for variant in result.rewritten_queries
     )
+
+
+def test_preprocess_converts_explicit_years_to_filing_date_bounds() -> None:
+    result = preprocess_query(
+        "Compare Apple's 2022 and 2023 annual reports",
+        companies=COMPANIES,
+    )
+
+    assert result.filters.filing_date_from == date(2022, 1, 1)
+    assert result.filters.filing_date_to == date(2023, 12, 31)
+
+
+def test_preprocess_preserves_caller_date_bounds() -> None:
+    filters = SearchFilters(
+        filing_date_from=date(2024, 2, 1),
+        filing_date_to=date(2024, 3, 1),
+    )
+    result = preprocess_query(
+        "What did Apple disclose in 2022?",
+        companies=COMPANIES,
+        filters=filters,
+    )
+
+    assert result.filters.filing_date_from == filters.filing_date_from
+    assert result.filters.filing_date_to == filters.filing_date_to

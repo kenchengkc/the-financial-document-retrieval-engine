@@ -389,7 +389,7 @@ function ResearchDatasetTool() {
             {FORM_OPTIONS.map((form) => <button key={form} type="button" className={forms.includes(form) ? "on" : undefined} onClick={() => toggleForm(form)}>{form}</button>)}
           </div>
         </div>
-        <label><span>Maximum rows</span><input aria-label="Dataset row limit" type="number" min={25} max={10000} step={25} value={limit} onChange={(event) => setLimit(Math.min(10000, Math.max(25, Number(event.target.value) || 25)))} /></label>
+        <label><span>Export row limit</span><input aria-label="Dataset row limit" type="number" min={25} max={10000} step={25} value={limit} onChange={(event) => setLimit(Math.min(10000, Math.max(25, Number(event.target.value) || 25)))} /></label>
         <button className="lab-primary" type="submit" disabled={loading || forms.length === 0}>
           {loading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}
           {loading ? "Building" : "Preview dataset"}

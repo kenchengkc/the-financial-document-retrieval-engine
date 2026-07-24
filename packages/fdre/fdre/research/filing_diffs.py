@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Literal
@@ -66,11 +67,32 @@ def select_comparable_document(
     *,
     as_of: datetime | None = None,
 ) -> tuple[Document | None, str]:
+    candidates = list(
+        session.scalars(
+            select(Document).where(Document.company_id == current.company_id)
+        )
+    )
+    return select_comparable_document_from_candidates(
+        current,
+        candidates,
+        as_of=as_of,
+    )
+
+
+def select_comparable_document_from_candidates(
+    current: Document,
+    documents: Sequence[Document],
+    *,
+    as_of: datetime | None = None,
+) -> tuple[Document | None, str]:
     if current.is_amendment and current.amends_accession_number:
-        original = session.scalar(
-            select(Document).where(
-                Document.accession_number == current.amends_accession_number
-            )
+        original = next(
+            (
+                document
+                for document in documents
+                if document.accession_number == current.amends_accession_number
+            ),
+            None,
         )
         if original is not None and (
             as_of is None
@@ -79,21 +101,16 @@ def select_comparable_document(
             return original, "amendment_to_original"
 
     base_form = current.form_type.upper().removesuffix("/A")
-    candidates = list(
-        session.scalars(
-            select(Document).where(
-                Document.company_id == current.company_id,
-                Document.id != current.id,
-                Document.is_amendment.is_(False),
-                Document.period_end_date.is_not(None),
-                Document.period_end_date < current.period_end_date,
-            )
-        )
-    ) if current.period_end_date else []
     candidates = [
         document
-        for document in candidates
-        if document.form_type.upper().removesuffix("/A") == base_form
+        for document in documents
+        if current.period_end_date is not None
+        and document.company_id == current.company_id
+        and document.id != current.id
+        and not document.is_amendment
+        and document.period_end_date is not None
+        and document.period_end_date < current.period_end_date
+        and document.form_type.upper().removesuffix("/A") == base_form
         and (
             as_of is None
             or (document.available_at is not None and document.available_at <= as_of)

@@ -164,7 +164,7 @@ test("renders the coverage universe in the data foundation", async ({ page }) =>
   releaseOperations();
 });
 
-test("keeps the last verified foundation snapshot while refreshes are pending", async ({ page }) => {
+test("uses a fresh foundation snapshot without waking the data service", async ({ page }) => {
   const cachedAt = Date.now();
   await page.addInitScript(
     ({ savedAt }) => {
@@ -217,7 +217,9 @@ test("keeps the last verified foundation snapshot while refreshes are pending", 
   const requestsPending = new Promise<void>((resolve) => {
     releaseRequests = resolve;
   });
+  let foundationRequests = 0;
   const holdRequest = async (route: Route) => {
+    foundationRequests += 1;
     await requestsPending;
     await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
   };
@@ -234,6 +236,7 @@ test("keeps the last verified foundation snapshot while refreshes are pending", 
   await expect(foundation).toContainText("100.0%");
   await expect(foundation).toContainText("42,236 chunks");
   await expect(foundation).not.toContainText("N/A");
+  await expect.poll(() => foundationRequests).toBe(0);
   releaseRequests();
 });
 
@@ -376,6 +379,7 @@ test("compares a filing to its point-in-time comparable", async ({ page }) => {
 
 test("queries originally reported facts and builds a point-in-time dataset", async ({ page }) => {
   await mockBase(page);
+  let panelRequestUrl = "";
   await page.route("**/research/facts**", (route) =>
     route.fulfill({
       status: 200,
@@ -408,8 +412,9 @@ test("queries originally reported facts and builds a point-in-time dataset", asy
       }),
     }),
   );
-  await page.route("**/research/panel?**", (route) =>
-    route.fulfill({
+  await page.route("**/research/panel?**", (route) => {
+    panelRequestUrl = route.request().url();
+    return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
@@ -446,8 +451,8 @@ test("queries originally reported facts and builds a point-in-time dataset", asy
           },
         ],
       }),
-    }),
-  );
+    });
+  });
 
   await page.goto("/");
   await page.getByRole("tab", { name: /Retrieve/ }).click();
@@ -463,6 +468,7 @@ test("queries originally reported facts and builds a point-in-time dataset", asy
   await expect(page.locator(".panel-manifest")).toContainText("fdre-panel-v1");
   await expect(page.locator(".panel-manifest")).toContainText("Passed");
   await expect(page.locator(".panel-table")).toContainText("44.0%");
+  expect(panelRequestUrl).toContain("limit=25");
 });
 
 test("renders live data quality in the data foundation", async ({ page }) => {

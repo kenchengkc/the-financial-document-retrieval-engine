@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     answer_cache_ttl_seconds: int = Field(
         default=21600, ge=0, alias="ANSWER_CACHE_TTL_SECONDS"
     )
+    research_cache_ttl_seconds: int = Field(
+        default=21600, ge=0, alias="RESEARCH_CACHE_TTL_SECONDS"
+    )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     voyage_api_key: str | None = Field(default=None, alias="VOYAGE_API_KEY")
 

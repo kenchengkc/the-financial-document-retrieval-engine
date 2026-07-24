@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import Chunk
@@ -32,42 +32,53 @@ def expand_with_neighbors(
     if window < 1 or not candidates:
         return list(candidates)
     existing: set[int] = {candidate.chunk_id for candidate in candidates}
-    document_of: dict[int, int] = {
-        row.id: row.document_id
-        for row in session.execute(
-            select(Chunk.id, Chunk.document_id).where(Chunk.id.in_(list(existing)))
-        )
-    }
-    neighbor_ids: set[int] = set()
-    for candidate in candidates:
-        document_id = document_of.get(candidate.chunk_id)
-        if document_id is None:
-            continue
-        previous = session.execute(
-            select(Chunk.id)
-            .where(Chunk.document_id == document_id, Chunk.id < candidate.chunk_id)
-            .order_by(Chunk.id.desc())
-            .limit(window)
-        ).scalars()
-        following = session.execute(
-            select(Chunk.id)
-            .where(Chunk.document_id == document_id, Chunk.id > candidate.chunk_id)
-            .order_by(Chunk.id.asc())
-            .limit(window)
-        ).scalars()
-        neighbor_ids.update(previous)
-        neighbor_ids.update(following)
-    neighbor_ids -= existing
-    if not neighbor_ids:
+    candidate_rows = session.execute(
+        select(Chunk.id, Chunk.document_id).where(Chunk.id.in_(list(existing)))
+    ).all()
+    document_ids = {row.document_id for row in candidate_rows}
+    if not document_ids:
         return list(candidates)
 
-    chunks = session.execute(select(Chunk).where(Chunk.id.in_(neighbor_ids))).scalars().all()
+    positioned = (
+        select(
+            Chunk.id.label("chunk_id"),
+            Chunk.document_id.label("document_id"),
+            func.row_number()
+            .over(partition_by=Chunk.document_id, order_by=Chunk.id)
+            .label("position"),
+        )
+        .where(Chunk.document_id.in_(document_ids))
+        .cte("positioned_chunks")
+    )
+    candidate_positions = (
+        select(positioned.c.document_id, positioned.c.position)
+        .where(positioned.c.chunk_id.in_(existing))
+        .cte("candidate_positions")
+    )
+    neighbor_ids = (
+        select(positioned.c.chunk_id)
+        .join(
+            candidate_positions,
+            and_(
+                positioned.c.document_id == candidate_positions.c.document_id,
+                positioned.c.position >= candidate_positions.c.position - window,
+                positioned.c.position <= candidate_positions.c.position + window,
+            ),
+        )
+        .where(positioned.c.chunk_id.not_in(existing))
+        .distinct()
+    )
+    chunks = list(
+        session.scalars(
+            select(Chunk).where(Chunk.id.in_(neighbor_ids)).order_by(Chunk.id)
+        )
+    )
     additions = [
         RetrievalCandidate(
             chunk_id=chunk.id,
             text=chunk.chunk_text,
             metadata={**(chunk.metadata_json or {}), "neighbor_expanded": True},
         )
-        for chunk in sorted(chunks, key=lambda chunk: chunk.id)
+        for chunk in chunks
     ]
     return [*candidates, *additions]

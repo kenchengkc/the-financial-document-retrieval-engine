@@ -5,6 +5,8 @@ import hashlib
 import io
 import json
 import re
+from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -12,11 +14,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from apps.api.app.models import Company, Document, DocumentElement, FinancialFact
 from fdre.ingestion.xbrl import CANONICAL_CONCEPTS
-from fdre.research.filing_diffs import select_comparable_document
+from fdre.research.filing_diffs import select_comparable_document_from_candidates
 
 FEATURE_VERSION = "fdre-panel-v1"
 PanelFeature = Literal[
@@ -39,6 +41,24 @@ TOPIC_PATTERNS = {
     "regulation": re.compile(r"\b(?:regulation|regulatory|compliance)\b", re.I),
     "competition": re.compile(r"\b(?:competition|competitive|competitor)\b", re.I),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class PanelElement:
+    document_id: int
+    element_type: str
+    section: str | None
+    text: str | None
+    markdown: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PanelFact:
+    document_id: int
+    canonical_metric: str | None
+    concept: str
+    value: Decimal | None
+    available_at: datetime | None
 
 
 class ResearchPanelQuery(BaseModel):
@@ -99,6 +119,7 @@ def build_research_panel(
 ) -> ResearchPanel:
     statement = (
         select(Document)
+        .options(joinedload(Document.company))
         .join(Company, Company.id == Document.company_id)
         .where(
             Document.available_at.is_not(None),
@@ -122,10 +143,51 @@ def build_research_panel(
         statement = statement.where(Document.available_at <= query.as_of)
     if not query.include_amendments:
         statement = statement.where(Document.is_amendment.is_(False))
-    documents = list(session.scalars(statement.limit(query.limit)))
+    documents = list(session.scalars(statement.limit(query.limit)).unique())
     snapshot_id = _corpus_snapshot_id(documents)
+    if not documents:
+        return ResearchPanel(
+            query=query,
+            feature_version=FEATURE_VERSION,
+            corpus_snapshot_id=snapshot_id,
+            rows=[],
+        )
+
+    company_ids = {document.company_id for document in documents}
+    document_pool = list(
+        session.scalars(
+            select(Document)
+            .options(joinedload(Document.company))
+            .where(Document.company_id.in_(company_ids))
+        ).unique()
+    )
+    documents_by_company: dict[int, list[Document]] = defaultdict(list)
+    for document in document_pool:
+        documents_by_company[document.company_id].append(document)
+
+    prior_by_document: dict[int, Document | None] = {}
+    source_document_ids = {document.id for document in documents}
+    for document in documents:
+        prior, _ = select_comparable_document_from_candidates(
+            document,
+            documents_by_company[document.company_id],
+            as_of=_required_datetime(document.available_at),
+        )
+        prior_by_document[document.id] = prior
+        if prior is not None:
+            source_document_ids.add(prior.id)
+
+    elements_by_document = _load_panel_elements(session, source_document_ids)
+    facts_by_document = _load_panel_facts(session, source_document_ids)
     rows = [
-        _build_row(session, document, query=query, snapshot_id=snapshot_id)
+        _build_row(
+            document,
+            query=query,
+            snapshot_id=snapshot_id,
+            prior=prior_by_document[document.id],
+            elements_by_document=elements_by_document,
+            facts_by_document=facts_by_document,
+        )
         for document in documents
     ]
     validate_point_in_time_rows(rows)
@@ -193,12 +255,76 @@ def validate_point_in_time_rows(rows: list[ResearchPanelRow]) -> None:
             )
 
 
-def _build_row(
+def _load_panel_elements(
     session: Session,
+    document_ids: set[int],
+) -> dict[int, list[PanelElement]]:
+    grouped: dict[int, list[PanelElement]] = defaultdict(list)
+    rows = session.execute(
+        select(
+            DocumentElement.document_id,
+            DocumentElement.element_type,
+            DocumentElement.section,
+            DocumentElement.text,
+            DocumentElement.markdown,
+        )
+        .where(DocumentElement.document_id.in_(document_ids))
+        .order_by(
+            DocumentElement.document_id,
+            DocumentElement.reading_order,
+            DocumentElement.id,
+        )
+    )
+    for document_id, element_type, section, text, markdown in rows:
+        grouped[document_id].append(
+            PanelElement(
+                document_id=document_id,
+                element_type=element_type,
+                section=section,
+                text=text,
+                markdown=markdown,
+            )
+        )
+    return dict(grouped)
+
+
+def _load_panel_facts(
+    session: Session,
+    document_ids: set[int],
+) -> dict[int, list[PanelFact]]:
+    grouped: dict[int, list[PanelFact]] = defaultdict(list)
+    rows = session.execute(
+        select(
+            FinancialFact.document_id,
+            FinancialFact.canonical_metric,
+            FinancialFact.concept,
+            FinancialFact.value,
+            FinancialFact.available_at,
+        ).where(FinancialFact.document_id.in_(document_ids))
+    )
+    for document_id, canonical_metric, concept, value, available_at in rows:
+        if document_id is None:
+            continue
+        grouped[document_id].append(
+            PanelFact(
+                document_id=document_id,
+                canonical_metric=canonical_metric,
+                concept=concept,
+                value=value,
+                available_at=available_at,
+            )
+        )
+    return dict(grouped)
+
+
+def _build_row(
     document: Document,
     *,
     query: ResearchPanelQuery,
     snapshot_id: str,
+    prior: Document | None,
+    elements_by_document: dict[int, list[PanelElement]],
+    facts_by_document: dict[int, list[PanelFact]],
 ) -> ResearchPanelRow:
     available_at = _required_datetime(document.available_at)
     selected_features = set(query.features) or {
@@ -211,16 +337,9 @@ def _build_row(
         "xbrl_growth",
         "xbrl_margins",
     }
-    elements = list(
-        session.scalars(
-            select(DocumentElement)
-            .where(DocumentElement.document_id == document.id)
-            .order_by(DocumentElement.reading_order, DocumentElement.id)
-        )
-    )
+    elements = elements_by_document.get(document.id, [])
     texts_by_section = _texts_by_section(elements, query.sections)
     all_text = " ".join(text for texts in texts_by_section.values() for text in texts)
-    prior, _ = select_comparable_document(session, document, as_of=available_at)
     source_documents = [document, *([prior] if prior is not None else [])]
     source_accessions = [source.accession_number for source in source_documents]
     source_times = [
@@ -230,33 +349,27 @@ def _build_row(
     ]
     prior_sections = (
         _texts_by_section(
-            list(
-                session.scalars(
-                    select(DocumentElement)
-                    .where(DocumentElement.document_id == prior.id)
-                    .order_by(DocumentElement.reading_order, DocumentElement.id)
-                )
-            ),
+            elements_by_document.get(prior.id, []),
             query.sections,
         )
         if prior is not None
         else {}
     )
-    current_facts = _fact_values(session, document.id, available_at)
+    current_facts = _fact_values(
+        facts_by_document.get(document.id, []),
+        available_at,
+    )
     prior_facts = (
-        _fact_values(session, prior.id, available_at) if prior is not None else {}
+        _fact_values(facts_by_document.get(prior.id, []), available_at)
+        if prior is not None
+        else {}
     )
     fact_times = [
         fact.available_at
-        for fact in session.scalars(
-            select(FinancialFact).where(
-                FinancialFact.document_id.in_(
-                    [source.id for source in source_documents]
-                ),
-                FinancialFact.available_at <= available_at,
-            )
-        )
+        for source in source_documents
+        for fact in facts_by_document.get(source.id, [])
         if fact.available_at is not None
+        and fact.available_at <= available_at
     ]
     source_times.extend(fact_times)
     risk_added, risk_removed = (
@@ -369,7 +482,7 @@ def _build_row(
 
 
 def _texts_by_section(
-    elements: list[DocumentElement],
+    elements: list[PanelElement],
     selected_sections: list[str],
 ) -> dict[str, list[str]]:
     sections: dict[str, list[str]] = {}
@@ -426,24 +539,18 @@ def _section_novelty(
 
 
 def _fact_values(
-    session: Session,
-    document_id: int,
+    facts: list[PanelFact],
     as_of: datetime,
 ) -> dict[str, Decimal]:
-    facts = list(
-        session.scalars(
-            select(FinancialFact).where(
-                FinancialFact.document_id == document_id,
-                FinancialFact.canonical_metric.is_not(None),
-                FinancialFact.value.is_not(None),
-                FinancialFact.available_at <= as_of,
-            )
-        )
-    )
     selected: dict[str, tuple[int, Decimal]] = {}
     for fact in facts:
         metric = fact.canonical_metric
-        if metric is None or fact.value is None:
+        if (
+            metric is None
+            or fact.value is None
+            or fact.available_at is None
+            or fact.available_at > as_of
+        ):
             continue
         concepts = CANONICAL_CONCEPTS.get(metric, ())
         priority = concepts.index(fact.concept) if fact.concept in concepts else len(concepts)

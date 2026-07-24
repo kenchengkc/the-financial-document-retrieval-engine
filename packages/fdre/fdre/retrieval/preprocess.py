@@ -4,6 +4,7 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -38,6 +39,7 @@ FINANCIAL_RESULTS_PATTERN = re.compile(
     re.I,
 )
 LATEST_FILING_PATTERN = re.compile(r"\b(?:latest|most recent|last)\b", re.I)
+YEAR_PATTERN = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +99,17 @@ def preprocess_query(
         routes.extend(["tables", "financial_facts"])
 
     base_filters = filters or SearchFilters()
+    detected_years = sorted({int(value) for value in YEAR_PATTERN.findall(cleaned)})
+    date_updates: dict[str, date] = {}
+    if (
+        detected_years
+        and base_filters.filing_date_from is None
+        and base_filters.filing_date_to is None
+    ):
+        date_updates = {
+            "filing_date_from": date(min(detected_years), 1, 1),
+            "filing_date_to": date(max(detected_years), 12, 31),
+        }
     merged_filters = base_filters.model_copy(
         update={
             "tickers": sorted(set(base_filters.tickers) | detected_tickers),
@@ -105,6 +118,7 @@ def preprocess_query(
             "element_types": sorted(
                 set(base_filters.element_types) | set(element_types)
             ),
+            **date_updates,
         }
     )
     section_query = (

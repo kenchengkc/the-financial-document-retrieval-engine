@@ -10,6 +10,13 @@ from sqlalchemy.orm import Session
 from apps.api.app.config import Settings, get_settings
 from apps.api.app.db import get_db_session
 from apps.api.app.models import ResearchExperiment
+from apps.api.app.services.research_cache import (
+    PANEL_CACHE_PREFIX,
+    THEMATIC_CACHE_PREFIX,
+    read_cached_model,
+    research_cache_key,
+    write_cached_model,
+)
 from apps.api.app.services.retrieval_service import search_documents
 from fdre.research.filing_diffs import FilingDifference, compare_filing_to_prior
 from fdre.research.financial_facts import (
@@ -19,6 +26,7 @@ from fdre.research.financial_facts import (
     query_financial_facts,
 )
 from fdre.research.panel import (
+    FEATURE_VERSION,
     ResearchPanel,
     ResearchPanelQuery,
     build_research_panel,
@@ -31,6 +39,14 @@ from fdre.research.thematic import (
 )
 
 router = APIRouter(prefix="/research", tags=["research"])
+
+_CACHEABLE_THEMATIC_QUERIES = frozenset(
+    {
+        "foreign exchange and currency headwinds",
+        "generative ai investment and risk",
+        "data center capacity constraints",
+    }
+)
 
 
 @router.get("/filing-differences/{accession_number}", response_model=FilingDifference)
@@ -77,7 +93,9 @@ def financial_facts(
 
 @router.get("/panel", response_model=ResearchPanel)
 def research_panel(
+    response: Response,
     session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
     tickers: Annotated[list[str] | None, Query()] = None,
     period_end_from: Annotated[date | None, Query()] = None,
     period_end_to: Annotated[date | None, Query()] = None,
@@ -85,21 +103,43 @@ def research_panel(
     form_types: Annotated[list[str] | None, Query()] = None,
     sections: Annotated[list[str] | None, Query()] = None,
     include_amendments: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
+    limit: Annotated[int, Query(ge=1, le=25)] = 25,
 ) -> ResearchPanel:
-    return build_research_panel(
-        session,
-        ResearchPanelQuery(
-            tickers=tickers or [],
-            period_end_from=period_end_from,
-            period_end_to=period_end_to,
-            as_of=as_of,
-            form_types=form_types or ["10-K", "10-Q"],
-            sections=sections or [],
-            include_amendments=include_amendments,
-            limit=limit,
-        ),
+    query = ResearchPanelQuery(
+        tickers=tickers or [],
+        period_end_from=period_end_from,
+        period_end_to=period_end_to,
+        as_of=as_of,
+        form_types=form_types or ["10-K", "10-Q"],
+        sections=sections or [],
+        include_amendments=include_amendments,
+        limit=limit,
     )
+    cache_key = research_cache_key(
+        PANEL_CACHE_PREFIX,
+        {"feature_version": FEATURE_VERSION, "query": query.model_dump(mode="json")},
+    )
+    cached = read_cached_model(
+        session,
+        cache_key=cache_key,
+        ttl_seconds=settings.research_cache_ttl_seconds,
+        model_type=ResearchPanel,
+    )
+    if cached is not None:
+        response.headers["X-Cache"] = "HIT"
+        return cached
+    panel = build_research_panel(session, query)
+    if settings.research_cache_ttl_seconds > 0:
+        write_cached_model(
+            session,
+            cache_key=cache_key,
+            prefix=PANEL_CACHE_PREFIX,
+            value=panel,
+        )
+        response.headers["X-Cache"] = "MISS"
+    else:
+        response.headers["X-Cache"] = "BYPASS"
+    return panel
 
 
 @router.get("/panel/export")
@@ -210,9 +250,38 @@ def _signal_study_payload(experiment: ResearchExperiment) -> dict[str, Any]:
 @router.post("/thematic-scan", response_model=ThematicScanResponse)
 def thematic_scan(
     request: ThematicScanRequest,
+    response: Response,
     session: Annotated[Session, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ThematicScanResponse:
+    normalized_query = " ".join(request.query.casefold().split())
+    cache_key = research_cache_key(
+        THEMATIC_CACHE_PREFIX,
+        {
+            "request": request.model_dump(mode="json"),
+            "embedding": [
+                settings.embedding_provider,
+                settings.embedding_model,
+                settings.embedding_dimensions,
+            ],
+            "reranker": [
+                settings.reranker_provider,
+                settings.reranker_model,
+                settings.rerank_top_n,
+            ],
+        },
+    )
+    cacheable = normalized_query in _CACHEABLE_THEMATIC_QUERIES
+    if cacheable:
+        cached = read_cached_model(
+            session,
+            cache_key=cache_key,
+            ttl_seconds=settings.research_cache_ttl_seconds,
+            model_type=ThematicScanResponse,
+        )
+        if cached is not None:
+            response.headers["X-Cache"] = "HIT"
+            return cached.model_copy(update={"latency_ms": 0})
     result = search_documents(
         session,
         settings,
@@ -225,10 +294,21 @@ def thematic_scan(
         issuer_limit=request.issuers,
         results_per_issuer=request.results_per_issuer,
     )
-    return ThematicScanResponse(
+    scan = ThematicScanResponse(
         query=request.query,
         filters=result.preprocessed.filters,
         issuer_count=len(issuers),
         issuers=issuers,
         latency_ms=result.latency_ms,
     )
+    if cacheable and settings.research_cache_ttl_seconds > 0:
+        write_cached_model(
+            session,
+            cache_key=cache_key,
+            prefix=THEMATIC_CACHE_PREFIX,
+            value=scan,
+        )
+        response.headers["X-Cache"] = "MISS"
+    else:
+        response.headers["X-Cache"] = "BYPASS"
+    return scan
