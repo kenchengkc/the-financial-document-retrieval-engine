@@ -43,7 +43,8 @@ def test_railway_runs_migrations_before_starting_the_api() -> None:
     config = tomllib.loads((REPO_ROOT / "railway.toml").read_text())
 
     predeploy = config["deploy"]["preDeployCommand"]
-    assert predeploy.startswith("alembic upgrade head")
+    assert predeploy.startswith("sh -c ")
+    assert "alembic upgrade head" in predeploy
     assert "scripts.refresh_research_console_metrics" in predeploy
     assert "alembic" not in config["deploy"]["startCommand"]
     assert "uvicorn" in config["deploy"]["startCommand"]
