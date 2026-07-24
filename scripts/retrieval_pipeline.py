@@ -4,8 +4,10 @@ import argparse
 import hashlib
 import json
 import subprocess
+from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from statistics import median
 from time import perf_counter
 from typing import Any, cast
 
@@ -38,6 +40,7 @@ from fdre.research.composite_study import (
     period_label,
     persist_composite_study,
     run_composite_study,
+    standardize_by_period,
 )
 from fdre.research.event_study import (
     EventStudyConfig,
@@ -56,6 +59,7 @@ from fdre.research.panel import (
     build_research_panel,
     write_research_panel,
 )
+from fdre.research.signal_specs import SIGNAL_SPECS, get_signal_spec
 from fdre.research.signal_study import (
     SignalConstituent,
     SignalStudyReport,
@@ -170,27 +174,20 @@ def parse_args() -> argparse.Namespace:
     signal_parser.add_argument("--output", required=True)
     signal_parser.add_argument(
         "--signal",
-        choices=(
-            "disclosure_similarity",
-            "risk_factor_expansion",
-            "filing_lateness",
-            "earnings_quality",
-            "asset_growth",
-            "net_share_issuance",
-        ),
+        choices=tuple(key for key in SIGNAL_SPECS if key != "composite"),
         default="disclosure_similarity",
     )
     signal_parser.add_argument(
         "--outcome",
         choices=("abnormal_return", "realized_volatility"),
-        default="abnormal_return",
+        default=None,
     )
     signal_parser.add_argument("--tickers", nargs="+")
     signal_parser.add_argument("--max-tickers", type=int, default=50)
     signal_parser.add_argument("--min-documents", type=int, default=4)
     signal_parser.add_argument("--benchmark", default="SPY")
     signal_parser.add_argument("--n-quantiles", type=int, default=5)
-    signal_parser.add_argument("--windows", nargs="+", default=["0:1", "1:21", "1:63"])
+    signal_parser.add_argument("--windows", nargs="+")
     signal_parser.add_argument("--bootstrap-iterations", type=int, default=2000)
     signal_parser.add_argument(
         "--winsorize",
@@ -222,6 +219,11 @@ def parse_args() -> argparse.Namespace:
         help="Fail instead of publishing when any selected market data is missing",
     )
     signal_parser.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Write the report without publishing a research experiment",
+    )
+    signal_parser.add_argument(
         "--max-uncached-market-fetches",
         type=int,
         help="Maximum uncached ticker/benchmark market-data requests for this run",
@@ -229,6 +231,12 @@ def parse_args() -> argparse.Namespace:
     signal_parser.add_argument(
         "--market-cache-slice",
         help="Warm only OFFSET:LIMIT selected market tickers, then exit without publishing",
+    )
+    signal_parser.add_argument(
+        "--neutralize",
+        choices=("none", "period", "sector"),
+        default="sector",
+        help="Standardize features within filing quarter and, where possible, sector",
     )
     composite_parser = subparsers.add_parser(
         "composite-study",
@@ -576,67 +584,196 @@ def _event_window(value: str) -> EventWindow:
 
 def _git_sha() -> str:
     try:
-        return subprocess.run(
+        sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        return f"{sha}-dirty" if dirty else sha
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
 
-# Fundamental signals computed point-in-time from a single 10-K's XBRL facts.
-# Each metric is oriented so LOWER is better (long side); the study signal is
-# the negated metric. Growth metrics use the filing's own prior-year
-# comparative (a 10-K balance sheet/income statement reports 2-3 fiscal
-# periods), so no cross-filing join is needed and the value is knowable at
-# acceptance.
-#   earnings_quality   accruals anomaly (Sloan 1996)
-#   asset_growth       asset growth anomaly (Cooper, Gulen & Schill 2008)
-#   net_share_issuance issuance anomaly (Pontiff & Woodgate 2008)
+# Fundamental signals are computed point-in-time from comparative facts inside
+# one 10-K. Every returned score is oriented so a higher value is the expected
+# long side, which keeps quantile and IC interpretation consistent.
 _FUNDAMENTAL_CONCEPTS: dict[str, tuple[str, ...]] = {
     "earnings_quality": (
         "NetIncomeLoss",
+        "ProfitLoss",
         "NetCashProvidedByUsedInOperatingActivities",
         "Assets",
     ),
+    "operating_profitability": (
+        "OperatingIncomeLoss",
+        "Assets",
+    ),
+    "operating_margin_momentum": (
+        "OperatingIncomeLoss",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "Revenues",
+        "SalesRevenueNet",
+    ),
     "asset_growth": ("Assets",),
-    "net_share_issuance": ("WeightedAverageNumberOfDilutedSharesOutstanding",),
+    "net_share_issuance": (
+        "CommonStockSharesOutstanding",
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+    ),
 }
 
 _FUNDAMENTAL_FEATURE_VERSIONS: dict[str, str] = {
-    "earnings_quality": "accruals-v1",
-    "asset_growth": "asset-growth-v1",
-    "net_share_issuance": "share-issuance-v1",
+    "earnings_quality": "cash-conversion-v2",
+    "operating_profitability": "operating-profitability-v1",
+    "operating_margin_momentum": "operating-margin-momentum-v1",
+    "asset_growth": "asset-growth-v2",
+    "net_share_issuance": "share-issuance-v2",
 }
+
+_ANNUAL_DURATION_CONCEPTS = frozenset(
+    {
+        "NetIncomeLoss",
+        "ProfitLoss",
+        "NetCashProvidedByUsedInOperatingActivities",
+        "OperatingIncomeLoss",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "Revenues",
+        "SalesRevenueNet",
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+    }
+)
+
+
+def _is_annual_comparative_fact(
+    concept: str,
+    period_start: date | None,
+    period_end: date | None,
+) -> bool:
+    if period_end is None:
+        return False
+    if concept in _ANNUAL_DURATION_CONCEPTS:
+        if period_start is None:
+            return False
+        duration_days = (period_end - period_start).days
+        return 300 <= duration_days <= 400
+    return period_start is None
+
+
+def _first_series(
+    values: dict[str, list[tuple[date, float]]],
+    concepts: tuple[str, ...],
+    *,
+    minimum: int = 1,
+) -> list[tuple[date, float]]:
+    for concept in concepts:
+        series = values.get(concept, [])
+        if len(series) >= minimum:
+            return series
+    return []
 
 
 def _fundamental_metric(
     signal_name: str, values: dict[str, list[tuple[date, float]]]
 ) -> float | None:
-    """Compute the lower-is-better metric for one filing, or None if unusable.
-
-    ``values`` maps concept -> [(period_end, value)] sorted most-recent first.
-    """
+    """Compute a higher-is-better point-in-time score for one annual filing."""
     if signal_name == "earnings_quality":
-        try:
-            ni = values["NetIncomeLoss"][0][1]
-            ocf = values["NetCashProvidedByUsedInOperatingActivities"][0][1]
-            assets = values["Assets"][0][1]
-        except (KeyError, IndexError):
+        income = _first_series(values, ("NetIncomeLoss", "ProfitLoss"))
+        cash_flow = _first_series(
+            values, ("NetCashProvidedByUsedInOperatingActivities",)
+        )
+        assets = _first_series(values, ("Assets",))
+        if not income or not cash_flow or not assets:
             return None
-        if assets == 0:
+        income_by_period = dict(income)
+        cash_flow_by_period = dict(cash_flow)
+        assets_by_period = dict(assets)
+        earnings_periods = (
+            income_by_period.keys()
+            & cash_flow_by_period.keys()
+            & assets_by_period.keys()
+        )
+        if not earnings_periods:
             return None
-        return (ni - ocf) / assets
-    concept = _FUNDAMENTAL_CONCEPTS[signal_name][0]
-    series = values.get(concept, [])
+        current = max(earnings_periods)
+        prior_asset_periods = [period for period in assets_by_period if period < current]
+        prior_assets = (
+            assets_by_period[max(prior_asset_periods)]
+            if prior_asset_periods
+            else assets_by_period[current]
+        )
+        average_assets = (assets_by_period[current] + prior_assets) / 2
+        if average_assets <= 0:
+            return None
+        return (cash_flow_by_period[current] - income_by_period[current]) / average_assets
+    if signal_name == "operating_profitability":
+        income = _first_series(values, ("OperatingIncomeLoss",))
+        assets = _first_series(values, ("Assets",))
+        if not income or not assets:
+            return None
+        income_by_period = dict(income)
+        assets_by_period = dict(assets)
+        profitability_periods = income_by_period.keys() & assets_by_period.keys()
+        if not profitability_periods:
+            return None
+        current = max(profitability_periods)
+        prior_asset_periods = [period for period in assets_by_period if period < current]
+        prior_assets = (
+            assets_by_period[max(prior_asset_periods)]
+            if prior_asset_periods
+            else assets_by_period[current]
+        )
+        average_assets = (assets_by_period[current] + prior_assets) / 2
+        return income_by_period[current] / average_assets if average_assets > 0 else None
+    if signal_name == "operating_margin_momentum":
+        income = _first_series(values, ("OperatingIncomeLoss",), minimum=2)
+        revenue = _first_series(
+            values,
+            (
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "Revenues",
+                "SalesRevenueNet",
+            ),
+            minimum=2,
+        )
+        if not income or not revenue:
+            return None
+        income_by_period = dict(income)
+        revenue_by_period = dict(revenue)
+        margin_periods = sorted(
+            income_by_period.keys() & revenue_by_period.keys(), reverse=True
+        )
+        if len(margin_periods) < 2:
+            return None
+        current, prior = margin_periods[:2]
+        current_revenue = revenue_by_period[current]
+        prior_revenue = revenue_by_period[prior]
+        if current_revenue <= 0 or prior_revenue <= 0:
+            return None
+        return (
+            income_by_period[current] / current_revenue
+            - income_by_period[prior] / prior_revenue
+        )
+    concepts = (
+        ("Assets",)
+        if signal_name == "asset_growth"
+        else (
+            "CommonStockSharesOutstanding",
+            "WeightedAverageNumberOfDilutedSharesOutstanding",
+        )
+    )
+    series = _first_series(values, concepts, minimum=2)
     if len(series) < 2:
         return None
-    latest, prior = series[0][1], series[1][1]
-    if prior <= 0:
+    latest_value, prior_value = series[0][1], series[1][1]
+    if prior_value <= 0:
         return None
-    return latest / prior - 1.0
+    return -(latest_value / prior_value - 1.0)
 
 
 def _fundamental_dataset(
@@ -644,9 +781,8 @@ def _fundamental_dataset(
 ) -> tuple[list[FilingEvent], list[SignalConstituent], str]:
     """Build point-in-time fundamental-signal events from 10-K facts.
 
-    Constituents are the current best/worst names by each issuer's most recent
-    10-K: the long side holds the lowest metric (cash-backed earnings, slow
-    asset growth, net buybacks), the short side the highest.
+    Constituents are the current highest and lowest expected-return scores from
+    each issuer's most recent usable 10-K.
     """
     concepts = _FUNDAMENTAL_CONCEPTS[signal_name]
     doc_rows = session.execute(
@@ -672,11 +808,12 @@ def _fundamental_dataset(
     # Collect every reported period per (document, concept), newest first, so
     # growth signals can use the filing's own prior-year comparative.
     by_doc: dict[int, dict[str, list[tuple[date, float]]]] = {}
-    for did, concept, value, period_end in session.execute(
+    for did, concept, value, period_start, period_end in session.execute(
         select(
             FinancialFact.document_id,
             FinancialFact.concept,
             FinancialFact.value,
+            FinancialFact.period_start,
             FinancialFact.period_end,
         ).where(
             FinancialFact.document_id.in_(doc_ids),
@@ -684,8 +821,11 @@ def _fundamental_dataset(
             FinancialFact.value.is_not(None),
         )
     ).all():
+        if not _is_annual_comparative_fact(concept, period_start, period_end):
+            continue
+        assert period_end is not None
         by_doc.setdefault(did, {}).setdefault(concept, []).append(
-            (period_end or date.min, float(value))
+            (period_end, float(value))
         )
     for concept_values in by_doc.values():
         for series in concept_values.values():
@@ -698,11 +838,11 @@ def _fundamental_dataset(
             series[:] = deduped
     events: list[FilingEvent] = []
     used_docs: list[str] = []
-    # ticker -> (available_at, metric, name) for the latest filing.
+    # ticker -> (available_at, score, name) for the latest filing.
     latest_by_ticker: dict[str, tuple[datetime, float, str]] = {}
     for row in doc_rows:
-        metric = _fundamental_metric(signal_name, by_doc.get(row.id, {}))
-        if metric is None:
+        score = _fundamental_metric(signal_name, by_doc.get(row.id, {}))
+        if score is None:
             continue
         available_at = row.available_at
         events.append(
@@ -711,28 +851,137 @@ def _fundamental_dataset(
                 accession_number=row.accession_number,
                 available_at=available_at,
                 max_source_available_at=available_at,
-                feature_value=-metric,
+                feature_value=score,
             )
         )
         used_docs.append(f"{row.accession_number}:{row.sha256_hash or ''}")
         prev = latest_by_ticker.get(row.ticker)
         if prev is None or available_at > prev[0]:
-            latest_by_ticker[row.ticker] = (available_at, metric, row.name)
+            latest_by_ticker[row.ticker] = (available_at, score, row.name)
     dataset_version = hashlib.sha256(
         "|".join(used_docs).encode("utf-8")
     ).hexdigest()[:16]
     ranked = sorted(latest_by_ticker.items(), key=lambda kv: kv[1][1])
     top_n = min(8, len(ranked) // 2)
     constituents: list[SignalConstituent] = []
-    for ticker, (_, metric, name) in ranked[:top_n]:
+    for ticker, (_, score, name) in reversed(ranked[-top_n:] if top_n else []):
         constituents.append(
-            SignalConstituent(ticker=ticker, name=name, value=metric, side="long")
+            SignalConstituent(ticker=ticker, name=name, value=score, side="long")
         )
-    for ticker, (_, metric, name) in (ranked[-top_n:] if top_n else []):
+    for ticker, (_, score, name) in ranked[:top_n]:
         constituents.append(
-            SignalConstituent(ticker=ticker, name=name, value=metric, side="short")
+            SignalConstituent(ticker=ticker, name=name, value=score, side="short")
         )
     return events, constituents, dataset_version
+
+
+def _orient_panel_value(
+    signal_name: str,
+    outcome_name: str,
+    value: float | None,
+) -> float | None:
+    if value is None:
+        return None
+    if outcome_name == "realized_volatility":
+        return -value if signal_name == "disclosure_similarity" else value
+    if signal_name in {
+        "risk_factor_churn",
+        "risk_factor_expansion",
+        "filing_delay_surprise",
+        "filing_lateness",
+    }:
+        return -value
+    return value
+
+
+def _panel_signal_events(
+    rows: list[Any],
+    *,
+    signal_name: str,
+    outcome_name: str,
+) -> list[FilingEvent]:
+    delay_history: dict[tuple[str, str], list[float]] = defaultdict(list)
+    events: list[FilingEvent] = []
+    for row in sorted(rows, key=lambda item: (item.available_at, item.accession_number)):
+        if signal_name == "filing_delay_surprise":
+            delay = row.filing_delay_days
+            history = delay_history[(row.ticker, row.form_type)]
+            value = (
+                float(delay) - median(history)
+                if delay is not None and len(history) >= 2
+                else None
+            )
+            if delay is not None:
+                history.append(float(delay))
+        else:
+            value = _signal_feature_value(row, signal_name)
+        events.append(
+            FilingEvent(
+                ticker=row.ticker,
+                accession_number=row.accession_number,
+                available_at=row.available_at,
+                max_source_available_at=row.max_source_available_at,
+                feature_value=_orient_panel_value(signal_name, outcome_name, value),
+            )
+        )
+    return events
+
+
+def _neutralize_signal_events(
+    session: Session,
+    events: list[FilingEvent],
+    *,
+    signal_name: str,
+    mode: str,
+) -> tuple[list[FilingEvent], str]:
+    if mode == "none":
+        return events, "none"
+    composite_events = [
+        CompositeEvent(
+            ticker=event.ticker,
+            accession_number=event.accession_number,
+            available_at_period=period_label(event.available_at.date()),
+            available_at=event.available_at,
+            max_source_available_at=event.max_source_available_at,
+            raw=(
+                {signal_name: event.feature_value}
+                if event.feature_value is not None
+                else {}
+            ),
+        )
+        for event in events
+    ]
+    sector_by_accession: dict[str, str] | None = None
+    if mode == "sector":
+        sectors = dict(
+            session.execute(
+                select(Company.ticker, Company.sector).where(
+                    Company.ticker.in_({event.ticker for event in events})
+                )
+            )
+            .tuples()
+            .all()
+        )
+        sector_by_accession = {
+            event.accession_number: sectors.get(event.ticker) or "Unknown"
+            for event in events
+        }
+    standardized = standardize_by_period(
+        composite_events,
+        [SignalComponent(name=signal_name)],
+        sector_by_accession=sector_by_accession,
+    )
+    neutralized = [
+        event.model_copy(
+            update={
+                "feature_value": standardized.get(event.accession_number, {}).get(
+                    signal_name
+                )
+            }
+        )
+        for event in events
+    ]
+    return neutralized, "period+sector" if sector_by_accession else "period"
 
 
 def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
@@ -741,6 +990,9 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         and args.max_uncached_market_fetches < 0
     ):
         raise SystemExit("--max-uncached-market-fetches must be non-negative.")
+    spec = get_signal_spec(args.signal)
+    outcome_name = args.outcome or spec.default_outcome
+    window_values = args.windows or list(spec.default_windows)
     if args.tickers:
         tickers = [ticker.upper() for ticker in args.tickers]
     else:
@@ -769,18 +1021,19 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
                 limit=10_000,
             ),
         )
-        events = [
-            FilingEvent(
-                ticker=row.ticker,
-                accession_number=row.accession_number,
-                available_at=row.available_at,
-                max_source_available_at=row.max_source_available_at,
-                feature_value=_signal_feature_value(row, args.signal),
-            )
-            for row in panel.rows
-        ]
+        events = _panel_signal_events(
+            panel.rows,
+            signal_name=args.signal,
+            outcome_name=outcome_name,
+        )
         dataset_version = panel.corpus_snapshot_id
         feature_version = panel.feature_version
+    events, neutralization = _neutralize_signal_events(
+        session,
+        events,
+        signal_name=args.signal,
+        mode=args.neutralize,
+    )
     scored = [event for event in events if event.feature_value is not None]
     if len(scored) < args.n_quantiles * 4:
         raise SystemExit(
@@ -788,7 +1041,12 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         )
     event_dates = [event.available_at.date() for event in scored]
     start = min(event_dates) - timedelta(days=10)
-    end = max(event_dates) + timedelta(days=args.forward_buffer_days)
+    maximum_session = max(_event_window(value).end for value in window_values)
+    forward_buffer_days = max(
+        args.forward_buffer_days,
+        round(maximum_session * 1.6) + 10,
+    )
+    end = max(event_dates) + timedelta(days=forward_buffer_days)
     if args.market_start:
         start = date.fromisoformat(args.market_start)
     if args.market_end:
@@ -815,7 +1073,7 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         payload = {
             "status": "market_cache_warmed",
             "signal_name": args.signal,
-            "outcome_name": args.outcome,
+            "outcome_name": outcome_name,
             "tickers": market_tickers,
             "all_selected_tickers": len(tickers),
             "events": len(scored),
@@ -830,10 +1088,10 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
         raise SystemExit(f"Missing market data for: {', '.join(missing)}")
     config = EventStudyConfig(
         benchmark_ticker=args.benchmark,
-        windows=[_event_window(value) for value in args.windows],
+        windows=[_event_window(value) for value in window_values],
         bootstrap_iterations=args.bootstrap_iterations,
     )
-    if args.outcome == "realized_volatility":
+    if outcome_name == "realized_volatility":
         report: SignalStudyReport = run_realized_volatility_signal_study(
             scored,
             bars,
@@ -843,8 +1101,15 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             dataset_version=dataset_version,
             feature_version=feature_version,
             code_sha=_git_sha(),
+            neutralization=neutralization,
+            definition=spec.as_dict(),
         )
     else:
+        winsorize = (
+            args.winsorize
+            if args.winsorize is not None
+            else (0.025 if args.signal in _FUNDAMENTAL_CONCEPTS else None)
+        )
         report = run_signal_study(
             scored,
             bars,
@@ -854,15 +1119,17 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
             dataset_version=dataset_version,
             feature_version=feature_version,
             code_sha=_git_sha(),
-            outcome_name=args.outcome,
-            winsorize_pct=args.winsorize,
+            outcome_name=outcome_name,
+            winsorize_pct=winsorize,
+            neutralization=neutralization,
+            definition=spec.as_dict(),
         )
     report.constituents = constituents
     if report.event_count == 0:
         raise SystemExit(
             "No filing events had matching market data; refusing to publish an empty study."
         )
-    experiment = persist_signal_study(session, report)
+    experiment = None if args.no_persist else persist_signal_study(session, report)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -870,7 +1137,7 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
     )
     return {
         "output": str(output_path),
-        "experiment_id": experiment.id,
+        "experiment_id": experiment.id if experiment is not None else None,
         "experiment_key": report.experiment_key,
         "signal_name": report.signal_name,
         "outcome_name": report.outcome_name,
@@ -881,12 +1148,12 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
 
 
 def _run_prune_signal_studies(session: Session) -> dict[str, Any]:
-    """Keep the most complete signal_study experiment per (signal, outcome).
+    """Keep the best current-methodology study per (signal, outcome).
 
     A scheduled republish writes a fresh experiment each time market-data
-    coverage grows. Keep the row with the most filing events (tie-break newest)
-    and drop the rest, so a partial-coverage run can never shrink the published
-    study. The API dedupes the same way.
+    coverage grows. The latest feature version supersedes prior methodology;
+    within that version, keep the row with the most filing events and use
+    recency to break ties. The API applies the same selection policy.
     """
     from apps.api.app.models import ResearchExperiment
 
@@ -898,17 +1165,37 @@ def _run_prune_signal_studies(session: Session) -> dict[str, Any]:
         )
     )
 
-    def rank(experiment: ResearchExperiment) -> tuple[int, datetime]:
+    def key_for(experiment: ResearchExperiment) -> tuple[str, str]:
         report = experiment.results_json or {}
-        return (int(report.get("event_count", 0) or 0), experiment.created_at)
-
-    best: dict[tuple[str, str], ResearchExperiment] = {}
-    for experiment in experiments:
-        report = experiment.results_json or {}
-        key = (
+        return (
             str(report.get("signal_name", "")),
             str(report.get("outcome_name", "abnormal_return")),
         )
+
+    def version_for(experiment: ResearchExperiment) -> str:
+        report = experiment.results_json or {}
+        return str(report.get("feature_version") or experiment.feature_version)
+
+    def recency(experiment: ResearchExperiment) -> tuple[datetime, int]:
+        return (experiment.created_at, experiment.id)
+
+    latest_version: dict[tuple[str, str], str] = {}
+    for experiment in sorted(experiments, key=recency, reverse=True):
+        latest_version.setdefault(key_for(experiment), version_for(experiment))
+
+    def rank(experiment: ResearchExperiment) -> tuple[int, datetime, int]:
+        report = experiment.results_json or {}
+        return (
+            int(report.get("event_count", 0) or 0),
+            experiment.created_at,
+            experiment.id,
+        )
+
+    best: dict[tuple[str, str], ResearchExperiment] = {}
+    for experiment in experiments:
+        key = key_for(experiment)
+        if version_for(experiment) != latest_version[key]:
+            continue
         incumbent = best.get(key)
         if incumbent is None or rank(experiment) > rank(incumbent):
             best[key] = experiment
@@ -1074,14 +1361,16 @@ def _run_composite_study(session: Session, args: argparse.Namespace) -> dict[str
 
 
 def _signal_panel_features(signal_name: str) -> list[PanelFeature]:
-    if signal_name == "risk_factor_expansion":
+    if signal_name in {"risk_factor_churn", "risk_factor_expansion"}:
         return ["risk_changes"]
-    if signal_name == "filing_lateness":
+    if signal_name in {"filing_delay_surprise", "filing_lateness"}:
         return ["filing_timing"]
     return ["disclosure_similarity"]
 
 
 def _signal_feature_value(row: Any, signal_name: str) -> float | None:
+    if signal_name == "risk_factor_churn":
+        return cast(float | None, row.risk_churn_rate)
     if signal_name == "risk_factor_expansion":
         if row.risk_added_passages is None and row.risk_removed_passages is None:
             return None

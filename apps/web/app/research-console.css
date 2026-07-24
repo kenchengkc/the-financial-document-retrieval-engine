@@ -1089,13 +1089,22 @@
 }
 
 .research-shell .sig-tabs {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
   gap: 8px;
   margin: 0 0 22px;
+  padding: 0 0 8px;
+  overflow-x: auto;
   border: 0;
   background: transparent;
+  scrollbar-width: thin;
 }
 
 .research-shell .sig-tabs button {
+  min-width: 178px;
+  max-width: 220px;
+  flex: 0 0 auto;
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -1106,6 +1115,10 @@
   border-color: var(--plum);
   background: var(--plum);
   color: #fffdfb;
+}
+
+.research-shell .sig-tab-verdict.watch {
+  color: var(--amber);
 }
 
 .research-shell .sig-stats {
@@ -1131,6 +1144,47 @@
 
 .research-shell .sig-grid {
   gap: 12px;
+}
+
+.period-stability {
+  margin: 24px 0 20px;
+}
+
+.period-stability-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 11px;
+}
+
+.period-stability-head h3 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font: 500 18px var(--display);
+}
+
+.period-stability-head > p {
+  max-width: 540px;
+  margin: 0;
+  color: var(--muted);
+  font: 10px/1.5 var(--mono);
+  text-align: right;
+}
+
+.period-stability .sig-summary {
+  margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .period-stability-head {
+    display: block;
+  }
+
+  .period-stability-head > p {
+    margin-top: 7px;
+    text-align: left;
+  }
 }
 
 .signals-topline {

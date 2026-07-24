@@ -24,9 +24,13 @@ const WINDOW_LABELS: Record<string, string> = {
 
 const SIGNAL_NAMES: Record<string, string> = {
   disclosure_similarity: "Disclosure similarity",
+  risk_factor_churn: "Risk-factor churn",
+  filing_delay_surprise: "Filing-delay surprise",
   risk_factor_expansion: "Risk-factor expansion",
   filing_lateness: "Filing lateness",
   earnings_quality: "Earnings quality",
+  operating_profitability: "Operating profitability",
+  operating_margin_momentum: "Margin momentum",
   asset_growth: "Asset growth",
   net_share_issuance: "Net share issuance",
   composite: "Filing-behavior composite",
@@ -34,11 +38,13 @@ const SIGNAL_NAMES: Record<string, string> = {
 
 const FEATURE_LIBRARY = [
   { key: "disclosure_similarity", family: "Language", name: "Disclosure similarity", source: "Comparable filings", stage: "ready" },
-  { key: "risk_factor_expansion", family: "Language", name: "Risk-factor expansion", source: "Item 1A additions minus removals", stage: "ready" },
-  { key: "filing_lateness", family: "Timing", name: "Filing lateness", source: "Acceptance vs period end", stage: "ready" },
-  { key: "earnings_quality", family: "Fundamental", name: "Earnings quality", source: "NI, CFO, assets", stage: "ready" },
+  { key: "risk_factor_churn", family: "Language", name: "Risk-factor churn", source: "Normalized Item 1A additions and removals", stage: "ready" },
+  { key: "filing_delay_surprise", family: "Timing", name: "Filing-delay surprise", source: "Issuer-form expanding baseline", stage: "ready" },
+  { key: "earnings_quality", family: "Fundamental", name: "Cash-conversion quality", source: "NI, CFO, average assets", stage: "ready" },
+  { key: "operating_profitability", family: "Fundamental", name: "Operating profitability", source: "Operating income, average assets", stage: "ready" },
+  { key: "operating_margin_momentum", family: "Fundamental", name: "Margin momentum", source: "Comparative annual XBRL", stage: "ready" },
   { key: "asset_growth", family: "Fundamental", name: "Asset growth", source: "Comparative XBRL", stage: "ready" },
-  { key: "net_share_issuance", family: "Capital", name: "Net share issuance", source: "Diluted share count", stage: "ready" },
+  { key: "net_share_issuance", family: "Capital", name: "Net share issuance", source: "Shares outstanding with diluted fallback", stage: "ready" },
   { key: "section_novelty", family: "Language", name: "Section novelty", source: "Section fingerprints", stage: "feature" },
   { key: "topic_intensity", family: "Theme", name: "Topic intensity", source: "PIT topic counts", stage: "feature" },
   { key: "filing_complexity", family: "Structure", name: "Filing complexity", source: "Length, tables, numerics", stage: "feature" },
@@ -56,38 +62,54 @@ function outcomeLabel(study: SignalStudyResponse) {
 }
 
 function adjustedP(window: SignalWindow) {
-  return window.long_short_adjusted_p_value ?? window.long_short_p_value;
+  return (
+    window.suite_adjusted_p_value ??
+    window.long_short_adjusted_p_value ??
+    window.long_short_p_value
+  );
 }
 
 function studyMetrics(study: SignalStudyResponse) {
   const usable = study.report.results.filter((result) => result.long_short_mean !== null);
   const positive = usable.filter((result) => (result.long_short_mean ?? 0) > 0).length;
-  const negative = usable.filter((result) => (result.long_short_mean ?? 0) < 0).length;
-  const signStability = usable.length ? Math.max(positive, negative) / usable.length : 0;
+  const signStability =
+    study.report.quality?.direction_stability ?? (usable.length ? positive / usable.length : 0);
   const significant = usable.filter((result) => {
     const p = adjustedP(result);
     return p !== null && p < 0.05;
   });
-  const best = [...usable].sort((left, right) => {
-    const pDelta = (adjustedP(left) ?? 1) - (adjustedP(right) ?? 1);
-    if (pDelta !== 0) return pDelta;
-    return Math.abs(right.information_coefficient ?? 0) - Math.abs(left.information_coefficient ?? 0);
-  })[0];
-  const peakIc = Math.max(0, ...usable.map((result) => Math.abs(result.information_coefficient ?? 0)));
-  const bestP = best ? adjustedP(best) : null;
-  let state = "Exploratory";
-  let tone = "flat";
-  if (significant.length > 0 && signStability >= 0.6) {
-    state = "Candidate";
-    tone = "pass";
-  } else if (significant.length > 0) {
-    state = "Regime-sensitive";
-    tone = "watch";
-  } else if (signStability >= 0.67 && usable.length >= 3) {
-    state = "Monitor";
-    tone = "watch";
-  }
-  return { usable, signStability, significant, best, peakIc, bestP, state, tone };
+  const selectedWindow = study.report.quality?.best_window;
+  const best =
+    usable.find((result) => result.window === selectedWindow) ??
+    [...usable].sort((left, right) => {
+      const pDelta = (adjustedP(left) ?? 1) - (adjustedP(right) ?? 1);
+      if (pDelta !== 0) return pDelta;
+      return (
+        Math.abs(right.information_coefficient ?? 0) -
+        Math.abs(left.information_coefficient ?? 0)
+      );
+    })[0];
+  const peakIc =
+    study.report.quality?.peak_absolute_ic ??
+    Math.max(0, ...usable.map((result) => Math.abs(result.information_coefficient ?? 0)));
+  const bestP = study.report.quality?.best_suite_adjusted_p_value ?? (best ? adjustedP(best) : null);
+  const state = study.report.quality?.status ?? "Exploratory";
+  const tone = state === "Validated" ? "pass" : state === "Promising" ? "watch" : "flat";
+  const annualStability =
+    study.report.quality?.stability_basis === "annual_periods" ? signStability : null;
+  const periodsTested = study.report.quality?.periods_tested ?? 0;
+  return {
+    usable,
+    signStability,
+    annualStability,
+    periodsTested,
+    significant,
+    best,
+    peakIc,
+    bestP,
+    state,
+    tone,
+  };
 }
 
 export function SignalMonitor({
@@ -107,7 +129,9 @@ export function SignalMonitor({
       return right.metrics.signStability - left.metrics.signStability;
     });
   const qualified = metrics.filter(({ metrics: item }) => item.significant.length > 0).length;
-  const stable = metrics.filter(({ metrics: item }) => item.signStability >= 0.67).length;
+  const stable = metrics.filter(
+    ({ metrics: item }) => item.annualStability !== null && item.annualStability >= 0.67,
+  ).length;
   const events = studies.reduce((sum, study) => sum + study.report.event_count, 0);
 
   return (
@@ -117,20 +141,20 @@ export function SignalMonitor({
           <p className="eyebrow">Cross-study evidence</p>
           <h3>Signal monitor</h3>
         </div>
-        <p>Published studies ranked by adjusted inference, sign stability, and breadth.</p>
+        <p>Published studies ranked by suite-wide inference, direction, monotonicity, and breadth.</p>
       </div>
 
       <dl className="monitor-stats">
         <div><dt>Published studies</dt><dd>{studies.length}</dd></div>
         <div><dt>Study-event rows</dt><dd>{events.toLocaleString()}</dd></div>
-        <div><dt>BH-qualified</dt><dd>{qualified}</dd></div>
-        <div><dt>Sign-stable</dt><dd>{stable}</dd></div>
+        <div><dt>Suite-qualified</dt><dd>{qualified}</dd></div>
+        <div><dt>Year-stable</dt><dd>{stable}</dd></div>
       </dl>
 
       <div className="monitor-table-wrap">
         <table className="monitor-table">
           <thead>
-            <tr><th>Signal</th><th>Outcome</th><th className="num">Events</th><th>Best horizon</th><th className="num">Peak |IC|</th><th className="num">Adj. p</th><th>Sign stability</th><th>Research state</th><th aria-label="Open study" /></tr>
+            <tr><th>Signal</th><th>Outcome</th><th className="num">Events</th><th>Best horizon</th><th className="num">Peak |IC|</th><th className="num">Suite p</th><th>Annual stability</th><th>Research state</th><th aria-label="Open study" /></tr>
           </thead>
           <tbody>
             {metrics.map(({ study, metrics: item }) => (
@@ -142,8 +166,14 @@ export function SignalMonitor({
                 <td className="num">{item.peakIc ? item.peakIc.toFixed(3) : "N/A"}</td>
                 <td className="num">{item.bestP === null ? "N/A" : item.bestP.toFixed(3)}</td>
                 <td>
-                  <span className="stability-meter"><i style={{ width: `${item.signStability * 100}%` }} /></span>
-                  <small>{Math.round(item.signStability * 100)}%</small>
+                  {item.annualStability === null ? (
+                    <small>N/A</small>
+                  ) : (
+                    <>
+                      <span className="stability-meter"><i style={{ width: `${item.annualStability * 100}%` }} /></span>
+                      <small>{Math.round(item.annualStability * 100)}% · {item.periodsTested}y</small>
+                    </>
+                  )}
                 </td>
                 <td><span className={`research-state ${item.tone}`}>{item.state}</span></td>
                 <td><button type="button" className="row-action" title={`Open ${SIGNAL_NAMES[study.report.signal_name] ?? study.report.signal_name} study`} onClick={() => onOpenStudy(study)}><ArrowRight size={15} /></button></td>
@@ -152,7 +182,7 @@ export function SignalMonitor({
           </tbody>
         </table>
       </div>
-      <p className="monitor-rule"><CircleDotDashed size={13} /> Candidate requires an adjusted p-value below 0.05 and consistent spread direction across at least 60% of tested horizons.</p>
+      <p className="monitor-rule"><CircleDotDashed size={13} /> Validated requires positive monotonic evidence in at least three annual cross-sections, aligned horizons, and a p-value below 0.05 after correcting across every published signal-horizon test.</p>
 
       <section className="feature-library" aria-labelledby="feature-library-title">
         <div className="signal-view-heading compact">
@@ -181,13 +211,15 @@ export function SignalMonitor({
 function gateRows(study: SignalStudyResponse) {
   const report = study.report;
   const config = report.config;
-  const hasAdjustedP = report.results.some((result) => result.long_short_adjusted_p_value !== null);
+  const hasSuiteP = report.results.some((result) => result.suite_adjusted_p_value !== undefined);
   const isVolatility = (report.outcome_name ?? "abnormal_return") === "realized_volatility";
   return [
     ["Feature availability", "Passed", "source timestamp ≤ event timestamp"],
-    ["Outcome alignment", "Passed", isVolatility ? "forward realized volatility" : `${config.benchmark_ticker ?? "SPY"}-adjusted return`],
-    ["Multiple testing", hasAdjustedP ? "Controlled" : "Unadjusted", hasAdjustedP ? `Benjamini–Hochberg · ${report.results.length} horizons` : "no adjusted p-values published"],
-    ["Inference", "Deterministic", `${(config.bootstrap_iterations ?? 0).toLocaleString()} bootstrap draws · seed ${config.random_seed ?? "n/a"}`],
+    ["Outcome alignment", report.quality?.outcome_aligned === false ? "Mismatch" : "Passed", isVolatility ? "forward realized volatility" : `${config.benchmark_ticker ?? "SPY"}-adjusted return`],
+    ["Horizon alignment", report.quality?.horizon_aligned === false ? "Mismatch" : "Passed", report.quality?.preferred_windows.join(", ") || "signal-defined horizons"],
+    ["Annual stability", (report.quality?.periods_tested ?? 0) >= 2 ? "Measured" : "Insufficient", `${report.quality?.periods_tested ?? 0} event-year cross-sections with at least ${report.quality?.period_sample_minimum ?? 50} filings`],
+    ["Multiple testing", hasSuiteP ? "Suite controlled" : "Within-study only", hasSuiteP ? `Benjamini-Hochberg across ${report.quality?.suite_hypotheses ?? 0} published hypotheses` : `Benjamini-Hochberg across ${report.results.length} horizons`],
+    ["Inference", "Deterministic", `${(config.bootstrap_iterations ?? 0).toLocaleString()} ${report.bootstrap_unit === "issuer" ? "issuer-cluster" : "filing-event"} bootstrap draws · seed ${config.random_seed ?? "n/a"}`],
     ["Neutralization", report.neutralization ? "Applied" : "Raw", report.neutralization ?? "unneutralized cross-section"],
     ["Walk-forward", config.walk_forward_splits?.length ? "Configured" : "Not configured", config.walk_forward_splits?.length ? `${config.walk_forward_splits.length} split dates` : "single pooled estimate"],
   ];
@@ -258,7 +290,7 @@ export function ExperimentAudit({ study }: { study: SignalStudyResponse }) {
         <h4>Tested horizon manifest</h4>
         <div>
           {report.results.map((result) => (
-            <span key={result.window}><strong>{windowLabel(result.window)}</strong><small>n {result.sample_size.toLocaleString()} · IC {result.information_coefficient?.toFixed(3) ?? "n/a"} · adj p {adjustedP(result)?.toFixed(3) ?? "n/a"}</small></span>
+            <span key={result.window}><strong>{windowLabel(result.window)}</strong><small>n {result.sample_size.toLocaleString()} · {result.cluster_count?.toLocaleString() ?? "n/a"} issuers · IC {result.information_coefficient?.toFixed(3) ?? "n/a"} · suite p {adjustedP(result)?.toFixed(3) ?? "n/a"}</small></span>
           ))}
         </div>
       </div>

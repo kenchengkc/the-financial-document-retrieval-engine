@@ -254,6 +254,34 @@ test("renders the published signal study", async ({ page }) => {
       event_count: 241,
       dataset_version: "dataset-a17f",
       feature_version: "fdre-panel-v1",
+      definition: {
+        key: "disclosure_similarity",
+        label: "Disclosure similarity",
+        family: "Language",
+        source: "Comparable filing passage fingerprints",
+        formula: "Jaccard overlap versus the prior comparable filing",
+        thesis: "Persistent disclosures may identify information the market processes slowly.",
+        default_outcome: "abnormal_return",
+        default_windows: ["0:1"],
+        legacy: false,
+      },
+      quality: {
+        status: "Promising",
+        reason: "Economically aligned rank evidence is positive across multiple years.",
+        multiple_testing_method: "Benjamini-Hochberg across published signal-horizon tests",
+        suite_hypotheses: 2,
+        best_suite_adjusted_p_value: 0.12,
+        peak_absolute_ic: 0.0771,
+        direction_stability: 1,
+        stability_basis: "annual_periods",
+        periods_tested: 2,
+        period_sample_minimum: 50,
+        best_window: "0:1",
+        best_quantile_monotonicity: 0.9,
+        outcome_aligned: true,
+        horizon_aligned: true,
+        preferred_windows: ["0:1"],
+      },
       config: {
         benchmark_ticker: "SPY",
         confidence_level: 0.95,
@@ -280,7 +308,13 @@ test("renders the published signal study", async ({ page }) => {
           long_short_ci_high: 0.0121,
           long_short_p_value: 0.04,
           long_short_adjusted_p_value: 0.12,
+          suite_adjusted_p_value: 0.12,
+          quantile_monotonicity: 0.9,
         },
+      ],
+      period_results: [
+        { period: "2025", window: "0:1", sample_size: 114, information_coefficient: 0.05, long_short_mean: 0.001 },
+        { period: "2026", window: "0:1", sample_size: 127, information_coefficient: 0.08, long_short_mean: 0.003 },
       ],
     },
   };
@@ -293,6 +327,15 @@ test("renders the published signal study", async ({ page }) => {
       signal_name: "risk_factor_expansion",
       outcome_name: "realized_volatility",
       event_count: 188,
+      definition: {
+        ...disclosureStudy.report.definition,
+        key: "risk_factor_expansion",
+        label: "Net risk expansion",
+        source: "Item 1A additions and removals",
+        formula: "Added passages minus removed passages",
+        thesis: "Changing risk disclosures may identify future operating uncertainty.",
+        default_outcome: "realized_volatility",
+      },
     },
   };
   await page.route("**/research/signal-studies", (route) =>
@@ -314,21 +357,23 @@ test("renders the published signal study", async ({ page }) => {
   await page.getByRole("tab", { name: /Signals/ }).click();
   await expect(page.locator(".sig-stats")).toContainText("Filing events");
   await expect(page.locator(".sig-card").first()).toContainText("Filing day");
-  // raw p=0.04 would read significant; the UI must use the BH-adjusted p=0.12 -> "No edge".
-  await expect(page.locator(".sig-card").first()).toContainText("No edge");
-  await expect(page.locator(".sig-summary")).toContainText("p = 0.12");
-  await page.getByRole("tab", { name: /Risk expansion/ }).click();
-  await expect(page.locator(".panel-intro")).toContainText("higher volatility");
-  await expect(page.locator(".sig-stats")).toContainText("Volatility");
+  // raw p=0.04 would read significant; the UI must use suite p=0.12.
+  await expect(page.locator(".sig-card").first()).toContainText("Not qualified");
+  await expect(page.locator(".sig-summary").first()).toContainText("suite p = 0.12");
+  await expect(page.locator(".period-stability")).toContainText("Annual cross-sections");
+  await page.getByRole("tab", { name: /Net risk expansion/ }).click();
+  await expect(page.locator(".panel-intro")).toContainText("rank forward risk");
+  await expect(page.locator(".sig-summary").first()).toContainText(/High.low vol/);
 
   await page.getByRole("tab", { name: "Monitor" }).click();
   await expect(page.locator(".monitor-table")).toContainText("Disclosure similarity");
-  await expect(page.locator(".feature-library")).toContainText("Filing lateness");
+  await expect(page.locator(".feature-library")).toContainText("Filing-delay surprise");
   await expect(page.locator(".feature-library")).toContainText("Backtest-ready");
 
   await page.getByRole("tab", { name: "Audit" }).click();
   await expect(page.locator(".audit-manifest")).toContainText("dataset-a17f");
-  await expect(page.locator(".audit-gates")).toContainText("Benjamini–Hochberg");
+  await expect(page.locator(".audit-gates")).toContainText("Benjamini-Hochberg");
+  await expect(page.locator(".audit-gates")).toContainText("Annual stability");
 });
 
 test("compares a filing to its point-in-time comparable", async ({ page }) => {

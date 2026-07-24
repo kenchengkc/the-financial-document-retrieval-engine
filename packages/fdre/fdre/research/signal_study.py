@@ -41,6 +41,7 @@ class QuantileResult(BaseModel):
 class SignalWindowResult(BaseModel):
     window: str
     sample_size: int
+    cluster_count: int | None = None
     information_coefficient: float | None
     ic_t_stat: float | None
     quantiles: list[QuantileResult]
@@ -49,6 +50,14 @@ class SignalWindowResult(BaseModel):
     long_short_ci_high: float | None
     long_short_p_value: float | None
     long_short_adjusted_p_value: float | None = None
+
+
+class SignalPeriodResult(BaseModel):
+    period: str
+    window: str
+    sample_size: int
+    information_coefficient: float | None
+    long_short_mean: float | None
 
 
 class SignalConstituent(BaseModel):
@@ -66,34 +75,47 @@ class SignalStudyReport(BaseModel):
     feature_version: str
     code_sha: str
     outcome_name: str = "abnormal_return"
+    bootstrap_unit: str = "issuer"
+    neutralization: str = "none"
+    definition: dict[str, object] = Field(default_factory=dict)
     config: EventStudyConfig
     event_count: int
     results: list[SignalWindowResult]
+    period_results: list[SignalPeriodResult] = Field(default_factory=list)
     constituents: list[SignalConstituent] = Field(default_factory=list)
 
 
+SignalPair = tuple[float, float, str]
+
+
 def _winsorize_outcomes(
-    by_window: dict[str, list[tuple[float, float]]], pct: float
-) -> dict[str, list[tuple[float, float]]]:
+    by_window: dict[str, list[SignalPair]], pct: float
+) -> dict[str, list[SignalPair]]:
     """Clip each window's forward outcomes to its [pct, 1-pct] empirical quantiles.
 
     Small samples with a few highly volatile constituents let single names dominate
     a quantile's mean; winsorizing the return distribution (standard in factor
     research) limits that outlier influence without dropping observations.
     """
-    clipped: dict[str, list[tuple[float, float]]] = {}
+    clipped: dict[str, list[SignalPair]] = {}
     for label, pairs in by_window.items():
-        if len(pairs) < 5:
-            clipped[label] = pairs
-            continue
-        outcomes = sorted(outcome for _, outcome in pairs)
-        last = len(outcomes) - 1
-        low = outcomes[int(pct * last)]
-        high = outcomes[int((1 - pct) * last)]
-        clipped[label] = [
-            (feature, min(max(outcome, low), high)) for feature, outcome in pairs
-        ]
+        clipped[label] = _winsorize_pairs(pairs, pct)
     return clipped
+
+
+def _winsorize_pairs(
+    pairs: list[SignalPair], pct: float
+) -> list[SignalPair]:
+    if len(pairs) < 5:
+        return pairs
+    outcomes = sorted(outcome for _, outcome, _ in pairs)
+    last = len(outcomes) - 1
+    low = outcomes[int(pct * last)]
+    high = outcomes[int((1 - pct) * last)]
+    return [
+        (feature, min(max(outcome, low), high), cluster)
+        for feature, outcome, cluster in pairs
+    ]
 
 
 def run_signal_study(
@@ -108,6 +130,8 @@ def run_signal_study(
     code_sha: str,
     outcome_name: str = "abnormal_return",
     winsorize_pct: float | None = None,
+    neutralization: str = "none",
+    definition: dict[str, object] | None = None,
 ) -> SignalStudyReport:
     scored = [event for event in events if event.feature_value is not None]
     base = run_event_study(
@@ -119,15 +143,32 @@ def run_signal_study(
         code_sha=code_sha,
     )
     feature_by_accession = {event.accession_number: event.feature_value for event in scored}
+    ticker_by_accession = {event.accession_number: event.ticker for event in scored}
 
-    by_window: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    by_window: dict[str, list[SignalPair]] = defaultdict(list)
+    by_period: dict[tuple[str, str], list[SignalPair]] = defaultdict(list)
     for observation in base.observations:
         feature = feature_by_accession.get(observation.accession_number)
         if feature is not None:
-            by_window[observation.window].append((feature, observation.abnormal_return))
+            pair = (
+                feature,
+                observation.abnormal_return,
+                ticker_by_accession[observation.accession_number],
+            )
+            by_window[observation.window].append(pair)
+            by_period[(str(observation.event_session.year), observation.window)].append(
+                pair
+            )
 
     if winsorize_pct:
         by_window = defaultdict(list, _winsorize_outcomes(by_window, winsorize_pct))
+        by_period = defaultdict(
+            list,
+            {
+                key: _winsorize_pairs(pairs, winsorize_pct)
+                for key, pairs in by_period.items()
+            },
+        )
 
     return _build_signal_report(
         scored,
@@ -140,6 +181,9 @@ def run_signal_study(
         feature_version=feature_version,
         code_sha=code_sha,
         event_count=base.event_count,
+        neutralization=neutralization,
+        definition=definition or {},
+        by_period=by_period,
     )
 
 
@@ -153,6 +197,8 @@ def run_realized_volatility_signal_study(
     dataset_version: str,
     feature_version: str,
     code_sha: str,
+    neutralization: str = "none",
+    definition: dict[str, object] | None = None,
 ) -> SignalStudyReport:
     scored = [event for event in events if event.feature_value is not None]
     validate_event_inputs(scored)
@@ -162,7 +208,9 @@ def run_realized_volatility_signal_study(
     for ticker_bars in bars_by_ticker.values():
         ticker_bars.sort(key=lambda bar: bar.date)
 
-    by_window: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    by_window: dict[str, list[SignalPair]] = defaultdict(list)
+    by_period: dict[tuple[str, str], list[SignalPair]] = defaultdict(list)
+    observed_accessions: set[str] = set()
     for event in scored:
         feature = event.feature_value
         if feature is None:
@@ -171,6 +219,7 @@ def run_realized_volatility_signal_study(
         event_index = _event_session_index(event.available_at, ticker_bars, config)
         if event_index is None:
             continue
+        event_period = str(ticker_bars[event_index].date.year)
         for window in config.windows:
             start_index = event_index + window.start
             end_index = event_index + window.end
@@ -184,7 +233,10 @@ def run_realized_volatility_signal_study(
             if not daily_returns:
                 continue
             realized_volatility = sqrt(mean(value * value for value in daily_returns))
-            by_window[window.label].append((feature, realized_volatility))
+            pair = (feature, realized_volatility, event.ticker)
+            by_window[window.label].append(pair)
+            by_period[(event_period, window.label)].append(pair)
+            observed_accessions.add(event.accession_number)
 
     return _build_signal_report(
         scored,
@@ -196,13 +248,16 @@ def run_realized_volatility_signal_study(
         dataset_version=dataset_version,
         feature_version=feature_version,
         code_sha=code_sha,
-        event_count=len(scored),
+        event_count=len(observed_accessions),
+        neutralization=neutralization,
+        definition=definition or {},
+        by_period=by_period,
     )
 
 
 def _build_signal_report(
     scored: list[FilingEvent],
-    by_window: dict[str, list[tuple[float, float]]],
+    by_window: dict[str, list[SignalPair]],
     config: EventStudyConfig,
     *,
     signal_name: str,
@@ -212,6 +267,9 @@ def _build_signal_report(
     feature_version: str,
     code_sha: str,
     event_count: int,
+    neutralization: str,
+    definition: dict[str, object],
+    by_period: dict[tuple[str, str], list[SignalPair]],
 ) -> SignalStudyReport:
     feature_by_accession = {event.accession_number: event.feature_value for event in scored}
     rng = random.Random(config.random_seed)
@@ -230,10 +288,13 @@ def _build_signal_report(
     manifest = {
         "signal_name": signal_name,
         "outcome_name": outcome_name,
+        "bootstrap_unit": "issuer",
         "n_quantiles": n_quantiles,
         "dataset_version": dataset_version,
         "feature_version": feature_version,
         "code_sha": code_sha,
+        "neutralization": neutralization,
+        "definition": definition,
         "config": config.model_dump(mode="json"),
         "events": sorted(feature_by_accession),
     }
@@ -248,10 +309,48 @@ def _build_signal_report(
         dataset_version=dataset_version,
         feature_version=feature_version,
         code_sha=code_sha,
+        neutralization=neutralization,
+        definition=definition,
         config=config,
         event_count=event_count,
         results=results,
+        period_results=_period_results(by_period, n_quantiles),
     )
+
+
+def _period_results(
+    grouped: dict[tuple[str, str], list[SignalPair]],
+    n_quantiles: int,
+) -> list[SignalPeriodResult]:
+    results: list[SignalPeriodResult] = []
+    for (period, window), pairs in sorted(grouped.items()):
+        information_coefficient = (
+            _spearman(
+                [feature for feature, _, _ in pairs],
+                [outcome for _, outcome, _ in pairs],
+            )
+            if len(pairs) >= 3
+            else None
+        )
+        long_short_mean: float | None = None
+        if len(pairs) >= n_quantiles * 2:
+            buckets = _split_quantiles(
+                sorted(pairs, key=lambda item: item[0]),
+                n_quantiles,
+            )
+            long_short_mean = mean(value for _, value, _ in buckets[-1]) - mean(
+                value for _, value, _ in buckets[0]
+            )
+        results.append(
+            SignalPeriodResult(
+                period=period,
+                window=window,
+                sample_size=len(pairs),
+                information_coefficient=information_coefficient,
+                long_short_mean=long_short_mean,
+            )
+        )
+    return results
 
 
 def _apply_benjamini_hochberg(results: list[SignalWindowResult]) -> None:
@@ -308,7 +407,7 @@ def persist_signal_study(session: Session, report: SignalStudyReport) -> Researc
 
 def _summarize_window(
     window: str,
-    pairs: list[tuple[float, float]],
+    pairs: list[SignalPair],
     n_quantiles: int,
     config: EventStudyConfig,
     rng: random.Random,
@@ -317,6 +416,7 @@ def _summarize_window(
         return SignalWindowResult(
             window=window,
             sample_size=len(pairs),
+            cluster_count=len({cluster for _, _, cluster in pairs}),
             information_coefficient=None,
             ic_t_stat=None,
             quantiles=[],
@@ -325,8 +425,8 @@ def _summarize_window(
             long_short_ci_high=None,
             long_short_p_value=None,
         )
-    features = [feature for feature, _ in pairs]
-    returns = [value for _, value in pairs]
+    features = [feature for feature, _, _ in pairs]
+    returns = [value for _, value, _ in pairs]
     ic = _spearman(features, returns)
     ic_t = (
         ic * ((len(pairs) - 2) / (1 - ic * ic)) ** 0.5
@@ -340,17 +440,22 @@ def _summarize_window(
         QuantileResult(
             quantile=index + 1,
             sample_size=len(bucket),
-            mean_abnormal_return=mean(value for _, value in bucket) if bucket else None,
+            mean_abnormal_return=(
+                mean(value for _, value, _ in bucket) if bucket else None
+            ),
         )
         for index, bucket in enumerate(buckets)
     ]
-    low_returns = [value for _, value in buckets[0]]
-    high_returns = [value for _, value in buckets[-1]]
-    spread = mean(high_returns) - mean(low_returns)
+    low_returns = [(value, cluster) for _, value, cluster in buckets[0]]
+    high_returns = [(value, cluster) for _, value, cluster in buckets[-1]]
+    spread = mean(value for value, _ in high_returns) - mean(
+        value for value, _ in low_returns
+    )
     ci_low, ci_high, p_value = _bootstrap_difference(high_returns, low_returns, config, rng)
     return SignalWindowResult(
         window=window,
         sample_size=len(pairs),
+        cluster_count=len({cluster for _, _, cluster in pairs}),
         information_coefficient=ic,
         ic_t_stat=ic_t,
         quantiles=quantiles,
@@ -362,11 +467,11 @@ def _summarize_window(
 
 
 def _split_quantiles(
-    ordered: list[tuple[float, float]],
+    ordered: list[SignalPair],
     n_quantiles: int,
-) -> list[list[tuple[float, float]]]:
+) -> list[list[SignalPair]]:
     size = len(ordered)
-    buckets: list[list[tuple[float, float]]] = []
+    buckets: list[list[SignalPair]] = []
     for index in range(n_quantiles):
         start = index * size // n_quantiles
         end = (index + 1) * size // n_quantiles
@@ -414,20 +519,41 @@ def _pearson(left: list[float], right: list[float]) -> float | None:
 
 
 def _bootstrap_difference(
-    high: list[float],
-    low: list[float],
+    high: list[tuple[float, str]],
+    low: list[tuple[float, str]],
     config: EventStudyConfig,
     rng: random.Random,
 ) -> tuple[float | None, float | None, float | None]:
     if not high or not low:
         return None, None, None
-    samples = sorted(
-        mean(rng.choices(high, k=len(high))) - mean(rng.choices(low, k=len(low)))
-        for _ in range(config.bootstrap_iterations)
-    )
+    high_by_cluster: dict[str, list[float]] = defaultdict(list)
+    low_by_cluster: dict[str, list[float]] = defaultdict(list)
+    for value, cluster in high:
+        high_by_cluster[cluster].append(value)
+    for value, cluster in low:
+        low_by_cluster[cluster].append(value)
+    clusters = sorted(high_by_cluster.keys() | low_by_cluster.keys())
+    if len(clusters) < 2:
+        return None, None, None
+    samples: list[float] = []
+    for _ in range(config.bootstrap_iterations):
+        sampled_clusters = rng.choices(clusters, k=len(clusters))
+        sampled_high = [
+            value for cluster in sampled_clusters for value in high_by_cluster[cluster]
+        ]
+        sampled_low = [
+            value for cluster in sampled_clusters for value in low_by_cluster[cluster]
+        ]
+        if sampled_high and sampled_low:
+            samples.append(mean(sampled_high) - mean(sampled_low))
+    if not samples:
+        return None, None, None
+    samples.sort()
     alpha = 1 - config.confidence_level
     low_ci = samples[max(0, round((len(samples) - 1) * (alpha / 2)))]
     high_ci = samples[min(len(samples) - 1, round((len(samples) - 1) * (1 - alpha / 2)))]
-    below = sum(sample <= 0 for sample in samples) / len(samples)
-    above = sum(sample >= 0 for sample in samples) / len(samples)
+    # The plus-one correction prevents an impossible reported p-value of zero
+    # when no finite bootstrap draw crosses the null.
+    below = (sum(sample <= 0 for sample in samples) + 1) / (len(samples) + 1)
+    above = (sum(sample >= 0 for sample in samples) + 1) / (len(samples) + 1)
     return low_ci, high_ci, min(1.0, 2 * min(below, above))

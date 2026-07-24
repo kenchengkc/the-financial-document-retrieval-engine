@@ -65,6 +65,8 @@ def test_signal_study_recovers_a_monotonic_signal() -> None:
     assert report.event_count == n
     window = report.results[0]
     assert window.sample_size == n
+    assert window.cluster_count == n
+    assert report.bootstrap_unit == "issuer"
     assert window.information_coefficient is not None and window.information_coefficient > 0.95
     means = [
         q.mean_abnormal_return
@@ -74,7 +76,12 @@ def test_signal_study_recovers_a_monotonic_signal() -> None:
     assert len(means) == len(window.quantiles)
     assert means == sorted(means)  # quantile returns increase with the signal
     assert window.long_short_mean is not None and window.long_short_mean > 0
-    assert window.long_short_p_value is not None and window.long_short_p_value < 0.05
+    assert window.long_short_p_value is not None
+    assert 0 < window.long_short_p_value < 0.05
+    assert len(report.period_results) == 1
+    assert report.period_results[0].period == "2024"
+    assert report.period_results[0].information_coefficient is not None
+    assert report.period_results[0].information_coefficient > 0.95
 
 
 def test_signal_study_handles_thin_samples() -> None:

@@ -103,6 +103,7 @@ export type SignalQuantile = {
 export type SignalWindow = {
   window: string;
   sample_size: number;
+  cluster_count?: number | null;
   information_coefficient: number | null;
   ic_t_stat: number | null;
   quantiles: SignalQuantile[];
@@ -111,6 +112,46 @@ export type SignalWindow = {
   long_short_ci_high: number | null;
   long_short_p_value: number | null;
   long_short_adjusted_p_value: number | null;
+  suite_adjusted_p_value?: number | null;
+  quantile_monotonicity?: number | null;
+};
+
+export type SignalDefinition = {
+  key: string;
+  label: string;
+  family: string;
+  source: string;
+  formula: string;
+  thesis: string;
+  default_outcome: "abnormal_return" | "realized_volatility";
+  default_windows: string[];
+  legacy: boolean;
+};
+
+export type SignalQuality = {
+  status: "Validated" | "Promising" | "Exploratory";
+  reason: string;
+  multiple_testing_method: string;
+  suite_hypotheses: number;
+  best_suite_adjusted_p_value: number | null;
+  peak_absolute_ic: number;
+  direction_stability: number;
+  stability_basis: "annual_periods" | "tested_horizons";
+  periods_tested: number;
+  period_sample_minimum: number;
+  best_window: string | null;
+  best_quantile_monotonicity: number | null;
+  outcome_aligned: boolean;
+  horizon_aligned: boolean;
+  preferred_windows: string[];
+};
+
+export type SignalPeriodResult = {
+  period: string;
+  window: string;
+  sample_size: number;
+  information_coefficient: number | null;
+  long_short_mean: number | null;
 };
 
 export type ComponentResult = {
@@ -141,11 +182,14 @@ export type SignalStudyResponse = {
   report: {
     signal_name: string;
     outcome_name?: string;
+    bootstrap_unit?: string;
     n_quantiles: number;
     dataset_version?: string;
     feature_version?: string;
     code_sha?: string;
     event_count: number;
+    definition?: SignalDefinition;
+    quality?: SignalQuality;
     config: {
       benchmark_ticker?: string;
       confidence_level?: number;
@@ -157,6 +201,7 @@ export type SignalStudyResponse = {
       windows?: Array<{ start: number; end: number; label: string }>;
     };
     results: SignalWindow[];
+    period_results?: SignalPeriodResult[];
     component_signals?: string[];
     components?: ComponentResult[];
     signal_correlations?: SignalCorrelation[];

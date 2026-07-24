@@ -1,24 +1,17 @@
 name: Earnings-quality sample
 
-# Grows the earnings-quality (accruals) signal study toward full S&P 500 coverage
-# "over time." Tiingo's free tier throttles to ~50 fresh symbols per hour, so a
-# single run can only warm a slice; each run restores the shared market cache,
-# fetches up to 50 more uncached issuers, republishes the winsorized study with
-# whatever coverage exists so far, prunes older rows, then saves the cache. Over
-# ~8 runs it reaches full coverage, after which fetches are no-ops and it simply
-# keeps the study fresh. Cancel or widen the cron once the sample plateaus.
+# Manual cache-warming utility for the earnings-quality study. It has no schedule
+# so research experiments cannot wake Neon or consume Tiingo quota unattended.
 #
 # The market cache key prefix (fdre-market-) is shared with signal-study.yml, so
 # bars fetched here also speed up the other studies and vice versa.
 
 on:
-  schedule:
-    - cron: "23 */2 * * *" # every 2 hours, offset to avoid top-of-hour contention
   workflow_dispatch:
     inputs:
       max_uncached_market_fetches:
         description: "Max fresh Tiingo symbol fetches this run"
-        default: "50"
+        default: "0"
 
 permissions:
   contents: read

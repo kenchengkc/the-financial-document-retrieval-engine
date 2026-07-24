@@ -145,6 +145,9 @@ def test_research_panel_builds_reproducible_point_in_time_features(
     assert row.topic_mentions["ai"] == 1
     assert row.risk_added_passages == 1
     assert row.risk_removed_passages == 1
+    assert row.risk_current_passages == 2
+    assert row.risk_previous_passages == 2
+    assert row.risk_churn_rate == pytest.approx(0.5)
     assert row.max_source_available_at <= row.available_at
     assert row.source_accessions == ["annual-2025", "annual-2024"]
     assert panel.corpus_snapshot_id == row.corpus_snapshot_id

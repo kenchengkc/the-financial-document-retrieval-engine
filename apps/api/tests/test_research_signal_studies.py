@@ -26,19 +26,22 @@ def test_signal_studies_returns_latest_distinct_signal_outcomes() -> None:
                     "old-disclosure",
                     "disclosure_similarity",
                     "abnormal_return",
-                    event_count=40,
+                    event_count=120,
+                    feature_version="feature-v1",
                 ),
                 _experiment(
                     "risk-vol",
                     "risk_factor_expansion",
                     "realized_volatility",
                     event_count=55,
+                    feature_version="feature-v1",
                 ),
                 _experiment(
                     "new-disclosure",
                     "disclosure_similarity",
                     "abnormal_return",
                     event_count=80,
+                    feature_version="feature-v2",
                 ),
             ]
         )
@@ -50,7 +53,8 @@ def test_signal_studies_returns_latest_distinct_signal_outcomes() -> None:
 
     app = create_app()
     app.dependency_overrides[get_db_session] = override_session
-    response = TestClient(app).get("/research/signal-studies")
+    client = TestClient(app)
+    response = client.get("/research/signal-studies")
 
     assert response.status_code == 200
     studies = response.json()["studies"]
@@ -61,6 +65,11 @@ def test_signal_studies_returns_latest_distinct_signal_outcomes() -> None:
     assert studies[0]["report"]["event_count"] == 80
     assert studies[1]["report"]["outcome_name"] == "realized_volatility"
 
+    latest = client.get("/research/signal-study")
+    assert latest.status_code == 200
+    assert latest.json()["experiment_key"] == "new-disclosure"
+    assert latest.json()["report"]["quality"]["suite_hypotheses"] == 0
+
 
 def _experiment(
     key: str,
@@ -68,12 +77,13 @@ def _experiment(
     outcome_name: str,
     *,
     event_count: int,
+    feature_version: str,
 ) -> ResearchExperiment:
     return ResearchExperiment(
         experiment_key=key,
         experiment_type="signal_study",
         dataset_version="dataset",
-        feature_version="feature",
+        feature_version=feature_version,
         code_sha="abc123",
         config_json={"windows": ["0:1"]},
         results_json={
@@ -82,7 +92,7 @@ def _experiment(
             "outcome_name": outcome_name,
             "n_quantiles": 5,
             "dataset_version": "dataset",
-            "feature_version": "feature",
+            "feature_version": feature_version,
             "code_sha": "abc123",
             "config": {"benchmark_ticker": "SPY", "confidence_level": 0.95},
             "event_count": event_count,

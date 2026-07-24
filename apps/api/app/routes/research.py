@@ -18,6 +18,7 @@ from apps.api.app.services.research_cache import (
     write_cached_model,
 )
 from apps.api.app.services.retrieval_service import search_documents
+from apps.api.app.services.signal_validation import enrich_signal_study_payloads
 from fdre.research.filing_diffs import FilingDifference, compare_filing_to_prior
 from fdre.research.financial_facts import (
     CanonicalMetric,
@@ -191,15 +192,10 @@ def export_research_panel(
 def signal_study(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, Any]:
-    experiment = session.scalar(
-        select(ResearchExperiment)
-        .where(ResearchExperiment.experiment_type == "signal_study")
-        .order_by(ResearchExperiment.created_at.desc(), ResearchExperiment.id.desc())
-        .limit(1)
-    )
-    if experiment is None:
+    payloads = _published_signal_study_payloads(session)
+    if not payloads:
         raise HTTPException(status_code=404, detail="No signal study has been published yet.")
-    return _signal_study_payload(experiment)
+    return payloads[0]
 
 
 @router.get("/signal-studies")
@@ -207,18 +203,23 @@ def signal_studies(
     session: Annotated[Session, Depends(get_db_session)],
     limit: Annotated[int, Query(ge=1, le=20)] = 8,
 ) -> dict[str, Any]:
+    return {"studies": _published_signal_study_payloads(session)[:limit]}
+
+
+def _published_signal_study_payloads(session: Session) -> list[dict[str, Any]]:
     experiments = list(
         session.scalars(
             select(ResearchExperiment)
             .where(ResearchExperiment.experiment_type == "signal_study")
             .order_by(ResearchExperiment.created_at.desc(), ResearchExperiment.id.desc())
-            .limit(limit * 4)
+            .limit(200)
         )
     )
-    # Dedupe to one study per (signal, outcome), keeping the most complete run
-    # (most filing events; newest breaks ties). A partial-coverage republish must
-    # never shadow a fuller study, even before the pruner deletes it.
+    # Dedupe to one study per (signal, outcome). The newest feature methodology
+    # supersedes an older definition; within that methodology, retain the run
+    # with the broadest market-data coverage.
     best: dict[tuple[str, str], ResearchExperiment] = {}
+    current_versions: dict[tuple[str, str], str] = {}
     for experiment in experiments:
         report = experiment.results_json or {}
         key = (
@@ -226,15 +227,24 @@ def signal_studies(
             str(report.get("outcome_name", "abnormal_return")),
         )
         incumbent = best.get(key)
-        if incumbent is None or int(report.get("event_count", 0) or 0) > int(
+        version = str(report.get("feature_version") or experiment.feature_version)
+        if incumbent is None:
+            best[key] = experiment
+            current_versions[key] = version
+        elif version == current_versions[key] and int(
+            report.get("event_count", 0) or 0
+        ) > int(
             (incumbent.results_json or {}).get("event_count", 0) or 0
         ):
             best[key] = experiment
     ordered = sorted(
-        best.values(), key=lambda e: e.created_at, reverse=True
-    )[:limit]
-    payloads = [_signal_study_payload(experiment) for experiment in ordered]
-    return {"studies": payloads}
+        best.values(),
+        key=lambda experiment: (experiment.created_at, experiment.id),
+        reverse=True,
+    )
+    return enrich_signal_study_payloads(
+        [_signal_study_payload(experiment) for experiment in ordered]
+    )
 
 
 def _signal_study_payload(experiment: ResearchExperiment) -> dict[str, Any]:

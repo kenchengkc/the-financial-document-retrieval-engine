@@ -38,9 +38,13 @@ const WINDOW_LABELS: Record<string, string> = {
 
 const SIGNAL_LABELS: Record<string, string> = {
   disclosure_similarity: "Disclosure similarity",
+  risk_factor_churn: "Risk churn",
+  filing_delay_surprise: "Delay surprise",
   risk_expansion: "Risk expansion",
   filing_lateness: "Filing lateness",
-  earnings_quality: "Earnings quality",
+  earnings_quality: "Cash conversion",
+  operating_profitability: "Profitability",
+  operating_margin_momentum: "Margin momentum",
   asset_growth: "Asset growth",
   net_share_issuance: "Share issuance",
   composite: "Composite",
@@ -140,10 +144,18 @@ function outcomeName(study: SignalStudyResponse) {
   return study.report.outcome_name ?? "abnormal_return";
 }
 
+function adjustedP(window: SignalWindow) {
+  return (
+    window.suite_adjusted_p_value ??
+    window.long_short_adjusted_p_value ??
+    window.long_short_p_value
+  );
+}
+
 function significantCount(study: SignalStudyResponse) {
   const windows = study.report.results;
   const sig = windows.filter((w) => {
-    const p = w.long_short_adjusted_p_value ?? w.long_short_p_value;
+    const p = adjustedP(w);
     return p !== null && p < 0.05;
   }).length;
   return { sig, total: windows.length };
@@ -154,18 +166,35 @@ function studyKey(study: SignalStudyResponse) {
 }
 
 function isWindowSignificant(w: SignalWindow) {
-  const p = w.long_short_adjusted_p_value ?? w.long_short_p_value;
+  const p = adjustedP(w);
   return p !== null && p < 0.05;
 }
 
 function bestAdjustedP(results: SignalWindow[]) {
   return Math.min(
     1,
-    ...results.map((w) => w.long_short_adjusted_p_value ?? w.long_short_p_value ?? 1),
+    ...results.map((w) => adjustedP(w) ?? 1),
   );
 }
 
 function studyVerdict(study: SignalStudyResponse) {
+  const quality = study.report.quality;
+  if (quality) {
+    const stability =
+      quality.stability_basis === "annual_periods"
+        ? `annual direction stability = ${Math.round(quality.direction_stability * 100)}% across ${quality.periods_tested} years`
+        : "annual stability is not yet measurable";
+    return {
+      tone:
+        quality.status === "Validated"
+          ? ("sig" as const)
+          : quality.status === "Promising"
+            ? ("watch" as const)
+            : ("flat" as const),
+      headline: `${quality.status} research signal`,
+      plain: `${quality.reason} Best suite-adjusted p = ${quality.best_suite_adjusted_p_value?.toFixed(3) ?? "n/a"}; ${stability}.`,
+    };
+  }
   const results = study.report.results;
   const sig = results.filter(isWindowSignificant);
   if (sig.length === 0) {
@@ -185,7 +214,8 @@ function studyVerdict(study: SignalStudyResponse) {
 
 function StudyVerdict({ study }: { study: SignalStudyResponse }) {
   const v = studyVerdict(study);
-  const Icon = v.tone === "sig" ? CheckCircle2 : CircleSlash;
+  const Icon =
+    v.tone === "sig" ? CheckCircle2 : v.tone === "watch" ? FlaskConical : CircleSlash;
   return (
     <div className={`sig-banner ${v.tone}`} role="status">
       <Icon size={22} aria-hidden="true" />
@@ -220,12 +250,15 @@ function SummaryTable({
           {results.map((w) => {
             const sig = isWindowSignificant(w);
             const rising = (w.long_short_mean ?? 0) >= 0;
-            const p = w.long_short_adjusted_p_value ?? w.long_short_p_value;
+            const p = adjustedP(w);
             return (
               <tr key={w.window}>
                 <td>
                   <strong>{windowLabel(w.window)}</strong>
-                  <small>n = {w.sample_size.toLocaleString()}</small>
+                  <small>
+                    n = {w.sample_size.toLocaleString()}
+                    {w.cluster_count ? ` · ${w.cluster_count.toLocaleString()} issuers` : ""}
+                  </small>
                 </td>
                 <td className={`num ${sig ? (rising ? "pos" : "neg") : ""}`}>
                   {pct(w.long_short_mean)}
@@ -235,9 +268,9 @@ function SummaryTable({
                 </td>
                 <td>
                   <span className={`sig-verdict ${sig ? "sig" : "flat"}`}>
-                    {sig ? `Significant ${rising ? "↑" : "↓"}` : "No edge"}
+                    {sig ? `Suite-qualified ${rising ? "↑" : "↓"}` : "Not qualified"}
                   </span>
-                  {p !== null && <small className="sig-p">p = {p.toFixed(2)}</small>}
+                  {p !== null && <small className="sig-p">suite p = {p.toFixed(2)}</small>}
                 </td>
               </tr>
             );
@@ -248,12 +281,72 @@ function SummaryTable({
   );
 }
 
+function PeriodStability({
+  study,
+  isVolatility,
+}: {
+  study: SignalStudyResponse;
+  isVolatility: boolean;
+}) {
+  const bestWindow = study.report.quality?.best_window;
+  const minimumSample = study.report.quality?.period_sample_minimum ?? 50;
+  const rows = (study.report.period_results ?? [])
+    .filter(
+      (row) =>
+        bestWindow !== null && row.window === bestWindow && row.sample_size >= minimumSample,
+    )
+    .sort((left, right) => left.period.localeCompare(right.period));
+  if (!bestWindow || rows.length < 2) {
+    return null;
+  }
+  return (
+    <section className="period-stability" aria-labelledby="annual-stability-title">
+      <div className="period-stability-head">
+        <div>
+          <p className="eyebrow">Temporal robustness</p>
+          <h3 id="annual-stability-title">Annual cross-sections</h3>
+        </div>
+        <p>
+          {windowLabel(bestWindow)} held constant; each row uses at least {minimumSample} filing
+          events from that year.
+        </p>
+      </div>
+      <div className="sig-summary">
+        <table>
+          <thead>
+            <tr>
+              <th>Event year</th>
+              <th className="num">Filings</th>
+              <th className="num">Rank IC</th>
+              <th className="num">{isVolatility ? "High-low vol" : "Long-short return"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.period}-${row.window}`}>
+                <td><strong>{row.period}</strong></td>
+                <td className="num">{row.sample_size.toLocaleString()}</td>
+                <td className={`num ${(row.information_coefficient ?? 0) >= 0 ? "pos" : "neg"}`}>
+                  {row.information_coefficient?.toFixed(3) ?? "N/A"}
+                </td>
+                <td className={`num ${(row.long_short_mean ?? 0) >= 0 ? "pos" : "neg"}`}>
+                  {pct(row.long_short_mean)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function Glossary({ isVolatility }: { isVolatility: boolean }) {
   const outcome = isVolatility ? "next-period volatility" : "next-period return";
   const items: [string, string][] = [
     [
       "The 5 groups",
-      `Every filing is sorted into 5 equal buckets by the signal (Group 1 = strongest, Group 5 = weakest). Each bar is that group's average ${outcome}.`,
+      `Every filing is sorted into 5 equal buckets by the signal (Group 1 = lowest score, Group 5 = highest score). Each bar is that group's average ${outcome}.`,
     ],
     [
       "Long–short return",
@@ -265,7 +358,7 @@ function Glossary({ isVolatility }: { isVolatility: boolean }) {
     ],
     [
       "Significant / p-value",
-      "How likely the result is just luck. p < 0.05 (after adjusting for testing several horizons) means it is unlikely to be random.",
+      "How likely the result is just luck. The suite p-value adjusts across every published signal and horizon, not only the selected study.",
     ],
   ];
   return (
@@ -289,6 +382,9 @@ function signalLabel(study: SignalStudyResponse) {
   if (study.report.signal_name === "composite") {
     const count = study.report.component_signals?.length ?? 0;
     return `Composite (${count} signals)`;
+  }
+  if (study.report.definition) {
+    return `${study.report.definition.label} -> ${outcomeName(study) === "realized_volatility" ? "volatility" : "returns"}`;
   }
   if (study.report.signal_name === "risk_factor_expansion") {
     return outcomeName(study) === "realized_volatility"
@@ -341,6 +437,27 @@ function studyCopy(study: SignalStudyResponse): StudyCopy {
         "IC-weight the sleeves, not equal-weight: weight each component by its out-of-sample rank skill so the weakest signal stops dragging the blend.",
         "Breadth over conviction: at ~500 names the Fundamental Law says many small tilts beat a few large bets. Apply the composite as basis-point overweights across the whole book.",
         "Keep it sector-neutral (as here), so the tilt expresses issuer-specific information instead of a hidden sector bet.",
+      ],
+    };
+  }
+  const definition = study.report.definition;
+  if (definition) {
+    const isVolatility = outcomeName(study) === "realized_volatility";
+    const qualityReading =
+      study.report.quality?.reason ??
+      "This result is a versioned research hypothesis, not a production trading claim.";
+    return {
+      headlinePrefix: "Does ",
+      headlineAccent: definition.label.toLowerCase(),
+      headlineSuffix: isVolatility ? " rank forward risk?" : " rank forward returns?",
+      lede: `${definition.thesis} The point-in-time feature is ${definition.formula.toLowerCase()}, computed from ${definition.source.toLowerCase()}.`,
+      leftAxis: `← lower ${definition.label.toLowerCase()}`,
+      rightAxis: `higher ${definition.label.toLowerCase()} →`,
+      note: `${qualityReading} The universe follows indexed issuer coverage rather than a historical constituent file; return studies are gross of costs and borrow.`,
+      desk: [
+        "Evidence review: inspect the extreme constituents and trace every score to its source filing before assigning an economic interpretation.",
+        "Portfolio research: use sector-period neutral ranks so an apparent effect is not a disguised industry or reporting-calendar exposure.",
+        "Falsification: require stable direction, monotonic quantiles, and walk-forward replication before allocating risk.",
       ],
     };
   }
@@ -479,27 +596,41 @@ const CONSTITUENT_COPY: Record<
 > = {
   earnings_quality: {
     description:
-      "The current highest- and lowest-quality names, ranked by balance-sheet accruals on each issuer's most recent 10-K. More negative means earnings are more fully backed by operating cash.",
+      "The current highest- and lowest-quality names, ranked by operating cash flow minus net income over average assets on each issuer's most recent 10-K.",
     longTitle: "Cash-backed · top quality",
     shortTitle: "Accrual-heavy · watch quality",
     footer:
-      "Accruals = (net income − operating cash flow) ÷ total assets, from reported XBRL facts.",
+      "Cash conversion = (operating cash flow - net income) / average assets.",
+  },
+  operating_profitability: {
+    description:
+      "Operating income scaled by average assets, using annual XBRL facts available when each filing was accepted.",
+    longTitle: "Efficient · high profitability",
+    shortTitle: "Weak · low profitability",
+    footer: "Operating profitability = operating income / average assets.",
+  },
+  operating_margin_momentum: {
+    description:
+      "The latest year-over-year change in operating margin, calculated from comparative annual facts in the same 10-K.",
+    longTitle: "Improving · positive inflection",
+    shortTitle: "Deteriorating · negative inflection",
+    footer: "Margin momentum = current operating margin - prior operating margin.",
   },
   asset_growth: {
     description:
-      "Year-over-year total-asset growth from each issuer's most recent 10-K. Negative means a shrinking balance sheet (usually divestitures); the largest readings are mostly completed acquisitions.",
+      "A higher score means more disciplined year-over-year asset growth from each issuer's most recent 10-K.",
     longTitle: "Shrinking · disciplined",
     shortTitle: "Expanding · watch integration",
     footer:
-      "Asset growth = current-year ÷ prior-year total assets − 1, both reported in the same 10-K.",
+      "Score = negative year-over-year asset growth, using comparative facts from the same 10-K.",
   },
   net_share_issuance: {
     description:
-      "Year-over-year change in weighted diluted shares outstanding from each issuer's most recent 10-K. Negative means net buybacks; large positive readings are typically merger stock or recapitalizations.",
+      "A higher score means the issuer reduced its reported common share count. Common shares outstanding are preferred, with annual diluted weighted-average shares as fallback.",
     longTitle: "Net buybacks · shrinking count",
     shortTitle: "Net issuers · rising count",
     footer:
-      "Issuance = current-year ÷ prior-year weighted diluted shares − 1, from the same 10-K.",
+      "Score = negative year-over-year share-count growth from the same 10-K.",
   },
 };
 
@@ -649,10 +780,10 @@ function WindowCard({
   rightAxis: string;
   isVolatility: boolean;
 }) {
-  const adjustedP = window.long_short_adjusted_p_value ?? window.long_short_p_value;
-  const significant = adjustedP !== null && adjustedP < 0.05;
+  const pValue = adjustedP(window);
+  const significant = pValue !== null && pValue < 0.05;
   const rising = (window.long_short_mean ?? 0) >= 0;
-  const verdict = significant ? `Significant ${rising ? "↑" : "↓"}` : "No edge";
+  const verdict = significant ? `Suite-qualified ${rising ? "↑" : "↓"}` : "Not qualified";
   return (
     <article className="sig-card">
       <header>
@@ -678,7 +809,6 @@ function WindowCard({
 function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
   const report = study.report;
   const copy = studyCopy(study);
-  const confidence = report.config.confidence_level ?? 0.95;
   const isVol = outcomeName(study) === "realized_volatility";
 
   return (
@@ -701,20 +831,25 @@ function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
           <dd>{report.event_count.toLocaleString()}</dd>
         </div>
         <div>
-          <dt>Outcome</dt>
-          <dd>{isVol ? "Volatility" : "Return"}</dd>
+          <dt>Research state</dt>
+          <dd>{report.quality?.status ?? "Exploratory"}</dd>
         </div>
         <div>
-          <dt>Groups</dt>
-          <dd>{report.n_quantiles}</dd>
+          <dt>Best suite p</dt>
+          <dd>{report.quality?.best_suite_adjusted_p_value?.toFixed(3) ?? "N/A"}</dd>
         </div>
         <div>
-          <dt>Bootstrap CI</dt>
-          <dd>{Math.round(confidence * 100)}%</dd>
+          <dt>Annual stability</dt>
+          <dd>
+            {report.quality?.stability_basis === "annual_periods"
+              ? `${Math.round(report.quality.direction_stability * 100)}% / ${report.quality.periods_tested}y`
+              : "N/A"}
+          </dd>
         </div>
       </dl>
 
       <SummaryTable results={report.results} isVolatility={isVol} />
+      <PeriodStability study={study} isVolatility={isVol} />
       <Glossary isVolatility={isVol} />
 
       {report.constituents && report.constituents.length > 0 && (
@@ -874,6 +1009,14 @@ export function SignalsPanel() {
               {studies.map((candidate) => {
                 const key = studyKey(candidate);
                 const { sig, total } = significantCount(candidate);
+                const researchState = candidate.report.quality?.status;
+                const verdict = researchState ?? (sig > 0 ? `${sig}/${total} suite-qualified` : "Exploratory");
+                const verdictTone =
+                  researchState === "Validated" || sig > 0
+                    ? " has"
+                    : researchState === "Promising"
+                      ? " watch"
+                      : "";
                 return (
                   <button
                     key={key}
@@ -884,8 +1027,8 @@ export function SignalsPanel() {
                     onClick={() => setActiveKey(key)}
                   >
                     <span className="sig-tab-name">{signalLabel(candidate)}</span>
-                    <span className={`sig-tab-verdict${sig > 0 ? " has" : ""}`}>
-                      {sig > 0 ? `${sig}/${total} horizons sig` : "no edge"}
+                    <span className={`sig-tab-verdict${verdictTone}`}>
+                      {verdict}
                     </span>
                   </button>
                 );

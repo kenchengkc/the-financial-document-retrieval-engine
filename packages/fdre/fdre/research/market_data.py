@@ -222,16 +222,20 @@ def fetch_market_bars(
     symbols are returned as missing without making network calls.
     """
     token = tiingo_token or os.environ.get("TIINGO_API_KEY")
-    provider = "tiingo" if token else "yahoo"
     wanted = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
     session = requests.Session()
     crumb = None
-    if not token:
-        session, crumb = open_yahoo_session()
+    yahoo_session_ready = False
     bars: list[MarketBar] = []
     missing: list[str] = []
     uncached_fetches = 0
     for symbol in wanted:
+        tiingo_cache = (
+            _covering_tiingo_path(Path(cache_dir), symbol, start, end)
+            if cache_dir is not None
+            else None
+        )
+        provider = "tiingo" if token or tiingo_cache is not None else "yahoo"
         cache_path = _market_cache_path(
             symbol,
             start,
@@ -240,10 +244,10 @@ def fetch_market_bars(
             provider=provider,
         )
         cached = cache_path is not None and cache_path.exists()
-        if not cached and provider == "tiingo" and cache_dir is not None:
+        if not cached and provider == "tiingo" and tiingo_cache is not None:
             # A wider cached window already covers this request; reuse it instead
             # of counting it as a fresh (rate-limited) fetch.
-            cached = _covering_tiingo_path(Path(cache_dir), symbol, start, end) is not None
+            cached = True
         if not cached:
             if cache_only:
                 missing.append(symbol)
@@ -256,11 +260,19 @@ def fetch_market_bars(
                 continue
             uncached_fetches += 1
         try:
-            if token:
+            if provider == "tiingo":
                 ticker_bars = fetch_ticker_bars_tiingo(
-                    symbol, start, end, token, session=session, cache_dir=cache_dir
+                    symbol,
+                    start,
+                    end,
+                    token or "cache-only",
+                    session=session,
+                    cache_dir=cache_dir,
                 )
             else:
+                if not yahoo_session_ready:
+                    session, crumb = open_yahoo_session()
+                    yahoo_session_ready = True
                 ticker_bars = fetch_ticker_bars(
                     symbol, start, end, session=session, crumb=crumb, cache_dir=cache_dir
                 )
@@ -270,7 +282,8 @@ def fetch_market_bars(
             bars.extend(ticker_bars)
         else:
             missing.append(symbol)
-        time_module.sleep(pause if not token else 0.05)
+        if not cached:
+            time_module.sleep(0.05 if provider == "tiingo" else pause)
     return bars, missing
 
 

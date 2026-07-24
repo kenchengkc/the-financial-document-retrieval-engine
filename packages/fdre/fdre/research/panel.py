@@ -20,7 +20,7 @@ from apps.api.app.models import Company, Document, DocumentElement, FinancialFac
 from fdre.ingestion.xbrl import CANONICAL_CONCEPTS
 from fdre.research.filing_diffs import select_comparable_document_from_candidates
 
-FEATURE_VERSION = "fdre-panel-v1"
+FEATURE_VERSION = "fdre-panel-v2"
 PanelFeature = Literal[
     "filing_length",
     "section_novelty",
@@ -61,6 +61,21 @@ class PanelFact:
     available_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class RiskChangeMetrics:
+    added: int
+    removed: int
+    current_passages: int
+    previous_passages: int
+
+    @property
+    def churn_rate(self) -> float:
+        return (self.added + self.removed) / max(
+            self.current_passages + self.previous_passages,
+            1,
+        )
+
+
 class ResearchPanelQuery(BaseModel):
     tickers: list[str] = Field(default_factory=list)
     period_end_from: date | None = None
@@ -89,6 +104,9 @@ class ResearchPanelRow(BaseModel):
     disclosure_similarity: float | None = None
     risk_added_passages: int | None = None
     risk_removed_passages: int | None = None
+    risk_current_passages: int | None = None
+    risk_previous_passages: int | None = None
+    risk_churn_rate: float | None = None
     table_density: float | None = None
     numeric_density: float | None = None
     topic_mentions: dict[str, int] = Field(default_factory=dict)
@@ -372,10 +390,10 @@ def _build_row(
         and fact.available_at <= available_at
     ]
     source_times.extend(fact_times)
-    risk_added, risk_removed = (
+    risk_change = (
         _risk_factor_changes(texts_by_section, prior_sections)
         if prior is not None and "risk_changes" in selected_features
-        else (None, None)
+        else None
     )
     revenue = current_facts.get("revenue")
     previous_revenue = prior_facts.get("revenue")
@@ -409,8 +427,15 @@ def _build_row(
             if "disclosure_similarity" in selected_features
             else None
         ),
-        risk_added_passages=risk_added,
-        risk_removed_passages=risk_removed,
+        risk_added_passages=risk_change.added if risk_change is not None else None,
+        risk_removed_passages=risk_change.removed if risk_change is not None else None,
+        risk_current_passages=(
+            risk_change.current_passages if risk_change is not None else None
+        ),
+        risk_previous_passages=(
+            risk_change.previous_passages if risk_change is not None else None
+        ),
+        risk_churn_rate=risk_change.churn_rate if risk_change is not None else None,
         table_density=(
             sum(element.element_type == "table" for element in elements)
             / max(len(elements), 1)
@@ -575,14 +600,16 @@ def _ratio(numerator: Decimal | None, denominator: Decimal | None) -> float | No
 def _risk_factor_changes(
     current: dict[str, list[str]],
     previous: dict[str, list[str]],
-) -> tuple[int, int]:
-    """Net Risk-Factors passage churn vs the prior filing via fingerprint set
-    difference (added, removed). Equivalent net signal to a full SequenceMatcher
-    diff but ~order-of-magnitude faster, since it only touches the Risk Factors
-    section and avoids per-passage similarity scoring."""
+) -> RiskChangeMetrics:
+    """Measure two-sided Item 1A passage churn versus the comparable filing."""
     current_risk = {_text_fingerprint(passage) for passage in current.get("Risk Factors", [])}
     previous_risk = {_text_fingerprint(passage) for passage in previous.get("Risk Factors", [])}
-    return len(current_risk - previous_risk), len(previous_risk - current_risk)
+    return RiskChangeMetrics(
+        added=len(current_risk - previous_risk),
+        removed=len(previous_risk - current_risk),
+        current_passages=len(current_risk),
+        previous_passages=len(previous_risk),
+    )
 
 
 def _text_fingerprint(value: str) -> str:

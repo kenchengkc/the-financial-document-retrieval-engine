@@ -13,8 +13,12 @@ on:
         type: choice
         options:
           - disclosure_similarity
+          - risk_factor_churn
+          - filing_delay_surprise
           - risk_factor_expansion
           - earnings_quality
+          - operating_profitability
+          - operating_margin_momentum
           - asset_growth
           - net_share_issuance
         default: disclosure_similarity
@@ -22,9 +26,10 @@ on:
         description: "Forward market outcome"
         type: choice
         options:
+          - signal_default
           - abnormal_return
           - realized_volatility
-        default: abnormal_return
+        default: signal_default
       max_tickers:
         description: "Largest eligible issuer count"
         default: "250"
@@ -36,18 +41,18 @@ on:
         default: ""
       max_uncached_market_fetches:
         description: "Maximum uncached market-data requests in this run"
-        default: "50"
+        default: "0"
       cache_only:
         description: "Use only cached market data"
         type: boolean
-        default: false
+        default: true
       fail_on_missing_market_data:
         description: "Fail publish runs with missing selected market data"
         type: boolean
-        default: true
+        default: false
       windows:
-        description: "Space-separated event windows"
-        default: "0:1 1:21 1:63"
+        description: "Optional space-separated windows; blank uses the signal definition"
+        default: ""
       benchmark:
         description: "Market benchmark ticker"
         default: "SPY"
@@ -70,27 +75,27 @@ jobs:
       TIINGO_API_KEY: ${{ secrets.TIINGO_API_KEY }}
       PYTHONPATH: .
       SIGNAL: ${{ github.event.inputs.signal || 'disclosure_similarity' }}
-      OUTCOME: ${{ github.event.inputs.outcome || 'abnormal_return' }}
+      OUTCOME: ${{ github.event.inputs.outcome || 'signal_default' }}
       MAX_TICKERS: ${{ github.event.inputs.max_tickers || '250' }}
       MIN_DOCUMENTS: ${{ github.event.inputs.min_documents || '4' }}
       MARKET_CACHE_SLICE: ${{ github.event.inputs.market_cache_slice || '' }}
-      MAX_UNCACHED_MARKET_FETCHES: ${{ github.event.inputs.max_uncached_market_fetches || '50' }}
-      CACHE_ONLY: ${{ github.event.inputs.cache_only || 'false' }}
-      FAIL_ON_MISSING_MARKET_DATA: ${{ github.event.inputs.fail_on_missing_market_data || 'true' }}
-      WINDOWS: ${{ github.event.inputs.windows || '0:1 1:21 1:63' }}
+      MAX_UNCACHED_MARKET_FETCHES: ${{ github.event.inputs.max_uncached_market_fetches || '0' }}
+      CACHE_ONLY: ${{ github.event.inputs.cache_only || 'true' }}
+      FAIL_ON_MISSING_MARKET_DATA: ${{ github.event.inputs.fail_on_missing_market_data || 'false' }}
+      WINDOWS: ${{ github.event.inputs.windows || '' }}
       BENCHMARK: ${{ github.event.inputs.benchmark || 'SPY' }}
     steps:
       - name: Validate inputs
         run: |
-          [[ "${SIGNAL}" =~ ^(disclosure_similarity|risk_factor_expansion|earnings_quality|asset_growth|net_share_issuance)$ ]]
-          [[ "${OUTCOME}" =~ ^(abnormal_return|realized_volatility)$ ]]
+          [[ "${SIGNAL}" =~ ^(disclosure_similarity|risk_factor_churn|filing_delay_surprise|risk_factor_expansion|earnings_quality|operating_profitability|operating_margin_momentum|asset_growth|net_share_issuance)$ ]]
+          [[ "${OUTCOME}" =~ ^(signal_default|abnormal_return|realized_volatility)$ ]]
           [[ "${MAX_TICKERS}" =~ ^[1-9][0-9]*$ ]]
           [[ "${MIN_DOCUMENTS}" =~ ^[1-9][0-9]*$ ]]
           [[ "${MARKET_CACHE_SLICE}" =~ ^$|^[0-9]+:[1-9][0-9]*$ ]]
           [[ "${MAX_UNCACHED_MARKET_FETCHES}" =~ ^[0-9]+$ ]]
           [[ "${CACHE_ONLY}" =~ ^(true|false)$ ]]
           [[ "${FAIL_ON_MISSING_MARKET_DATA}" =~ ^(true|false)$ ]]
-          [[ "${WINDOWS}" =~ ^-?[0-9]+:-?[0-9]+([[:space:]]+-?[0-9]+:-?[0-9]+)*$ ]]
+          [[ "${WINDOWS}" =~ ^$|^-?[0-9]+:-?[0-9]+([[:space:]]+-?[0-9]+:-?[0-9]+)*$ ]]
           [[ "${BENCHMARK}" =~ ^[A-Z0-9.-]+$ ]]
 
       - name: Check required secrets
@@ -140,7 +145,21 @@ jobs:
 
       - name: Run signal study
         run: |
-          read -r -a window_args <<< "${WINDOWS}"
+          study_args=(
+            --signal "${SIGNAL}"
+            --output "data/processed/signals/${SIGNAL}-${OUTCOME}.json"
+            --max-tickers "${MAX_TICKERS}"
+            --min-documents "${MIN_DOCUMENTS}"
+            --benchmark "${BENCHMARK}"
+            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}"
+          )
+          if [ "${OUTCOME}" != "signal_default" ]; then
+            study_args+=(--outcome "${OUTCOME}")
+          fi
+          if [ -n "${WINDOWS}" ]; then
+            read -r -a window_args <<< "${WINDOWS}"
+            study_args+=(--windows "${window_args[@]}")
+          fi
           cache_args=()
           if [ -n "${MARKET_CACHE_SLICE}" ]; then
             cache_args+=(--market-cache-slice "${MARKET_CACHE_SLICE}")
@@ -152,14 +171,7 @@ jobs:
             cache_args+=(--fail-on-missing-market-data)
           fi
           python -m scripts.retrieval_pipeline signal-study \
-            --signal "${SIGNAL}" \
-            --outcome "${OUTCOME}" \
-            --output "data/processed/signals/${SIGNAL}-${OUTCOME}.json" \
-            --max-tickers "${MAX_TICKERS}" \
-            --min-documents "${MIN_DOCUMENTS}" \
-            --benchmark "${BENCHMARK}" \
-            --windows "${window_args[@]}" \
-            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}" \
+            "${study_args[@]}" \
             "${cache_args[@]}"
 
       - name: Upload signal-study report

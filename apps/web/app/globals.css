@@ -3763,6 +3763,14 @@ main {
   color: var(--green);
 }
 
+.sig-banner.watch {
+  border-left: 4px solid var(--amber);
+}
+
+.sig-banner.watch > svg {
+  color: var(--amber);
+}
+
 .sig-banner-label {
   margin: 0;
   font: 9px var(--mono);

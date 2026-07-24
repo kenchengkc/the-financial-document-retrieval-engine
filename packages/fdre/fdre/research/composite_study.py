@@ -174,13 +174,20 @@ def run_composite_study(
     )
 
     # composite per-window summary
-    composite_by_window: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    ticker_by_accession = {
+        event.accession_number: event.ticker for event in filing_events
+    }
+    composite_by_window: dict[str, list[tuple[float, float, str]]] = defaultdict(list)
     abnormal_by_window: dict[str, dict[str, float]] = defaultdict(dict)
     for observation in base.observations:
         feature = composite_value.get(observation.accession_number)
         if feature is not None:
             composite_by_window[observation.window].append(
-                (feature, observation.abnormal_return)
+                (
+                    feature,
+                    observation.abnormal_return,
+                    ticker_by_accession[observation.accession_number],
+                )
             )
         abnormal_by_window[observation.window][observation.accession_number] = (
             observation.abnormal_return

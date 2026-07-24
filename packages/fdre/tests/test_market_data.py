@@ -4,6 +4,8 @@ import json
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from fdre.research.market_data import (
     _covering_tiingo_path,
     fetch_market_bars,
@@ -38,20 +40,27 @@ def test_covering_cache_is_reused_for_narrower_window(tmp_path: Path) -> None:
     assert date(2023, 6, 1) in {bar.date for bar in bars}
 
 
-def test_fetch_market_bars_cache_only_reuses_covering_caches(tmp_path: Path) -> None:
+def test_fetch_market_bars_cache_only_reuses_covering_caches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     rows = [{"date": "2023-06-01", "adjClose": 110.0}]
     _write_cache(tmp_path, "SPY", "20220101", "20261231", rows)
     _write_cache(tmp_path, "MSFT", "20220101", "20261231", rows)
 
     # Requested window is narrower than the cached files; cache_only must not
     # report these as missing just because the exact key differs.
+    def fail_on_network_session() -> None:
+        raise AssertionError("cache-only mode must not initialize a network session")
+
+    monkeypatch.setattr(
+        "fdre.research.market_data.open_yahoo_session", fail_on_network_session
+    )
     bars, missing = fetch_market_bars(
         ["MSFT"],
         date(2023, 1, 1),
         date(2024, 1, 1),
         benchmark="SPY",
         cache_dir=tmp_path,
-        tiingo_token="unused",
         cache_only=True,
     )
     assert missing == []
