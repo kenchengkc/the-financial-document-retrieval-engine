@@ -39,7 +39,7 @@
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --sans: var(--font-sans), "Libre Franklin", system-ui, sans-serif;
   --display: var(--font-display), "Newsreader", Georgia, serif;
-  --lede: var(--font-lede), "Public Sans", system-ui, sans-serif;
+  --lede: var(--sans);
 }
 
 * {
@@ -6124,7 +6124,7 @@ main {
   --ld-green: #3a8a70;
   --ld-green-glow: #5fae93;
   --ld-serif: var(--font-display), "Newsreader", Georgia, serif;
-  --ld-sans: var(--font-lede), "Public Sans", system-ui, sans-serif;
+  --ld-sans: var(--sans);
   --ld-brand-sweep: linear-gradient(
     98deg,
     #bd96b6 0%,

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Libre_Franklin, Newsreader, Public_Sans } from "next/font/google";
+import { Libre_Franklin, Newsreader } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "./research-console.css";
@@ -13,11 +13,6 @@ const newsreader = Newsreader({
 const libreFranklin = Libre_Franklin({
   subsets: ["latin"],
   variable: "--font-sans",
-});
-
-const publicSans = Public_Sans({
-  subsets: ["latin"],
-  variable: "--font-lede",
 });
 
 export const metadata: Metadata = {
@@ -43,7 +38,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${newsreader.variable} ${libreFranklin.variable} ${publicSans.variable}`}
+      className={`${newsreader.variable} ${libreFranklin.variable}`}
     >
       <body>
         {children}
