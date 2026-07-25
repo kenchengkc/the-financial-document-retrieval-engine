@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   CircleDotDashed,
   Copy,
   Fingerprint,
@@ -128,7 +129,7 @@ export function SignalMonitor({
       if (adjustedEvidence !== 0) return adjustedEvidence;
       return right.metrics.signStability - left.metrics.signStability;
     });
-  const qualified = metrics.filter(({ metrics: item }) => item.significant.length > 0).length;
+  const adjustedPasses = metrics.filter(({ metrics: item }) => item.significant.length > 0).length;
   const stable = metrics.filter(
     ({ metrics: item }) => item.annualStability !== null && item.annualStability >= 0.67,
   ).length;
@@ -139,22 +140,22 @@ export function SignalMonitor({
       <div className="signal-view-heading">
         <div>
           <p className="eyebrow">Cross-study evidence</p>
-          <h3>Signal monitor</h3>
+          <h3>Signal comparison</h3>
         </div>
-        <p>Published studies ranked by suite-wide inference, direction, monotonicity, and breadth.</p>
+        <p>Compare published studies by adjusted evidence, annual stability, and sample breadth.</p>
       </div>
 
       <dl className="monitor-stats">
         <div><dt>Published studies</dt><dd>{studies.length}</dd></div>
         <div><dt>Study-event rows</dt><dd>{events.toLocaleString()}</dd></div>
-        <div><dt>Suite-qualified</dt><dd>{qualified}</dd></div>
+        <div><dt>Pass adjusted test</dt><dd>{adjustedPasses}</dd></div>
         <div><dt>Year-stable</dt><dd>{stable}</dd></div>
       </dl>
 
       <div className="monitor-table-wrap">
         <table className="monitor-table">
           <thead>
-            <tr><th>Signal</th><th>Outcome</th><th className="num">Events</th><th>Best horizon</th><th className="num">Peak |IC|</th><th className="num">Suite p</th><th>Annual stability</th><th>Research state</th><th aria-label="Open study" /></tr>
+            <tr><th>Signal</th><th>Outcome</th><th className="num">Events</th><th>Best horizon</th><th className="num">Peak |IC|</th><th className="num">Adjusted p</th><th>Annual stability</th><th>Research state</th><th aria-label="Open study" /></tr>
           </thead>
           <tbody>
             {metrics.map(({ study, metrics: item }) => (
@@ -182,13 +183,14 @@ export function SignalMonitor({
           </tbody>
         </table>
       </div>
-      <p className="monitor-rule"><CircleDotDashed size={13} /> Validated requires positive monotonic evidence in at least three annual cross-sections, aligned horizons, and a p-value below 0.05 after correcting across every published signal-horizon test.</p>
+      <p className="monitor-rule"><CircleDotDashed size={13} /> Validated requires positive monotonic evidence in at least three annual cross-sections, aligned horizons, and an adjusted p-value below 0.05 across all published signal and horizon tests.</p>
 
-      <section className="feature-library" aria-labelledby="feature-library-title">
-        <div className="signal-view-heading compact">
-          <div><p className="eyebrow">Research queue</p><h3 id="feature-library-title">Feature library</h3></div>
-          <p>Published studies, backtest-ready signals, and leakage-safe features kept visibly distinct.</p>
-        </div>
+      <details className="feature-library">
+        <summary>
+          <span><small>Research pipeline</small><strong>Feature library</strong></span>
+          <span>{FEATURE_LIBRARY.length} features <ChevronDown size={15} aria-hidden="true" /></span>
+        </summary>
+        <p>Published studies, backtest-ready signals, and leakage-safe features.</p>
         <div className="feature-library-grid">
           {FEATURE_LIBRARY.map((feature) => {
             const published = studies.some((study) => study.report.signal_name === feature.key);
@@ -203,7 +205,7 @@ export function SignalMonitor({
             );
           })}
         </div>
-      </section>
+      </details>
     </div>
   );
 }
@@ -218,7 +220,7 @@ function gateRows(study: SignalStudyResponse) {
     ["Outcome alignment", report.quality?.outcome_aligned === false ? "Mismatch" : "Passed", isVolatility ? "forward realized volatility" : `${config.benchmark_ticker ?? "SPY"}-adjusted return`],
     ["Horizon alignment", report.quality?.horizon_aligned === false ? "Mismatch" : "Passed", report.quality?.preferred_windows.join(", ") || "signal-defined horizons"],
     ["Annual stability", (report.quality?.periods_tested ?? 0) >= 2 ? "Measured" : "Insufficient", `${report.quality?.periods_tested ?? 0} event-year cross-sections with at least ${report.quality?.period_sample_minimum ?? 50} filings`],
-    ["Multiple testing", hasSuiteP ? "Suite controlled" : "Within-study only", hasSuiteP ? `Benjamini-Hochberg across ${report.quality?.suite_hypotheses ?? 0} published hypotheses` : `Benjamini-Hochberg across ${report.results.length} horizons`],
+    ["Multiple testing", hasSuiteP ? "Controlled" : "Within-study only", hasSuiteP ? `Benjamini-Hochberg across ${report.quality?.suite_hypotheses ?? 0} published hypotheses` : `Benjamini-Hochberg across ${report.results.length} horizons`],
     ["Inference", "Deterministic", `${(config.bootstrap_iterations ?? 0).toLocaleString()} ${report.bootstrap_unit === "issuer" ? "issuer-cluster" : "filing-event"} bootstrap draws · seed ${config.random_seed ?? "n/a"}`],
     ["Neutralization", report.neutralization ? "Applied" : "Raw", report.neutralization ?? "unneutralized cross-section"],
     ["Walk-forward", config.walk_forward_splits?.length ? "Configured" : "Not configured", config.walk_forward_splits?.length ? `${config.walk_forward_splits.length} split dates` : "single pooled estimate"],
@@ -252,26 +254,11 @@ export function ExperimentAudit({ study }: { study: SignalStudyResponse }) {
   return (
     <div className="experiment-audit">
       <div className="signal-view-heading">
-        <div><p className="eyebrow">Reproducibility record</p><h3>Experiment audit</h3></div>
-        <button type="button" className="copy-manifest" onClick={copyManifest} title="Copy experiment manifest"><Copy size={14} />{copied ? "Copied" : "Copy manifest"}</button>
+        <div><p className="eyebrow">Research design</p><h3>Method and reproducibility</h3></div>
+        <p>Evidence gates and the exact setup behind this published result.</p>
       </div>
 
       <div className="audit-layout">
-        <section className="audit-manifest">
-          <h4><Fingerprint size={15} /> Immutable manifest</h4>
-          <dl>
-            <div><dt>Experiment</dt><dd>#{study.experiment_id} · {study.experiment_key.slice(0, 16)}</dd></div>
-            <div><dt>Dataset</dt><dd>{report.dataset_version ?? "legacy study"}</dd></div>
-            <div><dt>Feature</dt><dd>{report.feature_version ?? "legacy study"}</dd></div>
-            <div><dt>Code</dt><dd>{study.code_sha}</dd></div>
-            <div><dt>Published</dt><dd>{study.created_at.replace("T", " ").slice(0, 19)} UTC</dd></div>
-            <div><dt>Universe events</dt><dd>{report.event_count.toLocaleString()}</dd></div>
-            <div><dt>Benchmark</dt><dd>{config.benchmark_ticker ?? "outcome-native"}</dd></div>
-            <div><dt>Market clock</dt><dd>{config.market_timezone ?? "America/New_York"} · {config.market_close ?? "16:00"}</dd></div>
-          </dl>
-          <div className="fingerprint-block"><span>Full experiment key</span><code>{study.experiment_key}</code></div>
-        </section>
-
         <section className="audit-gates">
           <h4><ShieldCheck size={15} /> Research gates</h4>
           <ul>
@@ -284,16 +271,47 @@ export function ExperimentAudit({ study }: { study: SignalStudyResponse }) {
             ))}
           </ul>
         </section>
+
+        <section className="audit-manifest">
+          <h4><Fingerprint size={15} /> Study setup</h4>
+          <dl>
+            <div><dt>Run</dt><dd>#{study.experiment_id}</dd></div>
+            <div><dt>Signal</dt><dd>{report.definition?.label ?? SIGNAL_NAMES[report.signal_name] ?? report.signal_name}</dd></div>
+            <div><dt>Outcome</dt><dd>{outcomeLabel(study)}</dd></div>
+            <div><dt>Sample</dt><dd>{report.event_count.toLocaleString()} filing events</dd></div>
+            <div><dt>Feature</dt><dd>{report.feature_version ?? "legacy study"}</dd></div>
+            <div><dt>Benchmark</dt><dd>{config.benchmark_ticker ?? "outcome-native"}</dd></div>
+            <div><dt>Market clock</dt><dd>{config.market_timezone ?? "America/New_York"} · {config.market_close ?? "16:00"}</dd></div>
+            <div><dt>Published</dt><dd>{study.created_at.replace("T", " ").slice(0, 19)} UTC</dd></div>
+          </dl>
+        </section>
       </div>
 
       <div className="audit-windows">
-        <h4>Tested horizon manifest</h4>
+        <h4>Tested horizons</h4>
         <div>
           {report.results.map((result) => (
-            <span key={result.window}><strong>{windowLabel(result.window)}</strong><small>n {result.sample_size.toLocaleString()} · {result.cluster_count?.toLocaleString() ?? "n/a"} issuers · IC {result.information_coefficient?.toFixed(3) ?? "n/a"} · suite p {adjustedP(result)?.toFixed(3) ?? "n/a"}</small></span>
+            <span key={result.window}><strong>{windowLabel(result.window)}</strong><small>n {result.sample_size.toLocaleString()} · {result.cluster_count?.toLocaleString() ?? "n/a"} issuers · IC {result.information_coefficient?.toFixed(3) ?? "n/a"} · adjusted p {adjustedP(result)?.toFixed(3) ?? "n/a"}</small></span>
           ))}
         </div>
       </div>
+
+      <details className="audit-advanced">
+        <summary>
+          <Fingerprint size={15} aria-hidden="true" />
+          <span><strong>Reproducibility details</strong><small>Run #{study.experiment_id} · {study.experiment_key.slice(0, 12)}</small></span>
+          <ChevronDown size={15} aria-hidden="true" />
+        </summary>
+        <div className="audit-advanced-body">
+          <p>The run fingerprint changes whenever the dataset, feature definition, code, or backtest settings change. It is used to reproduce and compare exact research runs.</p>
+          <dl>
+            <div><dt>Dataset version</dt><dd>{report.dataset_version ?? "legacy study"}</dd></div>
+            <div><dt>Code version</dt><dd>{study.code_sha}</dd></div>
+          </dl>
+          <div className="fingerprint-block"><span>Full run fingerprint</span><code>{study.experiment_key}</code></div>
+          <button type="button" className="copy-manifest" onClick={copyManifest} title="Copy reproducibility record"><Copy size={14} />{copied ? "Copied" : "Copy run record"}</button>
+        </div>
+      </details>
     </div>
   );
 }

@@ -175,7 +175,8 @@ def _research_status(
     ):
         return (
             "Validated",
-            "Positive, monotonic evidence is stable by year and survives suite-wide testing.",
+            "Positive, monotonic evidence is stable by year and survives correction "
+            "across all published tests.",
         )
     if (
         aligned

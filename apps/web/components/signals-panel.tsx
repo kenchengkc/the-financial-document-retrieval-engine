@@ -40,7 +40,7 @@ const SIGNAL_LABELS: Record<string, string> = {
   disclosure_similarity: "Disclosure similarity",
   risk_factor_churn: "Risk churn",
   filing_delay_surprise: "Delay surprise",
-  risk_expansion: "Risk expansion",
+  risk_factor_expansion: "Risk expansion",
   filing_lateness: "Filing lateness",
   earnings_quality: "Cash conversion",
   operating_profitability: "Profitability",
@@ -152,15 +152,6 @@ function adjustedP(window: SignalWindow) {
   );
 }
 
-function significantCount(study: SignalStudyResponse) {
-  const windows = study.report.results;
-  const sig = windows.filter((w) => {
-    const p = adjustedP(w);
-    return p !== null && p < 0.05;
-  }).length;
-  return { sig, total: windows.length };
-}
-
 function studyKey(study: SignalStudyResponse) {
   return `${study.report.signal_name}:${outcomeName(study)}`;
 }
@@ -192,7 +183,7 @@ function studyVerdict(study: SignalStudyResponse) {
             ? ("watch" as const)
             : ("flat" as const),
       headline: `${quality.status} research signal`,
-      plain: `${quality.reason} Best suite-adjusted p = ${quality.best_suite_adjusted_p_value?.toFixed(3) ?? "n/a"}; ${stability}.`,
+      plain: `${quality.reason} Best multiple-test-adjusted p = ${quality.best_suite_adjusted_p_value?.toFixed(3) ?? "n/a"}; ${stability}.`,
     };
   }
   const results = study.report.results;
@@ -200,15 +191,15 @@ function studyVerdict(study: SignalStudyResponse) {
   if (sig.length === 0) {
     return {
       tone: "flat" as const,
-      headline: "No standalone edge",
-      plain: `None of the ${results.length} holding horizons is statistically significant (best p = ${bestAdjustedP(results).toFixed(2)}). The signal is too weak and noisy to trade on its own after costs. That is a finding, not a failure: see how a desk would still use it below.`,
+      headline: "No adjusted evidence",
+      plain: `None of the ${results.length} holding horizons remains below p = 0.05 after correcting for the other published tests (best adjusted p = ${bestAdjustedP(results).toFixed(2)}). The signal is too weak and noisy to trade on its own after costs.`,
     };
   }
   const horizons = sig.map((w) => windowLabel(w.window)).join(", ");
   return {
     tone: "sig" as const,
-    headline: `Edge at ${sig.length} of ${results.length} horizons`,
-    plain: `The long–short spread is statistically distinguishable from zero (p < 0.05) at ${horizons}.`,
+    headline: `${sig.length} of ${results.length} horizons pass the adjusted test`,
+    plain: `The spread remains below p = 0.05 after correcting across the published signal and horizon tests at ${horizons}. This older study has not yet received the full robustness rating.`,
   };
 }
 
@@ -243,7 +234,7 @@ function SummaryTable({
             <th>Holding horizon</th>
             <th className="num">{isVolatility ? "High−low vol" : "Long–short return"}</th>
             <th className="num">Rank skill (IC)</th>
-            <th>Verdict</th>
+            <th>Evidence</th>
           </tr>
         </thead>
         <tbody>
@@ -268,9 +259,9 @@ function SummaryTable({
                 </td>
                 <td>
                   <span className={`sig-verdict ${sig ? "sig" : "flat"}`}>
-                    {sig ? `Suite-qualified ${rising ? "↑" : "↓"}` : "Not qualified"}
+                    {sig ? `Passes adjusted test ${rising ? "↑" : "↓"}` : "Does not pass"}
                   </span>
-                  {p !== null && <small className="sig-p">suite p = {p.toFixed(2)}</small>}
+                  {p !== null && <small className="sig-p">adjusted p = {p.toFixed(2)}</small>}
                 </td>
               </tr>
             );
@@ -357,8 +348,8 @@ function Glossary({ isVolatility }: { isVolatility: boolean }) {
       "How accurately the signal ranks winners vs. losers, from −1 to +1. 0 is a coin flip; genuinely useful signals run about 0.02–0.05.",
     ],
     [
-      "Significant / p-value",
-      "How likely the result is just luck. The suite p-value adjusts across every published signal and horizon, not only the selected study.",
+      "Adjusted p-value",
+      "How likely the result is just luck after accounting for every published signal and horizon, not only the selected result. Values below 0.05 pass the adjusted test.",
     ],
   ];
   return (
@@ -378,36 +369,12 @@ function Glossary({ isVolatility }: { isVolatility: boolean }) {
   );
 }
 
-function signalLabel(study: SignalStudyResponse) {
+function signalTabLabel(study: SignalStudyResponse) {
   if (study.report.signal_name === "composite") {
     const count = study.report.component_signals?.length ?? 0;
     return `Composite (${count} signals)`;
   }
-  if (study.report.definition) {
-    return `${study.report.definition.label} -> ${outcomeName(study) === "realized_volatility" ? "volatility" : "returns"}`;
-  }
-  if (study.report.signal_name === "risk_factor_expansion") {
-    return outcomeName(study) === "realized_volatility"
-      ? "Risk expansion -> volatility"
-      : "Risk expansion -> returns";
-  }
-  if (study.report.signal_name === "earnings_quality") {
-    return "Earnings quality -> returns";
-  }
-  if (study.report.signal_name === "asset_growth") {
-    return "Asset growth -> returns";
-  }
-  if (study.report.signal_name === "net_share_issuance") {
-    return "Share issuance -> returns";
-  }
-  if (study.report.signal_name === "filing_lateness") {
-    return outcomeName(study) === "realized_volatility"
-      ? "Filing lateness -> volatility"
-      : "Filing lateness -> returns";
-  }
-  return outcomeName(study) === "realized_volatility"
-    ? "Disclosure similarity -> volatility"
-    : "Disclosure similarity -> returns";
+  return prettySignal(study.report.signal_name);
 }
 
 type StudyCopy = {
@@ -783,7 +750,7 @@ function WindowCard({
   const pValue = adjustedP(window);
   const significant = pValue !== null && pValue < 0.05;
   const rising = (window.long_short_mean ?? 0) >= 0;
-  const verdict = significant ? `Suite-qualified ${rising ? "↑" : "↓"}` : "Not qualified";
+  const verdict = significant ? `Passes adjusted test ${rising ? "↑" : "↓"}` : "Does not pass";
   return (
     <article className="sig-card">
       <header>
@@ -832,18 +799,20 @@ function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
         </div>
         <div>
           <dt>Research state</dt>
-          <dd>{report.quality?.status ?? "Exploratory"}</dd>
+          <dd>{report.quality?.status ?? "Unrated"}</dd>
         </div>
         <div>
-          <dt>Best suite p</dt>
-          <dd>{report.quality?.best_suite_adjusted_p_value?.toFixed(3) ?? "N/A"}</dd>
+          <dt>Best adjusted p</dt>
+          <dd>
+            {(report.quality?.best_suite_adjusted_p_value ?? bestAdjustedP(report.results)).toFixed(3)}
+          </dd>
         </div>
         <div>
           <dt>Annual stability</dt>
           <dd>
             {report.quality?.stability_basis === "annual_periods"
               ? `${Math.round(report.quality.direction_stability * 100)}% / ${report.quality.periods_tested}y`
-              : "N/A"}
+              : "Not scored"}
           </dd>
         </div>
       </dl>
@@ -972,7 +941,7 @@ export function SignalsPanel() {
             className={view === "study" ? "on" : undefined}
             onClick={() => setView("study")}
           >
-            <FlaskConical size={14} aria-hidden="true" /> Study
+            <FlaskConical size={14} aria-hidden="true" /> Results
           </button>
           <button
             type="button"
@@ -981,7 +950,7 @@ export function SignalsPanel() {
             className={view === "monitor" ? "on" : undefined}
             onClick={() => setView("monitor")}
           >
-            <TrendingUp size={14} aria-hidden="true" /> Monitor
+            <TrendingUp size={14} aria-hidden="true" /> Compare
           </button>
           <button
             type="button"
@@ -990,7 +959,7 @@ export function SignalsPanel() {
             className={view === "audit" ? "on" : undefined}
             onClick={() => setView("audit")}
           >
-            <ShieldCheck size={14} aria-hidden="true" /> Audit
+            <ShieldCheck size={14} aria-hidden="true" /> Method
           </button>
         </div>
       </div>
@@ -1008,28 +977,19 @@ export function SignalsPanel() {
             <div className="sig-tabs" role="tablist" aria-label="Signal studies">
               {studies.map((candidate) => {
                 const key = studyKey(candidate);
-                const { sig, total } = significantCount(candidate);
-                const researchState = candidate.report.quality?.status;
-                const verdict = researchState ?? (sig > 0 ? `${sig}/${total} suite-qualified` : "Exploratory");
-                const verdictTone =
-                  researchState === "Validated" || sig > 0
-                    ? " has"
-                    : researchState === "Promising"
-                      ? " watch"
-                      : "";
+                const label = signalTabLabel(candidate);
+                const state = candidate.report.quality?.status ?? "Unrated";
                 return (
                   <button
                     key={key}
                     type="button"
                     role="tab"
                     aria-selected={key === studyKey(study)}
+                    aria-label={`${label}, ${state}`}
                     className={key === studyKey(study) ? "on" : undefined}
                     onClick={() => setActiveKey(key)}
                   >
-                    <span className="sig-tab-name">{signalLabel(candidate)}</span>
-                    <span className={`sig-tab-verdict${verdictTone}`}>
-                      {verdict}
-                    </span>
+                    <span className="sig-tab-name">{label}</span>
                   </button>
                 );
               })}

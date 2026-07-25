@@ -357,23 +357,25 @@ test("renders the published signal study", async ({ page }) => {
   await page.getByRole("tab", { name: /Signals/ }).click();
   await expect(page.locator(".sig-stats")).toContainText("Filing events");
   await expect(page.locator(".sig-card").first()).toContainText("Filing day");
-  // raw p=0.04 would read significant; the UI must use suite p=0.12.
-  await expect(page.locator(".sig-card").first()).toContainText("Not qualified");
-  await expect(page.locator(".sig-summary").first()).toContainText("suite p = 0.12");
+  // raw p=0.04 would read significant; the UI must use adjusted p=0.12.
+  await expect(page.locator(".sig-card").first()).toContainText("Does not pass");
+  await expect(page.locator(".sig-summary").first()).toContainText("adjusted p = 0.12");
   await expect(page.locator(".period-stability")).toContainText("Annual cross-sections");
-  await page.getByRole("tab", { name: /Net risk expansion/ }).click();
+  await page.getByRole("tab", { name: /Risk expansion/ }).click();
   await expect(page.locator(".panel-intro")).toContainText("rank forward risk");
   await expect(page.locator(".sig-summary").first()).toContainText(/High.low vol/);
 
-  await page.getByRole("tab", { name: "Monitor" }).click();
+  await page.getByRole("tab", { name: "Compare" }).click();
   await expect(page.locator(".monitor-table")).toContainText("Disclosure similarity");
+  await page.locator(".feature-library > summary").click();
   await expect(page.locator(".feature-library")).toContainText("Filing-delay surprise");
   await expect(page.locator(".feature-library")).toContainText("Backtest-ready");
 
-  await page.getByRole("tab", { name: "Audit" }).click();
-  await expect(page.locator(".audit-manifest")).toContainText("dataset-a17f");
+  await page.getByRole("tab", { name: "Method" }).click();
   await expect(page.locator(".audit-gates")).toContainText("Benjamini-Hochberg");
   await expect(page.locator(".audit-gates")).toContainText("Annual stability");
+  await page.locator(".audit-advanced > summary").click();
+  await expect(page.locator(".audit-advanced")).toContainText("dataset-a17f");
 });
 
 test("compares a filing to its point-in-time comparable", async ({ page }) => {
