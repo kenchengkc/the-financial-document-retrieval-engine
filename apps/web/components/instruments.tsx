@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { AnswerResponse, RetrievalCandidate } from "@/lib/types";
@@ -11,6 +11,54 @@ export function score(value: number | null) {
 
 export function metadataValue(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+/**
+ * Return the original SEC filing for a retrieved passage.
+ *
+ * New chunks retain the downloaded primary-document URL. Older indexed chunks
+ * still contain the CIK and accession number, which identify the stable EDGAR
+ * filing index without asking the API to perform a second lookup.
+ */
+export function filingSourceUrl(metadata: Record<string, unknown>): string | null {
+  const stored = metadataValue(metadata.source_url, "");
+  if (stored) {
+    try {
+      const url = new URL(stored);
+      if (
+        url.protocol === "https:" &&
+        (url.hostname === "sec.gov" || url.hostname.endsWith(".sec.gov"))
+      ) {
+        return url.toString();
+      }
+    } catch {
+      // A local sample path is not an external primary source. Fall through to
+      // the deterministic SEC archive URL when the filing identifiers exist.
+    }
+  }
+
+  const cik = metadataValue(metadata.cik, "").replace(/^0+/, "") || "0";
+  const accession = metadataValue(metadata.accession_number, "");
+  if (!/^\d{10}-\d{2}-\d{6}$/.test(accession) || !/^\d+$/.test(cik)) return null;
+
+  return `https://www.sec.gov/Archives/edgar/data/${cik}/${accession.replaceAll("-", "")}/${accession}-index.html`;
+}
+
+export function FilingSourceLink({
+  metadata,
+  label = "Open SEC filing",
+}: {
+  metadata: Record<string, unknown>;
+  label?: string;
+}) {
+  const href = filingSourceUrl(metadata);
+  if (!href) return null;
+  return (
+    <a className="filing-source-link" href={href} target="_blank" rel="noreferrer">
+      {label}
+      <ExternalLink size={13} aria-hidden="true" />
+    </a>
+  );
 }
 
 export function formatLatency(latencyMs: number) {
@@ -94,6 +142,7 @@ export function EvidenceCard({
   commonTicker,
   commonSection,
   rankDelta,
+  context,
 }: {
   candidate: RetrievalCandidate;
   index: number;
@@ -103,6 +152,7 @@ export function EvidenceCard({
   commonTicker?: string | null;
   commonSection?: string | null;
   rankDelta?: number | null;
+  context?: boolean;
 }) {
   const metadata = candidate.metadata;
   const ticker = metadataValue(metadata.ticker, "Document");
@@ -113,23 +163,31 @@ export function EvidenceCard({
   const sectionDim = commonSection != null && section === commonSection;
 
   return (
-    <details className={`evidence${cited ? " cited" : ""}`} open={defaultOpen ? true : undefined}>
+    <details
+      className={`evidence${cited ? " cited" : ""}${context ? " context" : ""}`}
+      open={defaultOpen ? true : undefined}
+    >
       <summary>
         <span className="evidence-rank">{String(index + 1).padStart(2, "0")}</span>
         <span className="evidence-source">
           <span className="evidence-src-top">
             <strong className={tickerDim ? "dim" : undefined}>{ticker}</strong>
             {cited ? <span className="evidence-cited">Cited</span> : null}
+            {context ? <span className="evidence-context">Context</span> : null}
           </span>
           <span>
             {formType} · {filingDate}
           </span>
         </span>
         <span className={`evidence-section${sectionDim ? " dim" : ""}`}>{section}</span>
-        <span className="evidence-score">
-          <RankDelta delta={rankDelta} />
-          {score(candidate.rerank_score)} rerank
-        </span>
+        {context ? (
+          <span className="evidence-score">supporting passage</span>
+        ) : (
+          <span className="evidence-score">
+            <RankDelta delta={rankDelta} />
+            {score(candidate.rerank_score)} rerank
+          </span>
+        )}
         <ChevronDown size={16} aria-hidden="true" />
         <span className="evidence-heat" aria-hidden="true">
           <span style={{ width: `${Math.round(Math.max(0, Math.min(1, heat ?? 0)) * 100)}%` }} />
@@ -137,7 +195,10 @@ export function EvidenceCard({
       </summary>
       <div className="evidence-body">
         <p>{candidate.text}</p>
-        <ScoreRow candidate={candidate} />
+        <div className="evidence-actions">
+          <FilingSourceLink metadata={metadata} />
+        </div>
+        {!context && <ScoreRow candidate={candidate} />}
       </div>
     </details>
   );
@@ -261,14 +322,20 @@ export function ResultAnalysis({
   );
 }
 
-export function ConfidenceRing({ value }: { value: number }) {
+export function ConfidenceRing({
+  value,
+  label = "evidence support score",
+}: {
+  value: number;
+  label?: string;
+}) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
   return (
     <div
       className="conf-ring"
       style={{ "--p": pct } as CSSProperties}
       role="img"
-      aria-label={`${pct} percent retrieval confidence`}
+      aria-label={`${pct} percent ${label}`}
     >
       <span className="conf-num">{pct}</span>
       <span className="conf-unit">%</span>

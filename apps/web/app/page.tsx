@@ -30,6 +30,7 @@ import { SignalsPanel } from "@/components/signals-panel";
 import {
   ConfidenceRing,
   EvidenceCard,
+  FilingSourceLink,
   ResultAnalysis,
   RetrievalFunnel,
   formatLatency,
@@ -87,6 +88,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [answerMs, setAnswerMs] = useState(9_000);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [latestIngestionAt, setLatestIngestionAt] = useState<string | null>(null);
   const [history, setHistory] = useState<SessionRun[]>([]);
   const researchRef = useRef<HTMLElement | null>(null);
 
@@ -176,6 +178,7 @@ export default function Home() {
     <div className="site-shell">
       <LandingHero
         apiOnline={apiOnline}
+        latestIngestionAt={latestIngestionAt}
         onExplore={() => {
           setMode("ask");
           window.requestAnimationFrame(() =>
@@ -276,6 +279,7 @@ export default function Home() {
                   primaryTicker={primaryTicker}
                   primaryForm={primaryForm}
                   primaryDate={primaryDate}
+                  primaryMetadata={primaryMetadata}
                 />
               </div>
             )}
@@ -285,7 +289,12 @@ export default function Home() {
           </div>
           </section>
 
-          <DataFoundation runs={history} />
+          <DataFoundation
+            runs={history}
+            onOperations={(operations) =>
+              setLatestIngestionAt(operations?.latest_ingestion_completed_at ?? null)
+            }
+          />
 
           <section className="research-stack" aria-labelledby="research-stack-title">
             <div className="stack-heading">
@@ -326,6 +335,7 @@ function AskWorkspace({
   primaryTicker,
   primaryForm,
   primaryDate,
+  primaryMetadata,
 }: {
   question: string;
   result: AnswerResponse | null;
@@ -338,24 +348,30 @@ function AskWorkspace({
   primaryTicker: string;
   primaryForm: string;
   primaryDate: string;
+  primaryMetadata: Record<string, unknown>;
 }) {
   const citedChunkIds = new Set(result?.citations.map((c) => c.chunk_id) ?? []);
-  const maxRerank = Math.max(0.0001, ...displayEvidence.map((c) => c.rerank_score ?? 0));
-  const evidenceDeltas = rankDeltas(displayEvidence);
-  const firstEvidence = displayEvidence[0];
+  const rankedEvidence = displayEvidence.filter((candidate) => candidate.rerank_score !== null);
+  const contextEvidence = displayEvidence.filter((candidate) => candidate.rerank_score === null);
+  const evidenceForSummary = rankedEvidence.length ? rankedEvidence : displayEvidence;
+  const maxRerank = Math.max(0.0001, ...rankedEvidence.map((c) => c.rerank_score ?? 0));
+  const evidenceDeltas = rankDeltas(rankedEvidence);
+  const firstEvidence = evidenceForSummary[0];
   const commonTicker =
-    firstEvidence && displayEvidence.length > 1 &&
-    displayEvidence.every((c) => c.metadata.ticker === firstEvidence.metadata.ticker)
+    firstEvidence && evidenceForSummary.length > 1 &&
+    evidenceForSummary.every((c) => c.metadata.ticker === firstEvidence.metadata.ticker)
       ? metadataValue(firstEvidence.metadata.ticker, "") || null
       : null;
   const commonSection =
-    firstEvidence && displayEvidence.length > 1 &&
-    displayEvidence.every((c) => c.metadata.section === firstEvidence.metadata.section)
+    firstEvidence && evidenceForSummary.length > 1 &&
+    evidenceForSummary.every((c) => c.metadata.section === firstEvidence.metadata.section)
       ? metadataValue(firstEvidence.metadata.section, "") || null
       : null;
   const displayedConfidence = Number(
     result?.retrieval_gate.confidence ?? result?.confidence ?? 0,
   );
+  const primaryAccession = metadataValue(primaryMetadata.accession_number, "");
+  const primaryAcceptedAt = metadataValue(primaryMetadata.accepted_at, "");
   return (
     <div aria-live="polite">
       {error && (
@@ -415,7 +431,7 @@ function AskWorkspace({
             <div className="answer">
               <div className="answer-meta">
                 <CheckCircle2 size={17} />
-                <span>Citation verified</span>
+                <span>Citation text verified</span>
                 <span>· {formatLatency(result.latency_ms)}</span>
               </div>
               <p className="answer-question">{result.question}</p>
@@ -425,6 +441,7 @@ function AskWorkspace({
                   <FileText size={14} aria-hidden="true" />
                   {primaryTicker} · {primaryForm} · {primaryDate}
                 </span>
+                <FilingSourceLink metadata={primaryMetadata} />
                 <span>
                   <Timer size={14} aria-hidden="true" />
                   {formatLatency(result.latency_ms)}
@@ -439,14 +456,15 @@ function AskWorkspace({
               <div className="section-heading evidence-title">
                 <p className="eyebrow">Primary sources</p>
                 <span>
-                  {result.evidence.length} sources
+                  {rankedEvidence.length} ranked passage{rankedEvidence.length === 1 ? "" : "s"}
+                  {contextEvidence.length ? ` · ${contextEvidence.length} supporting` : ""}
                   {commonTicker ? ` · ${commonTicker}` : ""}
                   {commonSection ? ` · ${commonSection}` : ""}
                 </span>
               </div>
-              {displayEvidence.length > 0 && <ResultAnalysis candidates={displayEvidence} />}
+              {rankedEvidence.length > 0 && <ResultAnalysis candidates={rankedEvidence} />}
               <div className="evidence-list">
-                {displayEvidence.map((candidate, index) => (
+                {rankedEvidence.map((candidate, index) => (
                   <EvidenceCard
                     key={candidate.chunk_id}
                     candidate={candidate}
@@ -459,10 +477,34 @@ function AskWorkspace({
                     rankDelta={evidenceDeltas.get(candidate.chunk_id)}
                   />
                 ))}
-                {result.evidence.length === 0 && (
-                  <p className="muted">No evidence passed the retrieval gate.</p>
-                )}
               </div>
+              {contextEvidence.length > 0 && (
+                <details className="context-evidence">
+                  <summary>
+                    <span>
+                      <strong>{contextEvidence.length} supporting passages</strong>
+                      <small>Neighbor context; excluded from rerank and evidence-gate counts</small>
+                    </span>
+                    <ChevronDown size={16} aria-hidden="true" />
+                  </summary>
+                  <div className="evidence-list context-list">
+                    {contextEvidence.map((candidate, index) => (
+                      <EvidenceCard
+                        key={candidate.chunk_id}
+                        candidate={candidate}
+                        index={rankedEvidence.length + index}
+                        cited={citedChunkIds.has(candidate.chunk_id)}
+                        commonTicker={commonTicker}
+                        commonSection={commonSection}
+                        context
+                      />
+                    ))}
+                  </div>
+                </details>
+              )}
+              {result.evidence.length === 0 && (
+                <p className="muted">No evidence passed the retrieval gate.</p>
+              )}
             </>
           )}
         </section>
@@ -480,7 +522,7 @@ function AskWorkspace({
                   title="60% top rerank relevance + 40% verified citation support"
                 >
                   <ConfidenceRing value={displayedConfidence} />
-                  <span className="conf-caption">retrieval confidence</span>
+                  <span className="conf-caption">evidence support score</span>
                 </div>
                 <dl className="run-stats">
                   <div>
@@ -541,6 +583,21 @@ function AskWorkspace({
                   </div>
                 </div>
               )}
+              {(primaryAccession || primaryAcceptedAt) && (
+                <div className="scope-row">
+                  <span className="scope-head">
+                    <FileText size={13} aria-hidden="true" />
+                    Source record
+                  </span>
+                  <div className="scope-list">
+                    {primaryAccession && <span className="scope-tag accession">{primaryAccession}</span>}
+                    {primaryAcceptedAt && (
+                      <span className="scope-tag pit">accepted {primaryAcceptedAt.slice(0, 10)}</span>
+                    )}
+                    <FilingSourceLink metadata={primaryMetadata} />
+                  </div>
+                </div>
+              )}
             </section>
 
             <section>
@@ -558,6 +615,7 @@ function AskWorkspace({
                       </strong>
                       <p>{citation.claim_text}</p>
                       <span>{Math.round(citation.confidence * 100)}% text overlap</span>
+                      <FilingSourceLink metadata={citation.metadata} />
                     </li>
                   ))}
                 </ol>

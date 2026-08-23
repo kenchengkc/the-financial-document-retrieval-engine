@@ -1,101 +1,21 @@
-"use client";
+import { ArrowDown, CheckCircle2, Database, FileCheck2 } from "lucide-react";
 
-import { ArrowDown } from "lucide-react";
-import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
-
-// The two arched videos hold their first frame (the poster is the exact frame 0)
-// until BOTH are ready, then start together so the load -> play transition is
-// seamless and synchronized.
 export function HeroStage() {
-  const leftRef = useRef<HTMLVideoElement | null>(null);
-  const rightRef = useRef<HTMLVideoElement | null>(null);
-  const [videoLive, setVideoLive] = useState(false);
-
-  useEffect(() => {
-    const left = leftRef.current;
-    const right = rightRef.current;
-    if (!left || !right) return;
-    const videos = [left, right];
-    videos.forEach((video) => {
-      video.defaultMuted = true;
-      video.muted = true;
-      video.pause();
-    });
-
-    let cancelled = false;
-    let started = false;
-    let revealFrame = 0;
-
-    const ready = () => videos.every((video) => video.readyState >= 3);
-
-    const startBoth = async () => {
-      if (started) return;
-      if (!ready()) return;
-      started = true;
-      setVideoLive(false);
-
-      try {
-        left.currentTime = 0;
-        right.currentTime = 0;
-        await Promise.all(videos.map((video) => video.play()));
-        if (cancelled) return;
-        revealFrame = window.requestAnimationFrame(() => {
-          setVideoLive(true);
-        });
-      } catch {
-        videos.forEach((video) => video.pause());
-        setVideoLive(false);
-      }
-    };
-
-    videos.forEach((video) => {
-      video.addEventListener("loadeddata", startBoth);
-      video.addEventListener("canplay", startBoth);
-      video.addEventListener("canplaythrough", startBoth);
-    });
-    videos.forEach((video) => {
-      video.load();
-    });
-    void startBoth();
-
-    return () => {
-      cancelled = true;
-      if (revealFrame) {
-        window.cancelAnimationFrame(revealFrame);
-      }
-      videos.forEach((video) => {
-        video.removeEventListener("loadeddata", startBoth);
-        video.removeEventListener("canplay", startBoth);
-        video.removeEventListener("canplaythrough", startBoth);
-      });
-    };
-  }, []);
-
   return (
     <div className="ih-stage">
-      <div className={`ih-panel left ${videoLive ? "video-live" : ""}`}>
-        <Image
-          className="ih-poster"
-          src="/about/panel-left.jpg"
-          alt=""
-          aria-hidden="true"
-          fill
-          priority
-          sizes="(max-width: 700px) 0px, (max-width: 1100px) 170px, 248px"
-        />
-        <video
-          ref={leftRef}
-          className="ih-video"
-          src="/about/panel-left.mp4"
-          poster="/about/panel-left.jpg"
-          muted
-          loop
-          playsInline
-          preload="auto"
-        />
-        <div className="ih-motion" aria-hidden="true" />
-      </div>
+      <aside className="ih-panel ih-proof-panel ih-corpus-panel" aria-label="Corpus scope">
+        <span className="ih-proof-icon" aria-hidden="true">
+          <Database size={18} />
+        </span>
+        <p>Corpus scope</p>
+        <strong>499 / 500</strong>
+        <span className="ih-proof-label">S&amp;P 500 primary tickers indexed</span>
+        <ul>
+          <li>SEC 10-K and 10-Q filings</li>
+          <li>Current constituents; survivorship-biased</li>
+          <li>Live coverage and quality checks below</li>
+        </ul>
+      </aside>
 
       <div className="ih-card">
         <p className="hd-eyebrow">About FDRE</p>
@@ -118,28 +38,25 @@ export function HeroStage() {
         </a>
       </div>
 
-      <div className={`ih-panel right ${videoLive ? "video-live" : ""}`}>
-        <Image
-          className="ih-poster"
-          src="/about/panel-right.jpg"
-          alt=""
-          aria-hidden="true"
-          fill
-          priority
-          sizes="(max-width: 700px) 0px, (max-width: 1100px) 170px, 248px"
-        />
-        <video
-          ref={rightRef}
-          className="ih-video"
-          src="/about/panel-right.mp4"
-          poster="/about/panel-right.jpg"
-          muted
-          loop
-          playsInline
-          preload="auto"
-        />
-        <div className="ih-motion" aria-hidden="true" />
-      </div>
+      <aside className="ih-panel ih-proof-panel ih-run-panel" aria-label="Answer contract">
+        <span className="ih-proof-icon" aria-hidden="true">
+          <FileCheck2 size={18} />
+        </span>
+        <p>Answer contract</p>
+        <strong>Evidence first</strong>
+        <span className="ih-proof-label">Every supported claim is reviewable against its filing</span>
+        <ol>
+          <li>
+            <CheckCircle2 size={13} aria-hidden="true" /> Resolve issuer and time boundary
+          </li>
+          <li>
+            <CheckCircle2 size={13} aria-hidden="true" /> Rerank retrieved passages
+          </li>
+          <li>
+            <CheckCircle2 size={13} aria-hidden="true" /> Verify citation or abstain
+          </li>
+        </ol>
+      </aside>
     </div>
   );
 }

@@ -31,6 +31,10 @@ def _seeded_engine() -> Engine:
             source_type="sec",
             form_type="10-K",
             accession_number="0000320193-25-000079",
+            primary_document_url=(
+                "https://www.sec.gov/Archives/edgar/data/320193/"
+                "000032019325000079/aapl-20250927.htm"
+            ),
         )
         element = DocumentElement(
             document=document,
@@ -51,6 +55,8 @@ def _seeded_engine() -> Engine:
                     "cik": "0000320193",
                     "company_name": "Apple Inc.",
                     "form_type": "10-K",
+                    "accession_number": "0000320193-25-000079",
+                    "source_url": document.primary_document_url,
                     "section": "Risk Factors",
                     "element_type": "text",
                     "page_number": 1,
@@ -91,6 +97,10 @@ def test_answer_endpoint_returns_and_persists_auditable_answer() -> None:
     assert payload["abstained"] is False
     assert payload["answer"]
     assert payload["citations"][0]["metadata"]["ticker"] == "AAPL"
+    assert payload["evidence"][0]["metadata"]["source_url"] == (
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019325000079/aapl-20250927.htm"
+    )
     assert payload["evidence"][0]["rerank_score"] is not None
     expected_confidence = round(
         0.6 * payload["retrieval_gate"]["max_score"]

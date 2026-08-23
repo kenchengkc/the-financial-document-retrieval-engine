@@ -208,6 +208,10 @@ def test_force_rechunk_rebuilds_existing_chunks() -> None:
         form_type="10-K",
         filing_date=date(2025, 10, 31),
         accession_number="0000320193-25-000079",
+        primary_document_url=(
+            "https://www.sec.gov/Archives/edgar/data/320193/"
+            "000032019325000079/aapl-20250927.htm"
+        ),
     )
     element = DocumentElement(
         document=document,
@@ -258,3 +262,5 @@ def test_force_rechunk_rebuilds_existing_chunks() -> None:
         assert stored_chunk.section == "Business"
         assert stored_chunk.chunk_text != original_text
         assert "Apple sells products" in stored_chunk.chunk_text
+        assert stored_chunk.metadata_json is not None
+        assert stored_chunk.metadata_json["source_url"] == document.primary_document_url

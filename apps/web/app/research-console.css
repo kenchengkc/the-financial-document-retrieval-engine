@@ -400,6 +400,22 @@
   color: var(--line-strong);
 }
 
+.research-shell .filing-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  color: var(--cyan);
+  font: var(--type-mono-sm);
+  text-decoration: none;
+}
+
+.research-shell .filing-source-link:hover {
+  color: var(--plum);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .research-shell .evidence-title {
   min-height: 54px;
   margin-top: 10px;
@@ -439,9 +455,83 @@
 }
 
 .research-shell .evidence-body > p {
-  padding: 5px 16px 16px 42px;
+  padding: 5px 16px 10px 42px;
   color: var(--prose);
   font: var(--type-body-md);
+}
+
+.research-shell .evidence-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 16px 42px;
+}
+
+.research-shell .evidence-context {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font: var(--type-mono-xxs);
+  text-transform: uppercase;
+}
+
+.research-shell details.evidence.context {
+  background: var(--surface-muted);
+}
+
+.research-shell .context-evidence {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.research-shell .context-evidence > summary {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 14px;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.research-shell .context-evidence > summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-shell .context-evidence > summary > span {
+  display: grid;
+  gap: 3px;
+}
+
+.research-shell .context-evidence summary strong {
+  font: var(--type-ui-sm);
+}
+
+.research-shell .context-evidence summary small {
+  color: var(--muted);
+  font: var(--type-mono-xs);
+}
+
+.research-shell .context-evidence[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.research-shell .context-evidence[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.research-shell .context-evidence > summary > svg {
+  transition: transform 160ms ease;
+}
+
+.research-shell .context-list {
+  padding: 10px;
 }
 
 .research-shell .scores,
@@ -498,6 +588,10 @@
 .research-shell .citations strong,
 .research-shell .citations span {
   color: var(--cyan);
+}
+
+.research-shell .citations .filing-source-link {
+  margin-top: 8px;
 }
 
 .research-shell .trace-disclosure {
@@ -2419,6 +2513,11 @@
   .research-shell .evidence-section,
   .research-shell .evidence-score {
     display: none;
+  }
+
+  .research-shell .evidence-actions,
+  .research-shell .evidence-body > p {
+    padding-left: 16px;
   }
 
   .foundation-bar,

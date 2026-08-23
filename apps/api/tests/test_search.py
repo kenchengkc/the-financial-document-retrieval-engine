@@ -28,6 +28,10 @@ def test_search_endpoint_returns_ranked_evidence() -> None:
             source_type="sec",
             form_type="10-K",
             accession_number="0000320193-25-000079",
+            primary_document_url=(
+                "https://www.sec.gov/Archives/edgar/data/320193/"
+                "000032019325000079/aapl-20250927.htm"
+            ),
         )
         element = DocumentElement(
             document=document,
@@ -47,6 +51,8 @@ def test_search_endpoint_returns_ranked_evidence() -> None:
                     "ticker": "AAPL",
                     "cik": "0000320193",
                     "form_type": "10-K",
+                    "accession_number": "0000320193-25-000079",
+                    "source_url": document.primary_document_url,
                     "section": "Risk Factors",
                     "element_type": "text",
                 },
@@ -77,4 +83,7 @@ def test_search_endpoint_returns_ranked_evidence() -> None:
     assert payload["filters"]["tickers"] == ["AAPL"]
     assert payload["filters"]["sections"] == ["Risk Factors"]
     assert payload["results"][0]["metadata"]["ticker"] == "AAPL"
+    assert payload["results"][0]["metadata"]["source_url"].endswith(
+        "/aapl-20250927.htm"
+    )
     assert payload["results"][0]["rerank_score"] is not None

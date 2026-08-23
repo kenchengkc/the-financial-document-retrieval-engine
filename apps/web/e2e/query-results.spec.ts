@@ -59,8 +59,10 @@ async function mockApi(page: import("@playwright/test").Page) {
               "A securities class action referenced historical earnings disclosures and was dismissed.",
             metadata: {
               ticker: "META",
+              cik: "0001326801",
               form_type: "10-Q",
               filing_date: "2026-04-30",
+              accession_number: "0001628280-26-028526",
               section: "Legal Proceedings",
               element_type: "text",
             },
@@ -76,8 +78,10 @@ async function mockApi(page: import("@playwright/test").Page) {
               "Net income was $26.77 billion, with diluted earnings per share (EPS) of $10.44 for the three months ended March 31, 2026.",
             metadata: {
               ticker: "META",
+              cik: "0001326801",
               form_type: "10-Q",
               filing_date: "2026-04-30",
+              accession_number: "0001628280-26-028526",
               section: "MD&A",
               element_type: "text",
             },
@@ -93,8 +97,10 @@ async function mockApi(page: import("@playwright/test").Page) {
               "| Revenue | $56,311 million |\\n| Net income | $26,773 million |\\n| Diluted EPS | $10.44 |",
             metadata: {
               ticker: "META",
+              cik: "0001326801",
               form_type: "10-Q",
               filing_date: "2026-04-30",
+              accession_number: "0001628280-26-028526",
               section: "Financial Statements",
               element_type: "table",
             },
@@ -114,8 +120,10 @@ async function mockApi(page: import("@playwright/test").Page) {
               "Net income was $26.77 billion, with diluted earnings per share (EPS) of $10.44 for the three months ended March 31, 2026.",
             metadata: {
               ticker: "META",
+              cik: "0001326801",
               form_type: "10-Q",
               filing_date: "2026-04-30",
+              accession_number: "0001628280-26-028526",
             },
             confidence: 1,
           },
@@ -169,8 +177,12 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
   await expect(page.getByRole("heading", { name: "Run summary" })).toBeVisible();
   await expect(page.locator(".funnel")).toContainText("Retrieved");
   await expect(page.locator(".funnel")).toContainText("Cited");
-  await expect(page.locator(".scope-list")).toContainText("10-Q");
-  await expect(page.getByRole("img", { name: "92 percent retrieval confidence" })).toBeVisible();
+  await expect(page.locator(".scope-list").first()).toContainText("10-Q");
+  await expect(page.getByRole("img", { name: "92 percent evidence support score" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open SEC filing" }).first()).toHaveAttribute(
+    "href",
+    "https://www.sec.gov/Archives/edgar/data/1326801/000162828026028526/0001628280-26-028526-index.html",
+  );
 
   await page.getByText("Workflow trace").click();
   await expect(page.getByText("preprocess query")).toBeVisible();
@@ -185,7 +197,7 @@ test("runs a flagship question with one click", async ({ page }) => {
   await expect(page.getByRole("textbox", { name: "Ask a financial filing question" }))
     .toHaveValue(question);
   await expect(page.locator(".answer")).toContainText("$26.77 billion");
-  await expect(page.getByRole("img", { name: "92 percent retrieval confidence" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "92 percent evidence support score" })).toBeVisible();
 });
 
 test("submits the benchmarked Apple flagship question with one click", async ({ page }) => {
@@ -257,7 +269,7 @@ test("labels unsupported forecast requests as no verified answer", async ({ page
     "FDRE does not forecast securities prices",
   );
   await expect(page.getByText("FDRE abstained")).not.toBeVisible();
-  await expect(page.getByRole("img", { name: "0 percent retrieval confidence" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "0 percent evidence support score" })).toBeVisible();
   await expect(page.locator(".funnel")).toContainText("Gate held");
   await expect(page.getByText("No citations were returned.")).toBeVisible();
 });
@@ -284,7 +296,7 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "Research infrastructure that shows its work" }))
     .toBeVisible();
   // The corpus counts are read live (ISR), so assert the stable labels, not values.
-  await expect(page.getByText("S&P 500 primary tickers indexed")).toBeVisible();
+  await expect(page.locator(".proof-metrics").getByText("S&P 500 primary tickers indexed")).toBeVisible();
   await expect(page.getByText("Six public demonstrations")).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
@@ -294,12 +306,12 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
 });
 
-test("keeps the original landing hero and About navigation", async ({ page }) => {
+test("keeps the evidence-led landing hero and About navigation", async ({ page }) => {
   await mockHealthAndCoverage(page);
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { name: "Financial Document Retrieval Engine" }),
+    page.getByRole("heading", { name: "Financial evidence, ready to review." }),
   ).toBeVisible();
   const aboutLink = page.getByRole("link", { name: "About", exact: true });
   await expect(aboutLink).toHaveAttribute("href", "/about");

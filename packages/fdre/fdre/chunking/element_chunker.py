@@ -74,6 +74,11 @@ def document_chunk_metadata(document: Document, element: DocumentElement) -> dic
         "is_amendment": document.is_amendment,
         "amends_accession_number": document.amends_accession_number,
         "accession_number": document.accession_number,
+        # Preserve the canonical SEC URL with the passage so clients can always
+        # take an answer back to its primary filing. The web client can derive
+        # the SEC filing index from CIK + accession for older chunks created
+        # before this field existed.
+        "source_url": document.primary_document_url or document.source_url,
         "section": element.section,
         "page_number": element.page_number,
         "element_type": element.element_type,

@@ -16,10 +16,13 @@ function Wave({ variant }: { variant: string }) {
 export function LandingHero({
   onExplore,
   apiOnline,
+  latestIngestionAt,
 }: {
   onExplore: () => void;
   apiOnline: boolean | null;
+  latestIngestionAt: string | null;
 }) {
+  const latestIngestionLabel = formatUtcTimestamp(latestIngestionAt);
   return (
     <section className="landing" id="top" data-screen-label="FDRE Home">
       <div className="ld-topline" />
@@ -67,24 +70,31 @@ export function LandingHero({
               Research
             </button>
             <Link href="/about">About</Link>
+            <a
+              href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Source
+            </a>
             <Link href="/contact">Contact</Link>
           </div>
         </nav>
 
         <section className="ld-hero">
-          <p className="ld-eyebrow">For hedge funds &amp; research desks</p>
+          <p className="ld-eyebrow">Point-in-time SEC research infrastructure</p>
           <h1>
-            Financial Document
+            Financial evidence,
             <br />
-            Retrieval <em>Engine</em>
+            ready to <em>review.</em>
           </h1>
           <p className="ld-lede">
-            Extracting market-moving insights from filings accurately, verifiably, and at
-            scale. Every answer opens straight to its source.
+            Search filings, verify every cited claim, and open the original source with the
+            retrieval run that produced it.
           </p>
           <div className="ld-cta">
             <button type="button" className="ld-btn ld-btn-primary" onClick={onExplore}>
-              Explore research
+              Run a verified query
               <svg
                 className="ld-arr"
                 width="18"
@@ -107,7 +117,7 @@ export function LandingHero({
           <div className="ld-pillars">
             <span className="ld-pillar">
               <span className="n">01</span>
-              <span className="t">Layout-aware retrieval</span>
+              <span className="t">Point-in-time controls</span>
             </span>
             <span className="ld-dotsep" />
             <span className="ld-pillar">
@@ -117,15 +127,35 @@ export function LandingHero({
             <span className="ld-dotsep" />
             <span className="ld-pillar">
               <span className="n">03</span>
-              <span className="t">Declines unsupported claims</span>
+              <span className="t">Reproducible run records</span>
             </span>
           </div>
           <span className="ld-trust">
             <span className={`ld-live${apiOnline ? " on" : ""}`} />
-            {apiOnline === false ? "SEC EDGAR index offline" : "Indexing SEC EDGAR in real time"}
+            {apiOnline === false
+              ? "Data service unavailable"
+              : latestIngestionLabel
+                ? `Last successful ingest · ${latestIngestionLabel}`
+                : "Verifying corpus status"}
           </span>
         </div>
       </div>
     </section>
   );
+}
+
+function formatUtcTimestamp(value: string | null): string | null {
+  if (!value) return null;
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(timestamp);
 }

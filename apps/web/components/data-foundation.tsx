@@ -126,7 +126,13 @@ function CoverageMeter({
   );
 }
 
-export function DataFoundation({ runs }: { runs: SessionRun[] }) {
+export function DataFoundation({
+  runs,
+  onOperations,
+}: {
+  runs: SessionRun[];
+  onOperations?: (operations: OperationsQuality | null) => void;
+}) {
   const [open, setOpen] = useState(true);
   const [data, setData] = useState<FoundationData>(EMPTY_DATA);
   const [sourceStatuses, setSourceStatuses] =
@@ -230,6 +236,10 @@ export function DataFoundation({ runs }: { runs: SessionRun[] }) {
   useEffect(() => {
     if (foundationReady) writeFoundationCache(data);
   }, [data, foundationReady]);
+
+  useEffect(() => {
+    onOperations?.(data.operations);
+  }, [data.operations, onOperations]);
 
   const topCompanies = useMemo(
     () => [...data.companies].sort((left, right) => right.chunk_count - left.chunk_count).slice(0, 5),
