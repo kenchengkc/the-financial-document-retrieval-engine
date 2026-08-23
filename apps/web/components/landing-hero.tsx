@@ -114,22 +114,6 @@ export function LandingHero({
         </section>
 
         <div className="ld-meta">
-          <div className="ld-pillars">
-            <span className="ld-pillar">
-              <span className="n">01</span>
-              <span className="t">As-of date controls</span>
-            </span>
-            <span className="ld-dotsep" />
-            <span className="ld-pillar">
-              <span className="n">02</span>
-              <span className="t">Source citations</span>
-            </span>
-            <span className="ld-dotsep" />
-            <span className="ld-pillar">
-              <span className="n">03</span>
-              <span className="t">Saved research runs</span>
-            </span>
-          </div>
           <span className="ld-trust">
             <span className={`ld-live${apiOnline ? " on" : ""}`} />
             {apiOnline === false
