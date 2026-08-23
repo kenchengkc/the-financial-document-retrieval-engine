@@ -781,7 +781,7 @@ function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
   return (
     <>
       <div className="panel-intro">
-        <p className="eyebrow">Point-in-time signal study</p>
+        <p className="eyebrow">Historical filing event study</p>
         <h2>
           {copy.headlinePrefix}
           <span className="accent">{copy.headlineAccent}</span>
@@ -851,8 +851,8 @@ function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
       <div className="sig-note">
         <FlaskConical size={14} aria-hidden="true" />
         <p>
-          <strong>Honest reading:</strong> {copy.note} The sample grows as the filing-history
-          corpus deepens.
+          <strong>Interpretation:</strong> {copy.note} The sample grows as more filing history
+          becomes available.
         </p>
       </div>
 
@@ -868,10 +868,10 @@ function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
 function SignalsModeIntro() {
   return (
     <div className="signals-mode-intro">
-      <p className="eyebrow">Event-study backtests</p>
+      <p className="eyebrow">Filing event studies</p>
       <h2>Signals</h2>
       <p className="panel-lede">
-        Point-in-time filing-behavior signals, tested as event studies with leakage-safe panels.
+        Filing-based signals evaluated in event studies using only data available on each date.
       </p>
     </div>
   );
@@ -905,8 +905,8 @@ export function SignalsPanel() {
         <div className="loading-state" role="status">
           <LoaderCircle className="spin" size={24} />
           <div>
-            <h3>Loading the published signal studies</h3>
-            <p>Reading the latest event-study experiments…</p>
+            <h3>Loading published event studies</h3>
+            <p>Reading the latest study results…</p>
           </div>
         </div>
       </div>

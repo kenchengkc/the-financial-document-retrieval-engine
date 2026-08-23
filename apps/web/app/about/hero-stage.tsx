@@ -3,33 +3,33 @@ import { ArrowDown, CheckCircle2, Database, FileCheck2 } from "lucide-react";
 export function HeroStage() {
   return (
     <div className="ih-stage">
-      <aside className="ih-panel ih-proof-panel ih-corpus-panel" aria-label="Corpus scope">
+      <aside className="ih-panel ih-proof-panel ih-corpus-panel" aria-label="Data coverage">
         <span className="ih-proof-icon" aria-hidden="true">
           <Database size={18} />
         </span>
-        <p>Corpus scope</p>
+        <p>Data coverage</p>
         <strong>499 / 500</strong>
-        <span className="ih-proof-label">S&amp;P 500 primary tickers indexed</span>
+        <span className="ih-proof-label">S&amp;P 500 primary tickers available for search</span>
         <ul>
           <li>SEC 10-K and 10-Q filings</li>
-          <li>Current constituents; survivorship-biased</li>
-          <li>Live coverage and quality checks below</li>
+          <li>Current members only; former members are excluded</li>
+          <li>Live coverage and data-quality checks below</li>
         </ul>
       </aside>
 
       <div className="ih-card">
         <p className="hd-eyebrow">About FDRE</p>
         <h1>
-          Research infrastructure that <span className="accent">shows its work</span>
+          SEC filing research with <span className="accent">sources you can inspect</span>
         </h1>
         <p className="lede">
-          FDRE converts SEC filings into auditable retrieval results, structured facts,
-          point-in-time feature data, and reproducible event-study inputs for research teams.
+          FDRE turns SEC filings into cited search results, reported financial data, historical
+          research data, and inputs for filing event studies.
         </p>
         <div className="ih-meta">
           <span>Research and data engineering</span>
           <span className="sep" aria-hidden="true" />
-          <span>Quant research engineering</span>
+          <span>Quantitative research</span>
           <span className="sep" aria-hidden="true" />
           <span>No trading-strategy claims</span>
         </div>
@@ -38,22 +38,22 @@ export function HeroStage() {
         </a>
       </div>
 
-      <aside className="ih-panel ih-proof-panel ih-run-panel" aria-label="Answer contract">
+      <aside className="ih-panel ih-proof-panel ih-run-panel" aria-label="Answer standard">
         <span className="ih-proof-icon" aria-hidden="true">
           <FileCheck2 size={18} />
         </span>
-        <p>Answer contract</p>
-        <strong>Evidence first</strong>
-        <span className="ih-proof-label">Every supported claim is reviewable against its filing</span>
+        <p>Answer standard</p>
+        <strong>Sources first</strong>
+        <span className="ih-proof-label">Every answer can be checked against its filing</span>
         <ol>
           <li>
-            <CheckCircle2 size={13} aria-hidden="true" /> Resolve issuer and time boundary
+            <CheckCircle2 size={13} aria-hidden="true" /> Identify the company and as-of date
           </li>
           <li>
-            <CheckCircle2 size={13} aria-hidden="true" /> Rerank retrieved passages
+            <CheckCircle2 size={13} aria-hidden="true" /> Rank the most relevant passages
           </li>
           <li>
-            <CheckCircle2 size={13} aria-hidden="true" /> Verify citation or abstain
+            <CheckCircle2 size={13} aria-hidden="true" /> Check citations or return no answer
           </li>
         </ol>
       </aside>

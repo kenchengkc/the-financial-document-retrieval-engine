@@ -66,18 +66,18 @@ const exampleChips = [
 type ModeId = "ask" | "retrieve" | "screen" | "signals";
 
 const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] = [
-  { id: "ask", label: "Ask", hint: "Cited answers from filings", icon: MessageSquareText },
-  { id: "retrieve", label: "Retrieve", hint: "Hybrid search, point-in-time", icon: Search },
-  { id: "screen", label: "Screen", hint: "Cross-sectional theme scan", icon: ScanSearch },
-  { id: "signals", label: "Signals", hint: "Event-study backtests", icon: LineChart },
+  { id: "ask", label: "Ask", hint: "Answers with filing citations", icon: MessageSquareText },
+  { id: "retrieve", label: "Retrieve", hint: "Search filing text and data", icon: Search },
+  { id: "screen", label: "Screen", hint: "Compare company filings", icon: ScanSearch },
+  { id: "signals", label: "Signals", hint: "Filing event studies", icon: LineChart },
 ];
 
 const STACK_STEPS = [
-  { title: "Route", detail: "Issuer & date-aware query routing" },
-  { title: "Retrieve", detail: "Dense + lexical SEC retrieval" },
-  { title: "Rerank", detail: "Cross-encoder evidence gate" },
-  { title: "Verify", detail: "Citation check before answering" },
-  { title: "Study", detail: "Point-in-time panels & signals" },
+  { title: "Identify", detail: "Company and date filters" },
+  { title: "Search", detail: "Keyword and semantic search" },
+  { title: "Rank", detail: "Rank the most relevant passages" },
+  { title: "Validate", detail: "Check citations before answering" },
+  { title: "Analyze", detail: "Historical datasets and studies" },
 ];
 
 export default function Home() {
@@ -190,8 +190,8 @@ export default function Home() {
       <main className="research-shell home-research" ref={researchRef}>
         <div className="research-main">
           <header className="console-title">
-            <p className="eyebrow">Research console</p>
-            <h1>One engine, four ways in</h1>
+            <p className="eyebrow">Research tools</p>
+            <h1>Research SEC filings four ways</h1>
           </header>
 
           <section className="console research-console">
@@ -224,11 +224,11 @@ export default function Home() {
             {mode === "ask" && (
               <div className="mode-panel ask-mode">
                 <div className="panel-intro ask-intro">
-                  <p className="eyebrow">Cited answers from filings</p>
+                  <p className="eyebrow">Answers with filing citations</p>
                   <h2>Ask</h2>
                   <p className="panel-lede">
-                    Ask a question in plain language. FDRE retrieves, reranks, verifies citations,
-                    and declines when the filings do not support an answer.
+                    Ask a question in plain language. FDRE searches filings, ranks relevant
+                    passages, checks citations, and says when the filings do not support an answer.
                   </p>
                 </div>
                 <form className="hd-search research-query console-search" onSubmit={submit}>
@@ -299,12 +299,12 @@ export default function Home() {
           <section className="research-stack" aria-labelledby="research-stack-title">
             <div className="stack-heading">
               <div>
-                <p className="eyebrow">RAG search stack</p>
-                <h2 id="research-stack-title">Ground retrieval before generation</h2>
+                <p className="eyebrow">Retrieval and answer pipeline</p>
+                <h2 id="research-stack-title">Find and check source text before writing an answer</h2>
               </div>
               <p>
-                FDRE resolves issuers and dates, searches dense and lexical indexes, reranks
-                evidence, verifies citations, and declines unsupported requests.
+                FDRE identifies the company and date, searches filing text and financial data,
+                ranks the results, checks citations, and declines unsupported requests.
               </p>
             </div>
             <ol className="stack-steps">
@@ -389,8 +389,8 @@ function AskWorkspace({
           {!result && (
             <div className="section-heading workspace-heading">
               <div>
-                <p className="eyebrow">Ask workspace</p>
-                <h2>{loading ? "Retrieving evidence" : "Ready for a query"}</h2>
+                <p className="eyebrow">Question and answer</p>
+                <h2>{loading ? "Searching SEC filings" : "Ready for a question"}</h2>
               </div>
             </div>
           )}
@@ -399,12 +399,12 @@ function AskWorkspace({
             <div className="loading-state" role="status">
               <LoaderCircle className="spin" size={24} />
               <div>
-                <h3>Searching indexed SEC filings</h3>
+                <h3>Searching SEC filings</h3>
                 <p>{question}</p>
               </div>
               <ScanProgress
                 estimateMs={estimateMs}
-                stages={["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"]}
+                stages={["Identify company", "Search filings", "Rank passages", "Check citations"]}
               />
             </div>
           )}
@@ -483,7 +483,7 @@ function AskWorkspace({
                   <summary>
                     <span>
                       <strong>{contextEvidence.length} supporting passages</strong>
-                      <small>Neighbor context; excluded from rerank and evidence-gate counts</small>
+                      <small>Related passages; not used to rank results or validate the answer</small>
                     </span>
                     <ChevronDown size={16} aria-hidden="true" />
                   </summary>
@@ -503,7 +503,7 @@ function AskWorkspace({
                 </details>
               )}
               {result.evidence.length === 0 && (
-                <p className="muted">No evidence passed the retrieval gate.</p>
+                <p className="muted">No source passages met the answer-quality check.</p>
               )}
             </>
           )}
@@ -519,20 +519,20 @@ function AskWorkspace({
               <div className="run-dash">
                 <div
                   className="conf-block"
-                  title="60% top rerank relevance + 40% verified citation support"
+                  title="60% relevance score + 40% verified citation support"
                 >
                   <ConfidenceRing value={displayedConfidence} />
-                  <span className="conf-caption">evidence support score</span>
+                  <span className="conf-caption">answer support score</span>
                 </div>
                 <dl className="run-stats">
                   <div>
-                    <dt>Evidence gate</dt>
+                    <dt>Answer check</dt>
                     <dd className={result.retrieval_gate.passed ? "ok" : "hold"}>
                       {result.retrieval_gate.passed ? "Passed" : "Held"}
                     </dd>
                   </div>
                   <div>
-                    <dt>Top rerank</dt>
+                    <dt>Best match score</dt>
                     <dd>{Number(result.retrieval_gate.max_score ?? 0).toFixed(3)}</dd>
                   </div>
                   <div>
@@ -552,7 +552,7 @@ function AskWorkspace({
               <div className="scope-row">
                 <span className="scope-head">
                   <Layers size={13} aria-hidden="true" />
-                  Routes
+                    Search methods
                 </span>
                 <div className="route-list">
                   {result.route.map((route) => (
@@ -564,7 +564,7 @@ function AskWorkspace({
                 <div className="scope-row">
                   <span className="scope-head">
                     <Filter size={13} aria-hidden="true" />
-                    Resolved scope
+                    Search scope
                   </span>
                   <div className="scope-list">
                     {scope.tickers.map((ticker) => (
@@ -628,7 +628,7 @@ function AskWorkspace({
               <summary>
                 <span className="aside-title">
                   <Activity size={17} />
-                  <strong>Workflow trace</strong>
+                  <strong>Processing details</strong>
                 </span>
                 <span>{result.trace.length} steps</span>
                 <ChevronDown size={15} aria-hidden="true" />

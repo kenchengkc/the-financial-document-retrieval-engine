@@ -16,12 +16,12 @@ test("frames the About hero with evidence panels instead of decorative media", a
 
   await page.goto("/about", { waitUntil: "domcontentloaded" });
 
-  const corpusPanel = page.getByRole("complementary", { name: "Corpus scope" });
-  const contractPanel = page.getByRole("complementary", { name: "Answer contract" });
+  const corpusPanel = page.getByRole("complementary", { name: "Data coverage" });
+  const contractPanel = page.getByRole("complementary", { name: "Answer standard" });
   await expect(corpusPanel).toContainText("499 / 500");
-  await expect(corpusPanel).toContainText("survivorship-biased");
-  await expect(contractPanel).toContainText("Evidence first");
-  await expect(contractPanel).toContainText("Verify citation or abstain");
+  await expect(corpusPanel).toContainText("former members are excluded");
+  await expect(contractPanel).toContainText("Sources first");
+  await expect(contractPanel).toContainText("Check citations or return no answer");
   await expect(page.locator(".ih-stage video, .ih-stage img")).toHaveCount(0);
   expect(consoleErrors).toEqual([]);
 });
@@ -47,13 +47,13 @@ test("replays the current four-mode research console", async ({ page }) => {
   await expect(demo).toContainText("Primary sources");
 
   await tabs.nth(1).click();
-  await expect(demo.getByRole("heading", { name: "Query reported financials" })).toBeVisible();
+  await expect(demo.getByRole("heading", { name: "Search reported financial data" })).toBeVisible();
   await expect(demo).toContainText("Financial facts");
   await expect(demo).toContainText("$26.77B");
 
   await tabs.nth(2).click();
   await expect(demo.getByRole("heading", { name: "Screen" })).toBeVisible();
-  await expect(demo).toContainText("Ranked issuers");
+  await expect(demo).toContainText("Ranked companies");
   await expect(demo).toContainText("Digital Realty");
 
   await tabs.nth(3).click();

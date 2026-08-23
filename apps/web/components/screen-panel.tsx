@@ -19,9 +19,9 @@ import { ScanProgress } from "./scan-progress";
 const DEFAULT_SCAN_MS = 7_000;
 
 const SCAN_STAGES = [
-  "Retrieving across the indexed universe",
-  "Reranking cross-encoder candidates",
-  "Diversifying evidence by issuer",
+  "Searching company filings",
+  "Ranking relevant passages",
+  "Selecting evidence from different companies",
 ];
 
 const EXAMPLES = [
@@ -80,10 +80,10 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Cross-sectional theme scan</p>
+        <p className="eyebrow">Topic search across companies</p>
         <h2>Screen</h2>
         <p className="panel-lede">
-          Scan the whole universe for a theme and rank issuers by the strength of their disclosure
+          Search the selected companies for a topic and rank them by the strength of the filing
           evidence.
         </p>
       </div>
@@ -135,7 +135,7 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
         <div className="loading-state" role="status">
           <LoaderCircle className="spin" size={24} />
           <div>
-            <h3>Deep cross-sectional scan</h3>
+            <h3>Searching across companies</h3>
             <p>{query}</p>
           </div>
           <ScanProgress estimateMs={estimateMs} stages={SCAN_STAGES} />
@@ -190,7 +190,7 @@ export function ScreenPanel({ onRun }: { onRun?: (run: SessionRun) => void }) {
       {!result && !error && !loading && (
         <div className="empty-state compact">
           <ScanSearch size={26} />
-          <h3>Scan a theme across the universe</h3>
+          <h3>Search a topic across companies</h3>
           <p>Pick an example or enter your own; a scan takes a few seconds.</p>
         </div>
       )}

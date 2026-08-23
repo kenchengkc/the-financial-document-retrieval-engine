@@ -103,10 +103,10 @@ function FilingComparisonTool() {
       <header className="lab-heading">
         <span className="lab-icon"><FileDiff size={17} aria-hidden="true" /></span>
         <div>
-          <p className="eyebrow">Disclosure change analysis</p>
+          <p className="eyebrow">Filing comparison</p>
           <h3 id="filing-comparison-title">Compare filing disclosures</h3>
           <p>
-            Compare a filing with the prior comparable filing for that issuer. Review added,
+            Compare a filing with the prior comparable filing for that company. Review added,
             removed, and materially rewritten passages using only information available by the
             cutoff date.
           </p>
@@ -124,9 +124,9 @@ function FilingComparisonTool() {
           />
         </label>
         <label>
-          <span>Information cutoff</span>
+          <span>As-of date</span>
           <input
-            aria-label="Comparison information cutoff"
+            aria-label="Comparison as-of date"
             type="date"
             value={asOf}
             onChange={(event) => setAsOf(event.target.value)}
@@ -144,7 +144,7 @@ function FilingComparisonTool() {
           <div className="lab-statusbar">
             <span><strong>{result.company_ticker}</strong> {comparisonBasisLabel(result.comparison_basis)}</span>
             <span>{dateLabel(result.previous_available_at)} → {dateLabel(result.current_available_at)}</span>
-            <span className="gate-pass"><ShieldCheck size={13} /> point-in-time check passed</span>
+            <span className="gate-pass"><ShieldCheck size={13} /> as-of date check passed</span>
           </div>
           <dl className="delta-stats">
             <div><dt>Added</dt><dd>{result.added_count}</dd></div>
@@ -227,10 +227,10 @@ function FinancialFactsTool() {
       <header className="lab-heading">
         <span className="lab-icon"><Braces size={17} aria-hidden="true" /></span>
         <div>
-          <p className="eyebrow">Normalized XBRL fundamentals</p>
-          <h3 id="financial-facts-title">Query reported financials</h3>
+          <p className="eyebrow">XBRL financial data</p>
+          <h3 id="financial-facts-title">Search reported financial data</h3>
           <p>
-            Pull standardized filing values for selected issuers and metrics as they were known at
+            Pull standardized filing values for selected companies and metrics as they were known at
             a chosen date. Select original values, latest restatements, or every reported version.
           </p>
         </div>
@@ -262,8 +262,8 @@ function FinancialFactsTool() {
           </select>
         </label>
         <label>
-          <span>Information cutoff</span>
-          <input aria-label="Financial fact information cutoff" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
+          <span>As-of date</span>
+          <input aria-label="Financial fact as-of date" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
         </label>
         <button className="lab-primary" type="submit" disabled={loading || !tickers.trim()}>
           {loading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}
@@ -296,7 +296,7 @@ function FinancialFactsTool() {
               </tbody>
             </table>
           </div>
-          {result.facts.length === 0 && <p className="lab-empty">No reported facts matched these issuers, metrics, and date controls.</p>}
+          {result.facts.length === 0 && <p className="lab-empty">No reported facts matched these companies, metrics, and date controls.</p>}
         </div>
       )}
     </section>
@@ -365,7 +365,7 @@ function ResearchDatasetTool() {
       <header className="lab-heading">
         <span className="lab-icon"><Layers3 size={17} aria-hidden="true" /></span>
         <div>
-          <p className="eyebrow">Analysis-ready issuer-period data</p>
+          <p className="eyebrow">Company-period research data</p>
           <h3 id="research-dataset-title">Build a research dataset</h3>
           <p>
             Create one row per filing with disclosure-change and fundamental features, filtered to
@@ -377,12 +377,12 @@ function ResearchDatasetTool() {
 
       <form className="lab-form panel-form" onSubmit={build}>
         <label>
-          <span>Tickers (blank for all issuers)</span>
+          <span>Tickers (blank for all companies)</span>
           <input aria-label="Dataset tickers" value={tickers} onChange={(event) => setTickers(event.target.value)} placeholder="AAPL, MSFT" />
         </label>
         <label><span>Fiscal period from</span><input aria-label="Dataset fiscal period from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label><span>Fiscal period to</span><input aria-label="Dataset fiscal period to" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-        <label><span>Information cutoff</span><input aria-label="Dataset information cutoff" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label>
+        <label><span>As-of date</span><input aria-label="Dataset as-of date" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label>
         <div className="lab-control">
           <span>Filing types</span>
           <div className="lab-chips">
@@ -403,7 +403,7 @@ function ResearchDatasetTool() {
             <div><span>Rows</span><strong>{result.rows.length.toLocaleString()}</strong></div>
             <div><span>Feature version</span><strong>{result.feature_version}</strong></div>
             <div><span>Data snapshot</span><strong title={result.corpus_snapshot_id}>{result.corpus_snapshot_id.slice(0, 12)}</strong></div>
-            <div className="manifest-gate"><ShieldCheck size={16} /><span>Point-in-time check</span><strong>Passed</strong></div>
+            <div className="manifest-gate"><ShieldCheck size={16} /><span>As-of data check</span><strong>Passed</strong></div>
             <label className="export-format"><span>Format</span><select aria-label="Dataset download format" value={format} onChange={(event) => setFormat(event.target.value as typeof format)}><option value="parquet">Parquet</option><option value="csv">CSV</option><option value="json">JSON</option></select></label>
             <button type="button" className="lab-download" onClick={download} disabled={downloading} title="Download research dataset">
               {downloading ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />}
@@ -412,7 +412,7 @@ function ResearchDatasetTool() {
           </div>
           <div className="lab-table-wrap">
             <table className="lab-table panel-table">
-              <thead><tr><th>Issuer</th><th>Period</th><th>Filing</th><th className="num">Disclosure similarity</th><th className="num">Net risk passages</th><th className="num">Operating margin</th><th>Available</th></tr></thead>
+              <thead><tr><th>Company</th><th>Period</th><th>Filing</th><th className="num">Disclosure similarity</th><th className="num">Net risk passages</th><th className="num">Operating margin</th><th>Available</th></tr></thead>
               <tbody>
                 {result.rows.slice(0, 8).map((row) => (
                   <tr key={row.accession_number}>
@@ -428,7 +428,7 @@ function ResearchDatasetTool() {
               </tbody>
             </table>
           </div>
-          {result.rows.length === 0 && <p className="lab-empty">No issuer-period rows matched these filters.</p>}
+          {result.rows.length === 0 && <p className="lab-empty">No company-period rows matched these filters.</p>}
         </div>
       )}
     </section>

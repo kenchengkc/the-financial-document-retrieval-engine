@@ -260,26 +260,26 @@ export function DataFoundation({
   const corpusLoading = issuerCount === undefined && (coverageLoading || operationsLoading);
   const answerP50 = runs.length ? formatLatency(median(runs.map((run) => run.latencyMs))) : "No runs";
   const strip = [
-    { label: "issuers indexed", value: compactNumber(issuerCount), loading: corpusLoading },
+    { label: "companies available", value: compactNumber(issuerCount), loading: corpusLoading },
     { label: "filings", value: compactNumber(filingCount), loading: corpusLoading },
-    { label: "chunks", value: compactNumber(chunkCount), loading: corpusLoading },
+    { label: "search passages", value: compactNumber(chunkCount), loading: corpusLoading },
     {
-      label: "embedding coverage",
+      label: "vector coverage",
       value: percent(operations?.embedding_coverage),
       loading: operationsLoading,
     },
     {
-      label: "index freshness",
+      label: "last successful update",
       value: timeAgo(operations?.latest_ingestion_completed_at),
       loading: operationsLoading,
     },
-    { label: "session answer p50", value: answerP50, loading: false },
+    { label: "median response time", value: answerP50, loading: false },
   ];
   const operationMeters = [
-    { label: "Document to chunk", value: operations?.document_chunk_coverage },
-    { label: "Embedding coverage", value: operations?.embedding_coverage },
+    { label: "Filings split into passages", value: operations?.document_chunk_coverage },
+    { label: "Vector coverage", value: operations?.embedding_coverage },
     { label: "Freshness ratio", value: operations?.freshness_ratio },
-    { label: "Ingestion success", value: operations?.recent_ingestion_success_rate },
+    { label: "Update success", value: operations?.recent_ingestion_success_rate },
   ];
   const pendingSources = Object.values(sourceStatuses).filter((status) => status === "loading").length;
   const failedSources = Object.values(sourceStatuses).filter((status) => status === "error").length;
@@ -290,7 +290,7 @@ export function DataFoundation({
   return (
     <section
       className={`data-foundation${open ? " open" : ""}${unavailable ? " unavailable" : ""}`}
-      aria-label="Data foundation"
+      aria-label="Data status"
       aria-busy={pendingSources > 0}
     >
       <button
@@ -302,7 +302,7 @@ export function DataFoundation({
       >
         <span className="foundation-title">
           <span className="foundation-live" aria-hidden="true" />
-          Data foundation
+          Data status
         </span>
         <span className="foundation-stats">
           {strip.map((item) => (
@@ -317,7 +317,7 @@ export function DataFoundation({
           ))}
         </span>
         <span className="foundation-inspect">
-          Inspect <ChevronDown size={14} aria-hidden="true" />
+          Details <ChevronDown size={14} aria-hidden="true" />
         </span>
       </button>
 
@@ -331,17 +331,17 @@ export function DataFoundation({
                   {unavailable ? "Live data service unavailable." : "Live refresh delayed."}
                 </strong>{" "}
                 {cacheLoaded
-                  ? "Showing the last verified metrics where available."
-                  : "Some corpus metrics could not be loaded."}
+                  ? "Showing the most recent saved metrics where available."
+                  : "Some data metrics could not be loaded."}
               </span>
             </div>
           )}
           <section className="foundation-column">
             <h3>
-              <Building2 size={16} aria-hidden="true" /> Universe
+              <Building2 size={16} aria-hidden="true" /> Company coverage
             </h3>
             <p>
-              Indexed SEC filing coverage, resolved to issuer metadata and searchable chunks.
+              SEC filing coverage, matched to company metadata and searchable passages.
             </p>
             <div className="foundation-split">
               <span>
@@ -365,24 +365,24 @@ export function DataFoundation({
                 S&amp;P 500
               </span>
             </div>
-            <div className="foundation-company-list" role="list" aria-label="Largest filing footprints">
+            <div className="foundation-company-list" role="list" aria-label="Companies with the most filing passages">
               {topCompanies.map((company) => (
                 <div className="foundation-company" role="listitem" key={company.ticker}>
                   <span className="foundation-ticker">{company.ticker}</span>
                   <span className="foundation-track" aria-hidden="true">
                     <span style={{ width: `${(company.chunk_count / maxChunks) * 100}%` }} />
                   </span>
-                  <code>{compactNumber(company.chunk_count)} chunks</code>
+                  <code>{compactNumber(company.chunk_count)} passages</code>
                 </div>
               ))}
               {companiesLoading && (
                 <p className="foundation-unavailable loading" role="status">
-                  <LoaderCircle className="spin" size={14} aria-hidden="true" /> Loading issuer coverage
+                  <LoaderCircle className="spin" size={14} aria-hidden="true" /> Loading company coverage
                 </p>
               )}
               {!topCompanies.length && !companiesLoading && (
                 <p className="foundation-unavailable">
-                  <Database size={14} aria-hidden="true" /> Issuer coverage is temporarily unavailable.
+                  <Database size={14} aria-hidden="true" /> Company coverage is temporarily unavailable.
                 </p>
               )}
             </div>
@@ -392,7 +392,7 @@ export function DataFoundation({
             <h3>
               <Gauge size={16} aria-hidden="true" /> Operations
             </h3>
-            <p>Every filing is checked for retrieval completeness before it enters the research corpus.</p>
+            <p>Each filing is checked before it becomes searchable.</p>
             <div className="foundation-meters">
               {operationMeters.map((meter) => (
                 <CoverageMeter key={meter.label} {...meter} loading={operationsLoading} />
@@ -406,7 +406,7 @@ export function DataFoundation({
                     ? "Loading"
                     : timeAgo(operations?.latest_ingestion_completed_at)}
                 </strong>{" "}
-                last ingest
+                last update
               </span>
               <span>
                 <ShieldCheck size={13} aria-hidden="true" />
@@ -415,7 +415,7 @@ export function DataFoundation({
                     ? "Loading"
                     : (operations?.documents_without_chunks ?? "Unavailable")}
                 </strong>{" "}
-                unchunked docs
+                filings without passages
               </span>
               <span>
                 <Database size={13} aria-hidden="true" />
@@ -424,7 +424,7 @@ export function DataFoundation({
                     ? "Loading"
                     : compactNumber(operations?.chunks_without_embeddings)}
                 </strong>{" "}
-                missing embeddings
+                passages without vectors
               </span>
             </div>
           </section>

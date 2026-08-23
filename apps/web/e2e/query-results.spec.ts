@@ -162,7 +162,7 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
   await page.getByRole("textbox", { name: "Ask a financial filing question" }).fill(question);
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
-  await expect(page.getByText("Searching indexed SEC filings")).toBeVisible();
+  await expect(page.locator(".loading-state h3")).toHaveText("Searching SEC filings");
   await expect(page.getByText(question, { exact: true })).toBeVisible();
   await expect(page.locator(".answer").getByText("$26.77 billion", { exact: false })).toBeVisible();
   await expect(page.getByText("META · 10-Q · 2026-04-30")).toBeVisible();
@@ -175,16 +175,16 @@ test("presents a compact evidence-first result for an earnings query", async ({ 
 
   // Instrument panel: retrieval funnel, resolved scope, and grounding confidence.
   await expect(page.getByRole("heading", { name: "Run summary" })).toBeVisible();
-  await expect(page.locator(".funnel")).toContainText("Retrieved");
+  await expect(page.locator(".funnel")).toContainText("Found");
   await expect(page.locator(".funnel")).toContainText("Cited");
   await expect(page.locator(".scope-list").first()).toContainText("10-Q");
-  await expect(page.getByRole("img", { name: "92 percent evidence support score" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "92 percent answer support score" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open SEC filing" }).first()).toHaveAttribute(
     "href",
     "https://www.sec.gov/Archives/edgar/data/1326801/000162828026028526/0001628280-26-028526-index.html",
   );
 
-  await page.getByText("Workflow trace").click();
+  await page.getByText("Processing details").click();
   await expect(page.getByText("preprocess query")).toBeVisible();
 });
 
@@ -197,7 +197,7 @@ test("runs a flagship question with one click", async ({ page }) => {
   await expect(page.getByRole("textbox", { name: "Ask a financial filing question" }))
     .toHaveValue(question);
   await expect(page.locator(".answer")).toContainText("$26.77 billion");
-  await expect(page.getByRole("img", { name: "92 percent evidence support score" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "92 percent answer support score" })).toBeVisible();
 });
 
 test("submits the benchmarked Apple flagship question with one click", async ({ page }) => {
@@ -269,8 +269,8 @@ test("labels unsupported forecast requests as no verified answer", async ({ page
     "FDRE does not forecast securities prices",
   );
   await expect(page.getByText("FDRE abstained")).not.toBeVisible();
-  await expect(page.getByRole("img", { name: "0 percent evidence support score" })).toBeVisible();
-  await expect(page.locator(".funnel")).toContainText("Gate held");
+  await expect(page.getByRole("img", { name: "0 percent answer support score" })).toBeVisible();
+  await expect(page.locator(".funnel")).toContainText("Answer check held");
   await expect(page.getByText("No citations were returned.")).toBeVisible();
 });
 
@@ -293,11 +293,11 @@ test("shows measured research artifacts on the About page", async ({ page }) => 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/about");
 
-  await expect(page.getByRole("heading", { name: "Research infrastructure that shows its work" }))
+  await expect(page.getByRole("heading", { name: "SEC filing research with sources you can inspect" }))
     .toBeVisible();
   // The corpus counts are read live (ISR), so assert the stable labels, not values.
   await expect(page.locator(".proof-metrics").getByText("S&P 500 primary tickers indexed")).toBeVisible();
-  await expect(page.getByText("Six public demonstrations")).toBeVisible();
+  await expect(page.getByText("Six public examples")).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -311,13 +311,13 @@ test("keeps the evidence-led landing hero and About navigation", async ({ page }
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { name: "Financial evidence, ready to review." }),
+    page.getByRole("heading", { name: "SEC filing research, with sources included." }),
   ).toBeVisible();
   const aboutLink = page.getByRole("link", { name: "About", exact: true });
   await expect(aboutLink).toHaveAttribute("href", "/about");
 
   await aboutLink.click();
   await expect(
-    page.getByRole("heading", { name: "Research infrastructure that shows its work" }),
+    page.getByRole("heading", { name: "SEC filing research with sources you can inspect" }),
   ).toBeVisible();
 });

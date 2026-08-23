@@ -63,7 +63,7 @@ export function UniversePanel() {
         <div className="notice error" role="alert">
           <CircleAlert size={19} />
           <div>
-            <strong>Could not load the universe</strong>
+            <strong>Could not load the company list</strong>
             <p>{error}</p>
           </div>
         </div>
@@ -77,15 +77,15 @@ export function UniversePanel() {
         <div className="loading-state" role="status">
           <LoaderCircle className="spin" size={24} />
           <div>
-            <h3>Loading the indexed universe</h3>
-            <p>Reading company coverage from production…</p>
+            <h3>Loading companies</h3>
+            <p>Reading current company coverage…</p>
           </div>
           <ScanProgress
             estimateMs={8_000}
             stages={[
               "Connecting to the data service",
-              "Loading issuer coverage",
-              "Computing filing footprints",
+              "Loading company coverage",
+              "Counting filing passages",
             ]}
           />
         </div>
@@ -96,17 +96,17 @@ export function UniversePanel() {
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Coverage universe</p>
-        <h2>Every indexed issuer, with its filing footprint</h2>
+        <p className="eyebrow">Filing coverage</p>
+        <h2>Companies available for search</h2>
         <p className="panel-lede">
-          The current S&amp;P 500 constituent set, each name resolved to its CIK and indexed filings.
-          The list is survivorship-biased by construction.
+          The current S&amp;P 500 list, with each company matched to its CIK and SEC filings. Former
+          index members are not included.
         </p>
       </div>
 
       <dl className="universe-stats">
         <div>
-          <dt>Indexed issuers</dt>
+          <dt>Companies available</dt>
           <dd>{stats.count}</dd>
         </div>
         <div>
@@ -120,7 +120,7 @@ export function UniversePanel() {
           <dd>{stats.docs.toLocaleString()}</dd>
         </div>
         <div>
-          <dt>Indexed chunks</dt>
+          <dt>Search passages</dt>
           <dd>{stats.chunks.toLocaleString()}</dd>
         </div>
       </dl>

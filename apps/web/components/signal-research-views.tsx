@@ -190,7 +190,7 @@ export function SignalMonitor({
           <span><small>Research pipeline</small><strong>Feature library</strong></span>
           <span>{FEATURE_LIBRARY.length} features <ChevronDown size={15} aria-hidden="true" /></span>
         </summary>
-        <p>Published studies, backtest-ready signals, and leakage-safe features.</p>
+        <p>Published studies, signals ready for historical testing, and features that exclude future data.</p>
         <div className="feature-library-grid">
           {FEATURE_LIBRARY.map((feature) => {
             const published = studies.some((study) => study.report.signal_name === feature.key);
@@ -255,12 +255,12 @@ export function ExperimentAudit({ study }: { study: SignalStudyResponse }) {
     <div className="experiment-audit">
       <div className="signal-view-heading">
         <div><p className="eyebrow">Research design</p><h3>Method and reproducibility</h3></div>
-        <p>Evidence gates and the exact setup behind this published result.</p>
+        <p>Answer-quality checks and the exact setup behind this published result.</p>
       </div>
 
       <div className="audit-layout">
         <section className="audit-gates">
-          <h4><ShieldCheck size={15} /> Research gates</h4>
+          <h4><ShieldCheck size={15} /> Research checks</h4>
           <ul>
             {gateRows(study).map(([label, status, detail]) => (
               <li key={label}>

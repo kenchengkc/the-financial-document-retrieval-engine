@@ -22,7 +22,7 @@ export function LandingHero({
   apiOnline: boolean | null;
   latestIngestionAt: string | null;
 }) {
-  const latestIngestionLabel = formatUtcTimestamp(latestIngestionAt);
+  const latestIngestionLabel = formatLocalTimestamp(latestIngestionAt);
   return (
     <section className="landing" id="top" data-screen-label="FDRE Home">
       <div className="ld-topline" />
@@ -82,19 +82,19 @@ export function LandingHero({
         </nav>
 
         <section className="ld-hero">
-          <p className="ld-eyebrow">Point-in-time SEC research infrastructure</p>
+          <p className="ld-eyebrow">SEC filing research as of a selected date</p>
           <h1>
-            Financial evidence,
+            SEC filing research,
             <br />
-            ready to <em>review.</em>
+            with sources <em>included.</em>
           </h1>
           <p className="ld-lede">
-            Search filings, verify every cited claim, and open the original source with the
-            retrieval run that produced it.
+            Search SEC filings, review the passages that support an answer, and open the original
+            source document.
           </p>
           <div className="ld-cta">
             <button type="button" className="ld-btn ld-btn-primary" onClick={onExplore}>
-              Run a verified query
+              Search SEC filings
               <svg
                 className="ld-arr"
                 width="18"
@@ -117,17 +117,17 @@ export function LandingHero({
           <div className="ld-pillars">
             <span className="ld-pillar">
               <span className="n">01</span>
-              <span className="t">Point-in-time controls</span>
+              <span className="t">As-of date controls</span>
             </span>
             <span className="ld-dotsep" />
             <span className="ld-pillar">
               <span className="n">02</span>
-              <span className="t">Citation verification</span>
+              <span className="t">Source citations</span>
             </span>
             <span className="ld-dotsep" />
             <span className="ld-pillar">
               <span className="n">03</span>
-              <span className="t">Reproducible run records</span>
+              <span className="t">Saved research runs</span>
             </span>
           </div>
           <span className="ld-trust">
@@ -135,8 +135,8 @@ export function LandingHero({
             {apiOnline === false
               ? "Data service unavailable"
               : latestIngestionLabel
-                ? `Last successful ingest · ${latestIngestionLabel}`
-                : "Verifying corpus status"}
+                ? `Last successful update · ${latestIngestionLabel}`
+                : "Checking filing data status"}
           </span>
         </div>
       </div>
@@ -144,7 +144,7 @@ export function LandingHero({
   );
 }
 
-function formatUtcTimestamp(value: string | null): string | null {
+function formatLocalTimestamp(value: string | null): string | null {
   if (!value) return null;
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return null;
@@ -155,7 +155,6 @@ function formatUtcTimestamp(value: string | null): string | null {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: "UTC",
     timeZoneName: "short",
   }).format(timestamp);
 }

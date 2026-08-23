@@ -6131,6 +6131,7 @@ main {
   --ld-cream-dim: rgba(244, 241, 232, 0.72);
   --ld-green: #3a8a70;
   --ld-green-glow: #5fae93;
+  --ld-light-x: 60%;
   --ld-serif: var(--font-display), "Newsreader", Georgia, serif;
   --ld-sans: var(--sans);
   --ld-brand-sweep: linear-gradient(
@@ -6142,7 +6143,7 @@ main {
     #5fbf99 92%
   );
   position: relative;
-  min-height: clamp(560px, 80vh, 760px);
+  min-height: clamp(616px, 88vh, 836px);
   overflow: hidden;
   isolation: isolate;
   background: var(--ld-plum-deep);
@@ -6179,7 +6180,7 @@ main {
 }
 .ld-glow {
   position: absolute;
-  left: 56%;
+  left: var(--ld-light-x);
   top: 72%;
   width: 1500px;
   height: 1500px;
@@ -6196,7 +6197,7 @@ main {
 }
 .ld-sun {
   position: absolute;
-  left: 56%;
+  left: var(--ld-light-x);
   top: 72%;
   width: 300px;
   height: 300px;
@@ -6219,7 +6220,7 @@ main {
 }
 .ld-rays {
   position: absolute;
-  left: 56%;
+  left: var(--ld-light-x);
   top: 72%;
   width: 2400px;
   height: 1700px;
@@ -6262,7 +6263,7 @@ main {
   transform: translateY(-50%);
   z-index: 1;
   background: radial-gradient(
-    52% 100% at 56% 50%,
+    52% 100% at var(--ld-light-x) 50%,
     rgba(255, 242, 210, 0.72),
     rgba(255, 222, 168, 0.3) 36%,
     transparent 70%
@@ -6280,7 +6281,7 @@ main {
 }
 .ld-sun-sub {
   position: absolute;
-  left: 56%;
+  left: var(--ld-light-x);
   top: -8px;
   width: 300px;
   height: 200px;
@@ -6301,7 +6302,7 @@ main {
 }
 .ld-reflect {
   position: absolute;
-  left: 56%;
+  left: var(--ld-light-x);
   top: 0;
   width: 170px;
   height: 92%;
@@ -6337,7 +6338,7 @@ main {
   pointer-events: none;
   filter: blur(16px);
   z-index: 2;
-  background: radial-gradient(46% 80% at 56% 55%, rgba(255, 224, 182, 0.24), transparent 72%);
+  background: radial-gradient(46% 80% at var(--ld-light-x) 55%, rgba(255, 224, 182, 0.24), transparent 72%);
   animation: ld-mist 60s ease-in-out infinite alternate;
 }
 @keyframes ld-mist { from { transform: translateX(-3%); } to { transform: translateX(3%); } }
@@ -6373,7 +6374,7 @@ main {
 .ld-wrap {
   position: relative;
   z-index: 10;
-  min-height: clamp(560px, 80vh, 760px);
+  min-height: clamp(616px, 88vh, 836px);
   display: flex;
   flex-direction: column;
   width: min(1320px, calc(100% - 96px));

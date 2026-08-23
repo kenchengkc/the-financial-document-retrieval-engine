@@ -93,11 +93,11 @@ export default function Contact() {
       <main className="contact-main">
         <div className="contact-intro">
           <p className="eyebrow">Contact</p>
-          <h1>Let&rsquo;s talk.</h1>
+          <h1>Get in touch.</h1>
           <p className="contact-lede">
             FDRE is designed and built by <strong>Ken Cheng</strong>. Reach out about the
-            project, the research, or quant/engineering roles. I&rsquo;m happy to walk through the
-            architecture or the data.
+            project, the research, or quantitative research and engineering roles. I&rsquo;m happy to
+            walk through the system design or the data.
           </p>
         </div>
 

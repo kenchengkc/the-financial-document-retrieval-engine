@@ -19,11 +19,11 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://thefdre.com"),
   title: "FDRE | SEC Research Infrastructure",
   description:
-    "Point-in-time SEC filing retrieval, structured financial facts, filing comparisons, and reproducible research exports with verified evidence.",
+    "SEC filing search, financial data, filing comparisons, and historical research exports with cited sources.",
   openGraph: {
     title: "FDRE | SEC Research Infrastructure",
     description:
-      "Auditable SEC retrieval, typed facts, filing changes, and point-in-time research data.",
+      "SEC filing search, reported financial data, filing changes, and historical research data.",
     url: "https://thefdre.com",
     siteName: "FDRE",
     type: "website",

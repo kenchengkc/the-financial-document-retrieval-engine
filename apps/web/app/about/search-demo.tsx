@@ -50,44 +50,44 @@ const SCENES: Scene[] = [
   {
     id: "ask",
     label: "Ask",
-    hint: "Cited answers from filings",
+    hint: "Answers with filing citations",
     icon: MessageSquareText,
-    eyebrow: "Cited answers from filings",
+    eyebrow: "Answers with filing citations",
     title: "Ask",
-    lede: "Retrieve, rerank, and verify filing evidence before answering.",
+    lede: "Search filings, rank relevant passages, and check citations before answering.",
     query:
       "In its latest 10-K, what risks does Apple associate with changes to its supply chain?",
     action: "Ask",
-    processing: "Searching indexed SEC filings",
-    stages: ["Resolve issuer", "Retrieve evidence", "Rerank sources", "Verify citations"],
+    processing: "Searching SEC filings",
+    stages: ["Identify company", "Search filings", "Rank passages", "Check citations"],
     typeQuery: true,
   },
   {
     id: "retrieve",
     label: "Retrieve",
-    hint: "Hybrid search, point-in-time",
+    hint: "Search filing text and data",
     icon: Search,
-    eyebrow: "Normalized XBRL fundamentals",
-    title: "Query reported financials",
-    lede: "Pull standardized filing values with an explicit information cutoff.",
+    eyebrow: "XBRL financial data",
+    title: "Search reported financial data",
+    lede: "Find reported filing values using an as-of date.",
     query: "META",
     action: "Query facts",
-    processing: "Resolving point-in-time facts",
-    stages: ["Resolve issuer", "Apply cutoff", "Normalize values", "Retain provenance"],
+    processing: "Finding historical financial data",
+    stages: ["Identify company", "Apply as-of date", "Standardize values", "Keep source link"],
     typeQuery: true,
   },
   {
     id: "screen",
     label: "Screen",
-    hint: "Cross-sectional theme scan",
+    hint: "Compare company filings",
     icon: ScanSearch,
-    eyebrow: "Cross-sectional theme scan",
+    eyebrow: "Topic search across companies",
     title: "Screen",
-    lede: "Rank issuers by the strength of their disclosure evidence.",
+    lede: "Rank companies by the strength of their filing evidence.",
     query: "data center capacity constraints",
     action: "Scan",
-    processing: "Scanning the filing universe",
-    stages: ["Parse theme", "Search corpus", "Diversify issuers", "Rank results"],
+    processing: "Searching company filings",
+    stages: ["Read topic", "Search filings", "Select companies", "Rank results"],
     typeQuery: true,
   },
   {
@@ -97,11 +97,11 @@ const SCENES: Scene[] = [
     icon: LineChart,
     eyebrow: "Event-study backtests",
     title: "Signals",
-    lede: "Test filing-behavior signals with leakage-safe panels and adjusted inference.",
+    lede: "Test filing-based signals with historical data and adjusted statistical tests.",
     query: "Share issuance → returns",
     action: "Run study",
-    processing: "Replaying the point-in-time study",
-    stages: ["Build panel", "Join forward returns", "Bootstrap inference", "Adjust p-values"],
+    processing: "Replaying the historical study",
+    stages: ["Build dataset", "Add future returns", "Estimate results", "Adjust p-values"],
   },
 ];
 
@@ -167,7 +167,7 @@ function QueryControl({
             <strong>Original filing value</strong>
           </span>
           <span className="bdemo-field cutoff">
-            <small>Information cutoff</small>
+            <small>As-of date</small>
             <strong>2026-04-30</strong>
           </span>
           <span className={`bdemo-action${showThinking ? " busy" : ""}`}>
@@ -221,7 +221,7 @@ function QueryControl({
         </span>
         <span className={`bdemo-action${showThinking ? " busy" : ""}`}>
           {showThinking ? <LoaderCircle className="spin" size={13} /> : <ArrowRight size={13} />}
-          {showThinking ? (scene.id === "screen" ? "Scanning" : "Retrieving") : scene.action}
+          {showThinking ? "Searching" : scene.action}
         </span>
         {clicking && <DemoCursor />}
       </div>
@@ -234,8 +234,8 @@ function QueryControl({
       )}
       {scene.id === "screen" && (
         <div className="bdemo-screen-scope">
-          <span><strong>Universe</strong> S&amp;P 500 · 498 issuers</span>
-          <span><strong>Top issuers</strong> 6</span>
+          <span><strong>Companies</strong> S&amp;P 500 · 498 companies</span>
+          <span><strong>Top companies</strong> 6</span>
         </div>
       )}
     </>
@@ -265,9 +265,9 @@ function ProcessingState({ scene }: { scene: Scene }) {
 
 function AskResult({ scene }: { scene: Scene }) {
   const funnel = [
-    { label: "retrieved", value: "240", width: 100 },
-    { label: "reranked", value: "8", width: 42 },
-    { label: "gate passed", value: "4", width: 22 },
+    { label: "found", value: "240", width: 100 },
+    { label: "ranked", value: "8", width: 42 },
+    { label: "answer check passed", value: "4", width: 22 },
     { label: "cited", value: "2", width: 11 },
   ];
   return (
@@ -309,8 +309,8 @@ function AskResult({ scene }: { scene: Scene }) {
             <strong>89<small>%</small></strong>
           </div>
           <dl>
-            <div><dt>Evidence gate</dt><dd className="ok">Passed</dd></div>
-            <div><dt>Top rerank</dt><dd>0.820</dd></div>
+            <div><dt>Answer check</dt><dd className="ok">Passed</dd></div>
+            <div><dt>Best match score</dt><dd>0.820</dd></div>
             <div><dt>Latency</dt><dd>3.9 s</dd></div>
           </dl>
         </div>
@@ -324,7 +324,7 @@ function AskResult({ scene }: { scene: Scene }) {
           ))}
         </div>
         <div className="bdemo-routes">
-          <span>resolve issuer</span><span>retrieve text</span><span>rerank</span><span>verify citations</span>
+          <span>identify company</span><span>search text</span><span>rank passages</span><span>check citations</span>
         </div>
       </aside>
     </div>
@@ -342,7 +342,7 @@ function RetrieveResult() {
       <div className="bdemo-table-wrap">
         <table>
           <thead>
-            <tr><th>Issuer</th><th>Metric</th><th>Value</th><th>Period</th><th>Available</th><th>Source</th></tr>
+            <tr><th>Company</th><th>Metric</th><th>Value</th><th>Period</th><th>Available</th><th>Source</th></tr>
           </thead>
           <tbody>
             <tr><td><strong>META</strong><small>10-Q</small></td><td>Net income<small>USD</small></td><td className="num">$26.77B</td><td>Q1 2026<small>2026-03-31</small></td><td>2026-04-30</td><td className="mono">0001326801…</td></tr>
@@ -403,7 +403,7 @@ function ScreenResult() {
   return (
     <div className="bdemo-screen-result bdemo-result-in">
       <div className="bdemo-ranked-head">
-        <strong>Ranked issuers</strong>
+        <strong>Ranked companies</strong>
         <span>6 of 498 · 4.1 s</span>
       </div>
       <div className="bdemo-issuer-grid">

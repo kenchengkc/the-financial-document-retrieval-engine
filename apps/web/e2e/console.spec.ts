@@ -63,7 +63,7 @@ async function expectNoBoxOverlap(page: Page, leftSelector: string, rightSelecto
   expect(overlap).toBe(false);
 }
 
-test("runs a point-in-time retrieval and forwards the as-of filter", async ({ page }) => {
+test("runs an as-of filing search and forwards the date filter", async ({ page }) => {
   await mockBase(page);
   let sentBody: { filters?: { as_of?: string } } = {};
   await page.route("**/search", async (route) => {
@@ -89,7 +89,7 @@ test("runs a point-in-time retrieval and forwards the as-of filter", async ({ pa
   await page.getByLabel("As-of date").fill("2026-01-01");
   await page.locator(".retrieve-form button[type=submit]").click();
 
-  await expect(page.locator(".rr-summary")).toContainText("Information cutoff: 2026-01-01");
+  await expect(page.locator(".rr-summary")).toContainText("As-of date: 2026-01-01");
   await expect(page.locator(".retrieve-results .evidence").first()).toBeVisible();
   expect(sentBody.filters?.as_of).toBe("2026-01-01T00:00:00+00:00");
 });
@@ -128,7 +128,7 @@ test("keeps AAPL search controls from overlapping on mobile", async ({ page }) =
   await expectNoHorizontalOverflow(page);
 });
 
-test("renders the coverage universe in the data foundation", async ({ page }) => {
+test("renders the company coverage in data status", async ({ page }) => {
   await mockBase(page);
   let releaseOperations = () => {};
   const operationsPending = new Promise<void>((resolve) => {
@@ -154,11 +154,11 @@ test("renders the coverage universe in the data foundation", async ({ page }) =>
 
   await page.goto("/");
   const foundation = page.locator(".data-foundation");
-  await expect(foundation).toContainText("Data foundation");
+  await expect(foundation).toContainText("Data status");
   await expect(page.locator(".foundation-stat").first()).toContainText("495");
   await expect(page.locator(".foundation-company").first()).toContainText("KKR");
   await expect(
-    page.locator(".foundation-stat").filter({ hasText: "embedding coverage" }).locator("strong"),
+    page.locator(".foundation-stat").filter({ hasText: "vector coverage" }).locator("strong"),
   ).toHaveText("Loading");
   await expect(foundation).not.toContainText("N/A");
   releaseOperations();
@@ -234,10 +234,31 @@ test("uses a fresh foundation snapshot without waking the data service", async (
   const foundation = page.locator(".data-foundation");
   await expect(page.locator(".foundation-stat").first()).toContainText("498");
   await expect(foundation).toContainText("100.0%");
-  await expect(foundation).toContainText("42,236 chunks");
+  await expect(foundation).toContainText("42,236 passages");
   await expect(foundation).not.toContainText("N/A");
   await expect.poll(() => foundationRequests).toBe(0);
   releaseRequests();
+});
+
+test.describe("ingestion timestamp", () => {
+  test.use({ timezoneId: "America/New_York" });
+
+  test("shows timestamps in the viewer's local time zone", async ({ page }) => {
+    await mockBase(page);
+    await page.route("**/operations/quality**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ latest_ingestion_completed_at: "2026-07-16T11:30:33Z" }),
+      }),
+    );
+
+    await page.goto("/");
+    await expect(page.locator(".ld-trust")).toContainText(
+      "Last successful update · Jul 16, 2026, 07:30 EDT",
+    );
+    await expect(page.locator(".ld-trust")).not.toContainText("UTC");
+  });
 });
 
 test("renders the published signal study", async ({ page }) => {
@@ -365,7 +386,7 @@ test("renders the published signal study", async ({ page }) => {
   await expect(page.locator(".panel-intro")).toContainText("rank forward risk");
   await expect(page.locator(".sig-summary").first()).toContainText(/High.low vol/);
 
-  await page.getByRole("tab", { name: "Compare" }).click();
+  await page.getByRole("tab", { name: "Compare", exact: true }).click();
   await expect(page.locator(".monitor-table")).toContainText("Disclosure similarity");
   await page.locator(".feature-library > summary").click();
   await expect(page.locator(".feature-library")).toContainText("Filing-delay surprise");
@@ -415,12 +436,12 @@ test("compares a filing to its point-in-time comparable", async ({ page }) => {
   await page.getByRole("tab", { name: /Retrieve/ }).click();
   await page.getByRole("tab", { name: "Compare filings" }).click();
   await page.getByLabel("Filing accession number").fill("0000320193-25-000079");
-  await page.getByLabel("Comparison information cutoff").fill("2025-12-31");
+  await page.getByLabel("Comparison as-of date").fill("2025-12-31");
   await page.getByRole("button", { name: "Compare filing" }).click();
 
   await expect(page.locator(".delta-stats")).toContainText("Rewritten");
   await expect(page.locator(".delta-change")).toContainText("Item 1A · Risk Factors");
-  await expect(page.locator(".delta-result")).toContainText("point-in-time check passed");
+  await expect(page.locator(".delta-result")).toContainText("as-of date check passed");
   expect(requestUrl).toContain("as_of=2025-12-31T23%3A59%3A59%2B00%3A00");
 });
 
@@ -548,6 +569,6 @@ test("renders live data quality in the data foundation", async ({ page }) => {
   );
 
   await page.goto("/");
-  await expect(page.locator(".foundation-meters")).toContainText("Embedding coverage");
-  await expect(page.locator(".foundation-ops")).toContainText("missing embeddings");
+  await expect(page.locator(".foundation-meters")).toContainText("Vector coverage");
+  await expect(page.locator(".foundation-ops")).toContainText("passages without vectors");
 });

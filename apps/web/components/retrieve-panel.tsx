@@ -113,11 +113,11 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Point-in-time research retrieval</p>
+        <p className="eyebrow">SEC filing search</p>
         <h2>Retrieve</h2>
         <p className="panel-lede">
-          Search filing text, compare disclosures, query normalized financials, or build
-          analysis-ready issuer-period datasets.
+          Search filing text, compare disclosures, look up reported financial data, or export
+          company-period research data.
         </p>
       </div>
 
@@ -161,7 +161,7 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
                 ) : (
                   <ArrowRight size={16} />
                 )}
-                {loading ? "Retrieving" : "Retrieve"}
+                {loading ? "Searching" : "Search"}
               </button>
             </div>
 
@@ -229,7 +229,7 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
                 <span>{formatLatency(result.latency_ms)}</span>
                 <span className={asOf ? "pit-on" : "pit-off"}>
                   <CalendarClock size={13} aria-hidden="true" />
-                  {asOf ? `Information cutoff: ${asOf}` : "Latest available"}
+                  {asOf ? `As-of date: ${asOf}` : "Latest available"}
                 </span>
               </div>
               {result.results.length === 0 ? (
@@ -261,10 +261,9 @@ export function RetrievePanel({ onRun }: { onRun?: (run: SessionRun) => void }) 
           {!result && !error && !loading && (
             <div className="empty-state compact">
               <CalendarClock size={26} />
-              <h3>Run a point-in-time retrieval</h3>
+              <h3>Search filings as of a date</h3>
               <p>
-                Try the same query with and without an as-of date to see lookahead evidence drop
-                out.
+                Use an as-of date to exclude filings that were not available at that time.
               </p>
             </div>
           )}

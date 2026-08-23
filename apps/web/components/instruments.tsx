@@ -125,10 +125,10 @@ export function ScoreGauge({
 export function ScoreRow({ candidate }: { candidate: RetrievalCandidate }) {
   return (
     <div className="scores">
-      <ScoreGauge label="Dense" hint="cosine" value={candidate.dense_score} />
-      <ScoreGauge label="Sparse" hint="lexical" value={candidate.sparse_score} />
-      <ScoreGauge label="Hybrid" hint="fused" value={candidate.hybrid_score} />
-      <ScoreGauge label="Rerank" hint="cross-enc" value={candidate.rerank_score} accent />
+      <ScoreGauge label="Semantic" hint="similarity" value={candidate.dense_score} />
+      <ScoreGauge label="Keyword" hint="text match" value={candidate.sparse_score} />
+      <ScoreGauge label="Combined" hint="search score" value={candidate.hybrid_score} />
+      <ScoreGauge label="Relevance" hint="final rank" value={candidate.rerank_score} accent />
     </div>
   );
 }
@@ -185,7 +185,7 @@ export function EvidenceCard({
         ) : (
           <span className="evidence-score">
             <RankDelta delta={rankDelta} />
-            {score(candidate.rerank_score)} rerank
+            {score(candidate.rerank_score)} relevance
           </span>
         )}
         <ChevronDown size={16} aria-hidden="true" />
@@ -204,8 +204,8 @@ export function EvidenceCard({
   );
 }
 
-/** Rank movement per chunk: hybrid-order rank minus displayed (rerank) rank.
- * Positive = the cross-encoder promoted the passage; negative = demoted. */
+/** Rank movement per chunk: combined-search rank minus displayed relevance rank.
+ * Positive means the relevance model promoted the passage; negative means it demoted it. */
 export function rankDeltas(candidates: RetrievalCandidate[]): Map<number, number> {
   const byHybrid = [...candidates].sort(
     (a, b) => (b.hybrid_score ?? 0) - (a.hybrid_score ?? 0),
@@ -223,7 +223,7 @@ export function RankDelta({ delta }: { delta: number | null | undefined }) {
   if (delta === null || delta === undefined) return null;
   if (delta === 0) {
     return (
-      <span className="rank-delta flat" title="Rerank kept the hybrid position">
+      <span className="rank-delta flat" title="The relevance model kept the combined-search position">
         =
       </span>
     );
@@ -232,7 +232,7 @@ export function RankDelta({ delta }: { delta: number | null | undefined }) {
   return (
     <span
       className={`rank-delta ${up ? "up" : "down"}`}
-      title={`Cross-encoder ${up ? "promoted" : "demoted"} this passage ${Math.abs(delta)} place${Math.abs(delta) === 1 ? "" : "s"} vs hybrid order`}
+      title={`The relevance model ${up ? "promoted" : "demoted"} this passage ${Math.abs(delta)} place${Math.abs(delta) === 1 ? "" : "s"} compared with combined search`}
     >
       {up ? "▲" : "▼"}
       {Math.abs(delta)}
@@ -241,8 +241,8 @@ export function RankDelta({ delta }: { delta: number | null | undefined }) {
 }
 
 /** Set-level analysis of a ranked result list: score decay by rank against the
- * evidence gate, plus composition facts (issuers, sections, date span) and how
- * much the cross-encoder reshuffled the hybrid order. */
+ * answer threshold, plus composition facts (issuers, sections, date span) and how
+ * much the relevance model changed the combined-search order. */
 export function ResultAnalysis({
   candidates,
   gateThreshold = 0.4,
@@ -284,18 +284,18 @@ export function ResultAnalysis({
       v: dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : "N/A",
     },
     {
-      k: "Rerank moved",
+      k: "Ranking changed",
       v: `${shuffled}/${candidates.length}`,
-      title: "Passages whose position changed vs the hybrid-score order",
+      title: "Passages whose position changed from the combined-search order",
     },
   ];
   return (
-    <div className="ranalysis" aria-label="Result-set analysis">
-      <div className="ra-chart" role="img" aria-label="Rerank score by rank position">
+    <div className="ranalysis" aria-label="Search result analysis">
+      <div className="ra-chart" role="img" aria-label="Relevance score by result position">
         <span
           className="ra-gate"
           style={{ bottom: `${gatePct}%` }}
-          data-label={`evidence gate ${gateThreshold.toFixed(2)}`}
+          data-label={`answer threshold ${gateThreshold.toFixed(2)}`}
         />
         {candidates.map((c, i) => {
           const value = c.rerank_score ?? 0;
@@ -305,7 +305,7 @@ export function ResultAnalysis({
               key={c.chunk_id}
               className={`ra-bar${passed ? "" : " below"}`}
               style={{ height: `${Math.max(3, (value / scaleMax) * 100)}%` }}
-              title={`#${i + 1} ${metadataValue(c.metadata.ticker, "?")} · rerank ${value.toFixed(3)}${passed ? "" : " · below gate"}`}
+              title={`#${i + 1} ${metadataValue(c.metadata.ticker, "?")} · relevance ${value.toFixed(3)}${passed ? "" : " · below answer threshold"}`}
             />
           );
         })}
@@ -324,7 +324,7 @@ export function ResultAnalysis({
 
 export function ConfidenceRing({
   value,
-  label = "evidence support score",
+  label = "answer support score",
 }: {
   value: number;
   label?: string;
@@ -356,16 +356,16 @@ export function RetrievalFunnel({
 }) {
   const max = Math.max(retrieved, reranked, cited, 1);
   const stages: { label: string; sub: string; count: number; bar: number; tone?: string }[] = [
-    { label: "Retrieved", sub: "hybrid candidates", count: retrieved, bar: retrieved },
-    { label: "Reranked", sub: "cross-encoder kept", count: reranked, bar: reranked },
+    { label: "Found", sub: "search results", count: retrieved, bar: retrieved },
+    { label: "Ranked", sub: "relevance model kept", count: reranked, bar: reranked },
     {
-      label: gatePassed ? "Gate passed" : "Gate held",
-      sub: "evidence threshold",
+      label: gatePassed ? "Answer check passed" : "Answer check held",
+      sub: "minimum support score",
       count: gatePassed ? reranked : 0,
       bar: gatePassed ? reranked : 0,
       tone: gatePassed ? undefined : "hold",
     },
-    { label: "Cited", sub: "citation-verified", count: cited, bar: cited, tone: "cited" },
+    { label: "Cited", sub: "citation checked", count: cited, bar: cited, tone: "cited" },
   ];
   return (
     <ol className="funnel" aria-label="Retrieval pipeline">
@@ -399,13 +399,13 @@ export function SessionTelemetry({ runs }: { runs: SessionRun[] }) {
     { k: "Grounded", v: `${groundedPct}%` },
     { k: "No answer", v: String(abstained) },
     { k: "Median latency", v: formatLatency(medianLatency) },
-    { k: "Avg top rerank", v: avgTop.toFixed(3) },
+    { k: "Avg best-match score", v: avgTop.toFixed(3) },
   ];
   return (
-    <div className="telemetry" aria-label="Session telemetry">
+    <div className="telemetry" aria-label="Session metrics">
       <span className="tm-title">
         <span className="tm-dot" aria-hidden="true" />
-        Session telemetry
+        Session metrics
       </span>
       <dl className="tm-cells">
         {cells.map((cell) => (

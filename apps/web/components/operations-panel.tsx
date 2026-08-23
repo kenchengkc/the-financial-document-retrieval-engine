@@ -68,7 +68,7 @@ export function OperationsPanel() {
         <div className="notice error" role="alert">
           <CircleAlert size={19} />
           <div>
-            <strong>Could not load the quality report</strong>
+            <strong>Could not load the data status report</strong>
             <p>{error}</p>
           </div>
         </div>
@@ -82,15 +82,15 @@ export function OperationsPanel() {
         <div className="loading-state" role="status">
           <LoaderCircle className="spin" size={24} />
           <div>
-            <h3>Reading the data-quality report</h3>
-            <p>Auditing the production corpus live…</p>
+            <h3>Reading the data status report</h3>
+            <p>Checking the live filing data…</p>
           </div>
           <ScanProgress
             estimateMs={12_000}
             stages={[
               "Connecting to the data service",
-              "Auditing corpus integrity",
-              "Scoring coverage quality",
+              "Checking filing data",
+              "Calculating coverage",
             ]}
           />
         </div>
@@ -101,13 +101,13 @@ export function OperationsPanel() {
   const counts = [
     { k: "Companies", v: report.company_count.toLocaleString() },
     { k: "Filings", v: report.document_count.toLocaleString() },
-    { k: "Chunks", v: report.chunk_count.toLocaleString() },
-    { k: "Embeddings", v: report.embedding_count.toLocaleString() },
+    { k: "Passages", v: report.chunk_count.toLocaleString() },
+    { k: "Vectors", v: report.embedding_count.toLocaleString() },
   ];
 
   const audits = [
-    { k: "Documents without chunks", v: report.documents_without_chunks, bad: report.documents_without_chunks > 0 },
-    { k: "Chunks without embeddings", v: report.chunks_without_embeddings.toLocaleString(), bad: report.chunks_without_embeddings > 0 },
+    { k: "Filings without passages", v: report.documents_without_chunks, bad: report.documents_without_chunks > 0 },
+    { k: "Passages without vectors", v: report.chunks_without_embeddings.toLocaleString(), bad: report.chunks_without_embeddings > 0 },
     { k: "Duplicate accession groups", v: report.duplicate_accession_groups, bad: report.duplicate_accession_groups > 0 },
     { k: "Facts without documents", v: report.facts_without_documents, bad: report.facts_without_documents > 0 },
   ];
@@ -115,14 +115,14 @@ export function OperationsPanel() {
   return (
     <div className="mode-panel">
       <div className="panel-intro">
-        <p className="eyebrow">Data-quality operations</p>
+        <p className="eyebrow">Data status</p>
         <h2>
-          A live corpus audit, read on{" "}
+          Live filing data, checked on{" "}
           <span className="accent">{new Date(report.generated_at).toISOString().slice(0, 10)}</span>
         </h2>
         <p className="panel-lede">
-          Computed on request against the production database: coverage ratios, ingestion health,
-          and integrity checks. Last ingestion {timeAgo(report.latest_ingestion_completed_at)}.
+          Read from the production database: filing coverage, recent updates, and data checks.
+          Last update {timeAgo(report.latest_ingestion_completed_at)}.
         </p>
       </div>
 
@@ -139,18 +139,18 @@ export function OperationsPanel() {
         <section className="ops-card">
           <div className="ops-card-title">
             <GaugeCircle size={16} aria-hidden="true" />
-            <h3>Coverage &amp; freshness</h3>
+            <h3>Coverage and updates</h3>
           </div>
-          <CoverageBar label="Document → chunk coverage" value={report.document_chunk_coverage} />
-          <CoverageBar label="Embedding coverage" value={report.embedding_coverage} />
-          <CoverageBar label="Freshness ratio" value={report.freshness_ratio} />
-          <CoverageBar label="Recent ingestion success" value={report.recent_ingestion_success_rate} />
+          <CoverageBar label="Filings split into passages" value={report.document_chunk_coverage} />
+          <CoverageBar label="Passages with vectors" value={report.embedding_coverage} />
+          <CoverageBar label="Recent filing coverage" value={report.freshness_ratio} />
+          <CoverageBar label="Successful recent updates" value={report.recent_ingestion_success_rate} />
         </section>
 
         <section className="ops-card">
           <div className="ops-card-title">
             <ShieldCheck size={16} aria-hidden="true" />
-            <h3>Integrity audit</h3>
+            <h3>Data checks</h3>
           </div>
           <dl className="ops-audit">
             {audits.map((row) => (
@@ -162,7 +162,7 @@ export function OperationsPanel() {
           </dl>
           <p className="ops-note">
             <Database size={12} aria-hidden="true" />
-            Staleness window: {report.stale_after_days} days
+            Update window: {report.stale_after_days} days
           </p>
         </section>
 
@@ -172,7 +172,7 @@ export function OperationsPanel() {
             <h3>Watchlist</h3>
           </div>
           <div className="ops-watch-block">
-            <span className="ops-watch-label">Stale issuers ({report.stale_tickers.length})</span>
+            <span className="ops-watch-label">Companies needing updates ({report.stale_tickers.length})</span>
             <div className="ops-tags">
               {report.stale_tickers.length ? (
                 report.stale_tickers.map((ticker) => (
@@ -204,7 +204,7 @@ export function OperationsPanel() {
           {report.unchunked_documents?.length ? (
             <div className="ops-watch-block">
               <span className="ops-watch-label">
-                Unchunked filings ({report.unchunked_documents.length})
+                Filings without passages ({report.unchunked_documents.length})
               </span>
               <div className="ops-tags">
                 {report.unchunked_documents.map((item) => (
