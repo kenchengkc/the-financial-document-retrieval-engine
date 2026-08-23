@@ -1,11 +1,20 @@
 import { expect, test } from "@playwright/test";
 
-test("frames the About hero with evidence panels instead of decorative media", async ({ page }) => {
+test("keeps about hero posters visible until both videos are playing", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
       consoleErrors.push(message.text());
     }
+  });
+
+  let releaseVideos!: () => void;
+  const videosReleased = new Promise<void>((resolve) => {
+    releaseVideos = resolve;
+  });
+  await page.route("**/about/*.mp4", async (route) => {
+    await videosReleased;
+    await route.continue();
   });
 
   // Vercel Analytics requests its insights script, which 404s off-Vercel (local/CI);
@@ -16,13 +25,31 @@ test("frames the About hero with evidence panels instead of decorative media", a
 
   await page.goto("/about", { waitUntil: "domcontentloaded" });
 
-  const corpusPanel = page.getByRole("complementary", { name: "Data coverage" });
-  const contractPanel = page.getByRole("complementary", { name: "Answer standard" });
-  await expect(corpusPanel).toContainText("499 / 500");
-  await expect(corpusPanel).toContainText("former members are excluded");
-  await expect(contractPanel).toContainText("Sources first");
-  await expect(contractPanel).toContainText("Check citations or return no answer");
-  await expect(page.locator(".ih-stage video, .ih-stage img")).toHaveCount(0);
+  const leftPanel = page.locator(".ih-panel.left");
+  const rightPanel = page.locator(".ih-panel.right");
+
+  await expect(leftPanel).not.toHaveClass(/video-live/);
+  await expect(rightPanel).not.toHaveClass(/video-live/);
+  await expect(leftPanel.locator(".ih-poster")).toHaveCSS("opacity", "1");
+  await expect(rightPanel.locator(".ih-poster")).toHaveCSS("opacity", "1");
+  await expect(leftPanel.locator(".ih-video")).toHaveCSS("opacity", "0");
+  await expect(rightPanel.locator(".ih-video")).toHaveCSS("opacity", "0");
+
+  releaseVideos();
+
+  await page.waitForFunction(
+    () =>
+      [".ih-stage > .ih-panel.left", ".ih-stage > .ih-panel.right"].every((selector) =>
+        document.querySelector(selector)?.classList.contains("video-live"),
+      ),
+    undefined,
+    { timeout: 15_000 },
+  );
+
+  await expect(leftPanel.locator(".ih-poster")).toHaveCSS("opacity", "0");
+  await expect(rightPanel.locator(".ih-poster")).toHaveCSS("opacity", "0");
+  await expect(leftPanel.locator(".ih-video")).toHaveCSS("opacity", "1");
+  await expect(rightPanel.locator(".ih-video")).toHaveCSS("opacity", "1");
   expect(consoleErrors).toEqual([]);
 });
 
