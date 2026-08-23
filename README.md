@@ -19,7 +19,6 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 - **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF and BM25 were implemented, measured, and rejected for underperforming on this corpus.
 - **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN results before and after.
 - **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
-- **Cheap to build and run.** The entire ~242M-token embedding corpus was built for ≈**$14.60**, and a daily incremental job keeps all 498 issuers current for ~$9/year.
 - **Honest research.** Four point-in-time signal studies (disclosure similarity, risk-factor churn, filing-delay surprise, and cash-conversion earnings quality) with real information coefficients, multiple-testing adjustments, and bootstrap inference, reporting genuine null results, not manufactured alpha.
 
 ## Production Corpus
