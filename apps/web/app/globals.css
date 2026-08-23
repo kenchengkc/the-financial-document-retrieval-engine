@@ -6497,17 +6497,12 @@ main {
 .ld-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 24px;
   padding: 24px 0 28px;
   border-top: 1px solid rgba(244, 241, 232, 0.12);
   margin-top: 34px;
 }
-.ld-pillars { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
-.ld-pillar { display: flex; align-items: baseline; gap: 10px; }
-.ld-pillar .n { font-family: var(--ld-serif); font-size: 15px; color: var(--ld-gold); font-weight: 600; }
-.ld-pillar .t { font: 500 14px var(--ld-sans); color: rgba(244, 241, 232, 0.82); letter-spacing: 0.01em; }
-.ld-dotsep { width: 4px; height: 4px; border-radius: 50%; background: rgba(244, 241, 232, 0.3); }
 .ld-trust {
   display: inline-flex;
   align-items: center;
