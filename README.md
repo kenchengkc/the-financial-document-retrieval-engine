@@ -15,23 +15,23 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Highlights
 
-- **2.7M chunks, one database.** 499 S&P 500 issuers × ~5 years of 10-K/10-Q (2,749 filings, 2.69M parsed chunks, 2.57M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
+- **2.7M chunks, one database.** 498 S&P 500 issuers × ~5 years of 10-K/10-Q (2,762 filings, 2.71M parsed chunks, 2.71M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
 - **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF and BM25 were implemented, measured, and rejected for underperforming on this corpus.
 - **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN results before and after.
 - **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
-- **Cheap to build and run.** The entire ~242M-token embedding corpus was built for ≈**$14.60**, and a daily incremental job keeps all 499 issuers current for ~$9/year.
-- **Honest research.** Three point-in-time signal studies with real information coefficients and bootstrap inference, reporting genuine null results, not manufactured alpha.
+- **Cheap to build and run.** The entire ~242M-token embedding corpus was built for ≈**$14.60**, and a daily incremental job keeps all 498 issuers current for ~$9/year.
+- **Honest research.** Four point-in-time signal studies (disclosure similarity, risk-factor churn, filing-delay surprise, and cash-conversion earnings quality) with real information coefficients, multiple-testing adjustments, and bootstrap inference, reporting genuine null results, not manufactured alpha.
 
 ## Production Corpus
 
-Measured from production on June 30, 2026:
+Measured from production:
 
 | Metric | Value |
 | --- | ---: |
-| S&P 500 primary tickers indexed | 499 / 500 |
-| SEC filings (10-K / 10-Q) | 2,749 |
-| Parsed chunks | 2,694,321 |
-| Embedded chunks | 2,571,371 |
+| S&P 500 primary tickers indexed | 498 / 499 |
+| SEC filings (10-K / 10-Q) | 2,762 |
+| Parsed chunks | 2,712,277 |
+| Embedded chunks | 2,712,277 |
 | Embeddings | Voyage `voyage-4-large`, 512-dim, stored as `halfvec` |
 
 The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026, via
@@ -54,9 +54,9 @@ halves vector storage with no change to retrieval results.
 - Typed Company Facts queries for a restrained canonical metric set.
 - Point-in-time issuer-period panels in JSON, CSV, or Parquet.
 - Provider-neutral filing event studies with leakage checks and persisted experiment manifests.
-- Point-in-time disclosure-change signal studies: a "Lazy Prices" disclosure-similarity
-  replication, a risk-expansion-to-volatility study, and a sector-neutral composite of the
-  three, with quantile portfolios, information coefficients, and bootstrap inference
+- Point-in-time disclosure and fundamental signal studies: a "Lazy Prices" disclosure-similarity
+  replication, a risk-factor churn study, an issuer filing-delay surprise study, and a cash-conversion
+  earnings quality study, with quantile portfolios, information coefficients, and bootstrap inference
   (`GET /research/signal-studies`). The honest finding: the signals are genuinely
   uncorrelated but individually weak, so naive combination is no free lunch.
 - Incremental ingestion, provider backoff, run manifests, and corpus quality audits.
@@ -164,6 +164,7 @@ Core endpoints:
 pytest
 ruff check .
 mypy .
+alembic check
 docker compose config
 
 cd apps/web
