@@ -21,7 +21,7 @@ FDRE is financial research infrastructure, not a generic chatbot or trading syst
 - `scripts/retrieval_pipeline.py`: primary artifact/research CLI.
 - `scripts/ingest_ticker_batch.py`: resumable operational ingestion.
 - `data/sample/`: small deterministic fixtures only.
-- `docs/`: architecture, roadmap, and benchmark report.
+- `docs/`: architecture, roadmap, and benchmark reports.
 
 ## Code
 

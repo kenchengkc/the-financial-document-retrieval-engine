@@ -6,7 +6,7 @@ point-in-time research features, and reproducible event-study inputs.
 [Live service](https://thefdre.com) ·
 [API](https://api.thefdre.com/health) ·
 [Architecture](docs/architecture.md) ·
-[Roadmap](docs/codex_plan.md) ·
+[Roadmap](docs/roadmap.md) ·
 [Benchmark](docs/eval_plan.md) ·
 [Eval results](docs/eval_results.md)
 
@@ -15,9 +15,9 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Highlights
 
-- **2.7M chunks, one database.** 498 S&P 500 issuers × ~5 years of 10-K/10-Q (2,762 filings, 2.71M parsed chunks, 2.71M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
-- **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF and BM25 were implemented, measured, and rejected for underperforming on this corpus.
-- **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN results before and after.
+- **2.7M chunks, one database.** 498 S&P 500 issuers × ~5 years of 10-K/10-Q annual and quarterly filings (2,762 filings, 2.71M parsed chunks, 2.71M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
+- **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF (Reciprocal Rank Fusion) and BM25 (Best Matching 25 lexical ranking) were implemented, measured, and rejected for underperforming on this corpus.
+- **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` (16-bit half-precision vectors) cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN (Approximate Nearest Neighbor) results before and after.
 - **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
 - **Honest research.** Four point-in-time signal studies (disclosure similarity, risk-factor churn, filing-delay surprise, and cash-conversion earnings quality) with real information coefficients, multiple-testing adjustments, and bootstrap inference, reporting genuine null results, not manufactured alpha.
 
@@ -28,7 +28,7 @@ Measured from production:
 | Metric | Value |
 | --- | ---: |
 | S&P 500 primary tickers indexed | 498 / 499 |
-| SEC filings (10-K / 10-Q) | 2,762 |
+| SEC filings (10-K annual / 10-Q quarterly) | 2,762 |
 | Parsed chunks | 2,712,277 |
 | Embedded chunks | 2,712,277 |
 | Embeddings | Voyage `voyage-4-large`, 512-dim, stored as `halfvec` |
@@ -37,10 +37,11 @@ The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026
 chained `sp500-ingest` runs), enabling multi-year point-in-time retrieval and event
 studies. The constituent list is current and therefore survivorship-biased. The one company
 without indexed data is FedEx Freight (`FDXF`), a June 2026 spin-off from FedEx whose EDGAR
-history is still only registration, `8-K`, and insider filings, with no 10-K or 10-Q yet, so
-there is nothing to retrieve until its first quarterly report. Vectors are stored at half
-precision (`halfvec`); the HNSW index already ranks on the half-precision cast, so this
-halves vector storage with no change to retrieval results.
+(Electronic Data Gathering, Analysis, and Retrieval) history is still only registration, `8-K` (material
+event), and insider filings, with no 10-K or 10-Q yet, so there is nothing to retrieve until its first
+quarterly report. Vectors are stored at half precision (`halfvec`); the HNSW (Hierarchical Navigable
+Small World) index already ranks on the half-precision cast, so this halves vector storage with no
+change to retrieval results.
 
 ## What It Does
 
@@ -183,12 +184,16 @@ A labeled, content-grounded benchmark drives the fusion defaults rather than ass
 shares the issuer + section and contains the labeled quote). The ablation is honest about what
 actually helps on this corpus:
 
-| Variant | recall@5 | MRR | nDCG@5 |
+| Variant | Recall@5 | MRR | nDCG@5 |
 | --- | ---: | ---: | ---: |
 | Baseline (single query, weighted fusion) | 0.152 | 0.086 | 0.102 |
 | **Multi-query expansion (shipped default)** | **0.212** | **0.125** | **0.146** |
 
-RRF and BM25-over-pool underperformed on this corpus, so both are opt-in; multi-query expansion
+- **Recall@5**: Proportion of labeled target evidence chunks retrieved within the top 5 candidates.
+- **MRR (Mean Reciprocal Rank)**: The average reciprocal rank ($1/\text{rank}$) of the first relevant chunk found.
+- **nDCG@5 (Normalized Discounted Cumulative Gain)**: Graded ranking quality metric penalizing relevant results appearing further down the list.
+
+RRF (Reciprocal Rank Fusion) and BM25-over-pool underperformed on this corpus, so both are opt-in; multi-query expansion
 (+40% recall) is the shipped default, and neighbor-chunk expansion lifts context recall
 0.212 → 0.242. Reproduce with `python3 -m scripts.benchmark_retrieval`.
 
@@ -197,6 +202,26 @@ A reviewed 120-question (80/40) holdout contract is frozen in
 [`docs/eval_results.md`](docs/eval_results.md): single-name p95 **1.95 s**,
 cross-sectional p95 **1.74 s**, ANN max delta **0.00**, Hybrid holdout Recall@10
 **0.375** (aspirational 0.85 needs human paraphrases).
+
+## Key Abbreviations & Glossary
+
+| Abbreviation / Term | Definition & Context |
+| :--- | :--- |
+| **SEC** | **U.S. Securities and Exchange Commission** — Federal regulator governing securities markets, disclosures, and filing standards. |
+| **10-K / 10-Q / 8-K** | **SEC Filing Types** — `10-K`: Comprehensive annual corporate report; `10-Q`: Unaudited quarterly report; `8-K`: Material current event announcement. |
+| **EDGAR** | **Electronic Data Gathering, Analysis, and Retrieval** — The SEC's public database where corporate filings are submitted, indexed, and retrieved. |
+| **CIK** | **Central Index Key** — A unique 10-digit number assigned by the SEC to identify a specific corporate issuer. |
+| **XBRL** | **eXtensible Business Reporting Language** — Machine-readable standard used in SEC Company Facts for structured financial data and tables. |
+| **GIN** | **Generalized Inverted Index** — PostgreSQL's inverted indexing method for high-performance lexical full-text search (`tsvector`). |
+| **HNSW** | **Hierarchical Navigable Small World** — Graph-based vector index algorithm in `pgvector` for fast approximate nearest neighbor retrieval. |
+| **halfvec** | **16-bit Float Vector (`float16`)** — A compact storage format in `pgvector` that cuts vector storage by half with zero loss in ANN ranking fidelity. |
+| **ANN** | **Approximate Nearest Neighbor** — Vector similarity search that optimizes query speed and scalability over exact linear scan. |
+| **RRF** | **Reciprocal Rank Fusion** — A hybrid ranking algorithm that combines score positions from multiple retrieval algorithms without requiring score normalization. |
+| **BM25** | **Best Matching 25** — A probabilistic term-weighting ranking function commonly used for lexical search. |
+| **MRR** | **Mean Reciprocal Rank** — Information retrieval metric evaluating how high the first relevant document is ranked ($1/\text{rank}$). |
+| **nDCG@k** | **Normalized Discounted Cumulative Gain at rank $k$** — Information retrieval metric measuring ranking quality with position discounts. |
+| **PIT** | **Point-in-Time** — Research data filtered strictly by SEC acceptance timestamps (`accepted_at`), eliminating lookahead bias and future information leakage. |
+| **IC** | **Information Coefficient** — Spearman rank correlation between quantitative signal forecasts and forward realized performance. |
 
 ## Data Policy
 
