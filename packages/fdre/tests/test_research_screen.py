@@ -54,7 +54,6 @@ def _add_quarter(
         token_count=len(text.split()),
         metadata_json={"ticker": company.ticker, "form_type": "10-Q"},
     )
-    document.chunks.append(chunk)
     for metric, concept, value in (
         ("revenue", "Revenues", revenue),
         ("capex", "PaymentsToAcquirePropertyPlantAndEquipment", capex),
