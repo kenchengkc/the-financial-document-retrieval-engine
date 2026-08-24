@@ -146,7 +146,7 @@ def write_multi_k_eval_report(
         f"| Variant | {recall_headers} | MRR | {ndcg_headers} | "
         "Citation precision | Abstention F1 | Entity accuracy | p95 ms | Cost/query |",
         "| --- | "
-        + " | ".join("---:" for _ in range(len(ks) * 2 + 7))
+        + " | ".join("---:" for _ in range(len(ks) * 2 + 6))
         + " |",
     ]
     shared_k = ks[-1]
