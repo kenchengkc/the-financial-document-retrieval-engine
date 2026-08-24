@@ -83,15 +83,27 @@ def evaluate_cross_sectional_outcomes(
         question_count=len(per_question),
         ks=normalized_ks,
         issuer_recall_at_k={
-            k: _mean_metric(ranked_questions, "issuer_recall_at_k", k)
+            k: (
+                mean(metric.issuer_recall_at_k[k] for metric in ranked_questions)
+                if ranked_questions
+                else 0.0
+            )
             for k in normalized_ks
         },
         issuer_precision_at_k={
-            k: _mean_metric(ranked_questions, "issuer_precision_at_k", k)
+            k: (
+                mean(metric.issuer_precision_at_k[k] for metric in ranked_questions)
+                if ranked_questions
+                else 0.0
+            )
             for k in normalized_ks
         },
         evidence_recall_at_k={
-            k: _mean_metric(evidence_questions, "evidence_recall_at_k", k)
+            k: (
+                mean(metric.evidence_recall_at_k[k] for metric in evidence_questions)
+                if evidence_questions
+                else 0.0
+            )
             for k in normalized_ks
         },
         mean_max_issuer_evidence_share=mean(
@@ -203,16 +215,6 @@ def _empty_metrics(ks: tuple[int, ...]) -> CrossSectionalMetrics:
         max_semantic_search_calls=0,
         per_question=(),
     )
-
-
-def _mean_metric(
-    metrics: list[CrossSectionalQuestionMetrics],
-    field: str,
-    k: int,
-) -> float:
-    if not metrics:
-        return 0.0
-    return mean(getattr(metric, field)[k] for metric in metrics)
 
 
 def _normalize_ks(ks: tuple[int, ...]) -> tuple[int, ...]:
