@@ -15,6 +15,7 @@ from fdre.evals.runner import (
     evaluate_variants,
     evaluate_variants_at_ks,
     write_eval_report,
+    write_multi_k_eval_report,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "validate_reviewed_benchmark",
     "write_eval_report",
     "write_jsonl_dataset",
+    "write_multi_k_eval_report",
 ]

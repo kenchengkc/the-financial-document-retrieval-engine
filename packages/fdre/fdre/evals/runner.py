@@ -106,6 +106,68 @@ def write_eval_report(
     return json_path, markdown_path
 
 
+def write_multi_k_eval_report(
+    output_dir: str | Path,
+    metrics_by_k: dict[int, list[VariantMetrics]],
+    *,
+    benchmark_metadata: dict[str, Any] | None = None,
+) -> tuple[Path, Path]:
+    """Write one report for a ranking evaluated at multiple K cutoffs."""
+    if not metrics_by_k:
+        raise ValueError("metrics_by_k must not be empty")
+
+    ks = sorted(metrics_by_k)
+    metrics_lookup = {
+        k: {metric.variant: metric for metric in metrics_by_k[k]}
+        for k in ks
+    }
+    variant_names = [metric.variant for metric in metrics_by_k[ks[0]]]
+    expected_variants = set(variant_names)
+    if any(set(metrics_lookup[k]) != expected_variants for k in ks):
+        raise ValueError("all K cutoffs must contain the same variants")
+
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    json_path = directory / "retrieval_eval.json"
+    markdown_path = directory / "retrieval_eval.md"
+    payload = {
+        "benchmark": benchmark_metadata or {},
+        "ks": ks,
+        "metrics": {
+            str(k): [asdict(metric) for metric in metrics_by_k[k]]
+            for k in ks
+        },
+    }
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+    recall_headers = " | ".join(f"Recall@{k}" for k in ks)
+    ndcg_headers = " | ".join(f"nDCG@{k}" for k in ks)
+    lines = [
+        f"| Variant | {recall_headers} | MRR | {ndcg_headers} | "
+        "Citation precision | Abstention F1 | Entity accuracy | p95 ms | Cost/query |",
+        "| --- | "
+        + " | ".join("---:" for _ in range(len(ks) * 2 + 6))
+        + " |",
+    ]
+    shared_k = ks[-1]
+    for variant in variant_names:
+        shared = metrics_lookup[shared_k][variant]
+        recall_values = " | ".join(
+            f"{metrics_lookup[k][variant].recall_at_k:.3f}" for k in ks
+        )
+        ndcg_values = " | ".join(
+            f"{metrics_lookup[k][variant].ndcg_at_k:.3f}" for k in ks
+        )
+        lines.append(
+            f"| {variant} | {recall_values} | {shared.mrr:.3f} | {ndcg_values} | "
+            f"{shared.citation_precision:.3f} | {shared.abstention_macro_f1:.3f} | "
+            f"{shared.entity_resolution_accuracy:.3f} | {shared.latency_p95_ms:.1f} | "
+            f"${shared.average_provider_cost_usd:.6f} |"
+        )
+    markdown_path.write_text("\n".join(lines) + "\n")
+    return json_path, markdown_path
+
+
 def evaluate_variants_at_ks(
     questions: list[EvalQuestion],
     variants: dict[str, RetrieverVariant],

@@ -22,14 +22,16 @@ from fdre.chunking import rebuild_document_chunks
 from fdre.demo import seed_demo_document
 from fdre.evals.datasets import (
     EvalQuestion,
+    compute_dataset_sha256,
     load_jsonl_dataset,
     validate_reviewed_benchmark,
 )
 from fdre.evals.runner import (
     EvaluationOutcome,
     VariantMetrics,
-    evaluate_variants,
+    evaluate_variants_at_ks,
     write_eval_report,
+    write_multi_k_eval_report,
 )
 from fdre.indexing.embeddings import embedding_provider_from_settings, rebuild_embeddings
 from fdre.ingestion.sec_client import SECClient
@@ -120,6 +122,12 @@ def parse_args() -> argparse.Namespace:
     eval_parser.add_argument("dataset")
     eval_parser.add_argument("--output-dir", default="data/processed/evals")
     eval_parser.add_argument("--k", type=int, default=10)
+    eval_parser.add_argument(
+        "--ks",
+        nargs="+",
+        type=int,
+        help="Evaluate one retrieved ranking at multiple cutoffs; overrides --k",
+    )
     eval_parser.add_argument(
         "--split",
         choices=("development", "holdout", "all"),
@@ -333,29 +341,42 @@ def main() -> None:
 
             require_neon_optin()
             questions = load_jsonl_dataset(args.dataset)
+            dataset_sha256 = compute_dataset_sha256(questions)
             if args.require_reviewed:
                 validate_reviewed_benchmark(questions)
             if args.split != "all":
                 questions = [
                     question for question in questions if question.split == args.split
                 ]
-            metrics = run_retrieval_eval(
+            requested_ks = tuple(args.ks) if args.ks else (args.k,)
+            metrics_by_k = run_retrieval_eval(
                 session,
                 questions=questions,
-                k=args.k,
+                ks=requested_ks,
             )
-            paths = write_eval_report(
-                args.output_dir,
-                metrics,
-                k=args.k,
-                benchmark_metadata=build_benchmark_metadata(
-                    session,
-                    dataset=args.dataset,
-                    split=args.split,
-                    question_count=len(questions),
-                    k=args.k,
-                ),
+            ks = tuple(sorted(metrics_by_k))
+            benchmark_metadata = build_benchmark_metadata(
+                session,
+                dataset=args.dataset,
+                dataset_sha256=dataset_sha256,
+                split=args.split,
+                question_count=len(questions),
+                ks=ks,
             )
+            if args.ks:
+                paths = write_multi_k_eval_report(
+                    args.output_dir,
+                    metrics_by_k,
+                    benchmark_metadata=benchmark_metadata,
+                )
+            else:
+                k = ks[0]
+                paths = write_eval_report(
+                    args.output_dir,
+                    metrics_by_k[k],
+                    k=k,
+                    benchmark_metadata=benchmark_metadata,
+                )
             print({"json": str(paths[0]), "markdown": str(paths[1])})
         elif args.command == "xbrl":
             with SECClient.from_settings() as client:
@@ -451,8 +472,15 @@ def run_retrieval_eval(
     session: Session,
     *,
     questions: list[EvalQuestion],
-    k: int,
-) -> list[VariantMetrics]:
+    ks: tuple[int, ...],
+) -> dict[int, list[VariantMetrics]]:
+    if not ks:
+        raise ValueError("ks must not be empty")
+    if any(k <= 0 for k in ks):
+        raise ValueError("ks must contain positive integers")
+    ks = tuple(sorted(set(ks)))
+    max_k = max(ks)
+
     settings = get_settings()
     provider = embedding_provider_from_settings(settings)
     dense = DenseRetriever(provider)
@@ -475,29 +503,29 @@ def run_retrieval_eval(
                 session,
                 question.question,
                 filters=preprocessed.filters,
-                limit=k,
+                limit=max_k,
             )
         elif variant == "sparse":
             candidates = sparse.search(
                 session,
                 question.question,
                 filters=preprocessed.filters,
-                limit=k,
+                limit=max_k,
             )
         else:
             candidates = hybrid.search(
                 session,
                 question.question,
                 filters=preprocessed.filters,
-                limit=max(k, settings.rerank_top_n),
+                limit=max(max_k, settings.rerank_top_n),
             )
             candidates = (
-                candidates[:k]
+                candidates[:max_k]
                 if variant == "hybrid"
                 else reranker_from_name(settings.reranker_provider).rerank(
                     question.question,
                     candidates,
-                    top_n=k,
+                    top_n=max_k,
                 )
             )
         estimated_tokens = max(1, round(len(question.question.split()) * 1.3))
@@ -515,7 +543,7 @@ def run_retrieval_eval(
             inferred_tickers=tuple(preprocessed.filters.tickers),
         )
 
-    return evaluate_variants(
+    return evaluate_variants_at_ks(
         questions,
         {
             "Dense only": lambda question: retrieve(question, "dense"),
@@ -523,7 +551,7 @@ def run_retrieval_eval(
             "Hybrid": lambda question: retrieve(question, "hybrid"),
             "Hybrid + reranker": lambda question: retrieve(question, "rerank"),
         },
-        k=k,
+        ks=ks,
     )
 
 
@@ -531,9 +559,10 @@ def build_benchmark_metadata(
     session: Session,
     *,
     dataset: str,
+    dataset_sha256: str,
     split: str,
     question_count: int,
-    k: int,
+    ks: tuple[int, ...],
 ) -> dict[str, Any]:
     settings = get_settings()
     document_count = session.scalar(select(func.count()).select_from(Document)) or 0
@@ -547,6 +576,7 @@ def build_benchmark_metadata(
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "dataset": str(dataset),
+        "dataset_sha256": dataset_sha256,
         "split": split,
         "question_count": question_count,
         "corpus_snapshot_id": hashlib.sha256(snapshot_source.encode()).hexdigest()[:16],
@@ -560,7 +590,8 @@ def build_benchmark_metadata(
         "embedding_dimensions": settings.embedding_dimensions,
         "reranker_provider": settings.reranker_provider,
         "reranker_model": settings.reranker_model,
-        "retrieval_k": k,
+        "retrieval_k": max(ks),
+        "retrieval_ks": list(ks),
         "embedding_cost_per_million_tokens": (
             settings.embedding_cost_per_million_tokens
         ),
