@@ -35,6 +35,15 @@ from fdre.research.panel import (
     validate_point_in_time_rows,
     write_research_panel,
 )
+from fdre.research.screen import (
+    ResearchScreenManifest,
+    ResearchScreenPlan,
+    ResearchScreenResponse,
+    ResearchScreenRow,
+    ScreenCondition,
+    ScreenConditionResult,
+    execute_research_screen,
+)
 from fdre.research.thematic import (
     ThematicIssuerResult,
     ThematicScanRequest,
@@ -56,6 +65,12 @@ __all__ = [
     "ResearchPanel",
     "ResearchPanelQuery",
     "ResearchPanelRow",
+    "ResearchScreenManifest",
+    "ResearchScreenPlan",
+    "ResearchScreenResponse",
+    "ResearchScreenRow",
+    "ScreenCondition",
+    "ScreenConditionResult",
     "ThematicIssuerResult",
     "ThematicScanRequest",
     "ThematicScanResponse",
@@ -63,6 +78,7 @@ __all__ = [
     "compare_filing_to_prior",
     "diff_documents",
     "diversify_candidates_by_issuer",
+    "execute_research_screen",
     "load_filing_events",
     "load_market_bars",
     "persist_event_study",
