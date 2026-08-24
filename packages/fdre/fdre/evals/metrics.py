@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Sequence
 from typing import TypeVar
 
@@ -25,6 +26,37 @@ def precision_at_k(
     if k <= 0:
         return 0.0
     return len(set(ranked_ids[:k]) & relevant_ids) / k
+
+
+def issuer_recall_at_k(
+    ranked_tickers: Sequence[str],
+    relevant_tickers: set[str],
+    k: int,
+) -> float:
+    """Recall over unique issuers rather than retrieved passages."""
+    ranked = _unique_normalized_tickers(ranked_tickers)
+    relevant = {_normalize_ticker(ticker) for ticker in relevant_tickers}
+    return recall_at_k(ranked, relevant, k)
+
+
+def issuer_precision_at_k(
+    ranked_tickers: Sequence[str],
+    relevant_tickers: set[str],
+    k: int,
+) -> float:
+    """Precision over unique issuers rather than retrieved passages."""
+    ranked = _unique_normalized_tickers(ranked_tickers)
+    relevant = {_normalize_ticker(ticker) for ticker in relevant_tickers}
+    return precision_at_k(ranked, relevant, k)
+
+
+def max_issuer_evidence_share(evidence_tickers: Sequence[str]) -> float:
+    """Largest issuer share of a returned evidence pool."""
+    normalized = [_normalize_ticker(ticker) for ticker in evidence_tickers]
+    if not normalized:
+        return 0.0
+    counts = Counter(normalized)
+    return max(counts.values()) / len(normalized)
 
 
 def reciprocal_rank(
@@ -92,3 +124,11 @@ def binary_precision_recall_f1(
         else 0.0
     )
     return precision, recall, (positive_f1 + negative_f1) / 2
+
+
+def _unique_normalized_tickers(tickers: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(_normalize_ticker(ticker) for ticker in tickers))
+
+
+def _normalize_ticker(ticker: str) -> str:
+    return ticker.strip().upper()
