@@ -203,9 +203,9 @@ def _empty_metrics(ks: tuple[int, ...]) -> CrossSectionalMetrics:
     return CrossSectionalMetrics(
         question_count=0,
         ks=ks,
-        issuer_recall_at_k={k: 0.0 for k in ks},
-        issuer_precision_at_k={k: 0.0 for k in ks},
-        evidence_recall_at_k={k: 0.0 for k in ks},
+        issuer_recall_at_k=dict.fromkeys(ks, 0.0),
+        issuer_precision_at_k=dict.fromkeys(ks, 0.0),
+        evidence_recall_at_k=dict.fromkeys(ks, 0.0),
         mean_max_issuer_evidence_share=0.0,
         pit_leakage_rate=0.0,
         zero_result_accuracy=None,
