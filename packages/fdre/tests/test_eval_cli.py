@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -137,8 +138,7 @@ def test_run_retrieval_eval_uses_max_k_once_per_variant(
     assert reranker.top_ns == [20]
 
 
-def test_write_multi_k_eval_report(tmp_path: pytest.TempPathFactory) -> None:
-    output_dir = tmp_path.mktemp("eval")
+def test_write_multi_k_eval_report(tmp_path: Path) -> None:
     candidates = [
         RetrievalCandidate(chunk_id=index, text=f"chunk {index}", metadata={})
         for index in range(1, 21)
@@ -150,7 +150,7 @@ def test_write_multi_k_eval_report(tmp_path: pytest.TempPathFactory) -> None:
     )
 
     json_path, markdown_path = write_multi_k_eval_report(
-        output_dir,
+        tmp_path,
         metrics_by_k,
         benchmark_metadata={"dataset_sha256": "abc123"},
     )
