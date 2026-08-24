@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from statistics import mean
 
@@ -27,6 +28,7 @@ class CrossSectionalQuestionMetrics:
     returned_tickers: tuple[str, ...]
     missed_tickers: tuple[str, ...]
     false_positive_tickers: tuple[str, ...]
+    relevant_evidence_count: int
     issuer_recall_at_k: dict[int, float]
     issuer_precision_at_k: dict[int, float]
     evidence_recall_at_k: dict[int, float]
@@ -64,22 +66,12 @@ def evaluate_cross_sectional_outcomes(
         _evaluate_question(outcome, ks=normalized_ks) for outcome in outcomes
     )
     if not per_question:
-        return CrossSectionalMetrics(
-            question_count=0,
-            ks=normalized_ks,
-            issuer_recall_at_k={k: 0.0 for k in normalized_ks},
-            issuer_precision_at_k={k: 0.0 for k in normalized_ks},
-            evidence_recall_at_k={k: 0.0 for k in normalized_ks},
-            mean_max_issuer_evidence_share=0.0,
-            pit_leakage_rate=0.0,
-            zero_result_accuracy=None,
-            latency_p50_ms=0.0,
-            latency_p95_ms=0.0,
-            mean_semantic_search_calls=0.0,
-            max_semantic_search_calls=0,
-            per_question=(),
-        )
+        return _empty_metrics(normalized_ks)
 
+    ranked_questions = [metric for metric in per_question if metric.expected_tickers]
+    evidence_questions = [
+        metric for metric in per_question if metric.relevant_evidence_count > 0
+    ]
     zero_results = [
         metric.zero_result_correct
         for metric in per_question
@@ -91,15 +83,15 @@ def evaluate_cross_sectional_outcomes(
         question_count=len(per_question),
         ks=normalized_ks,
         issuer_recall_at_k={
-            k: mean(metric.issuer_recall_at_k[k] for metric in per_question)
+            k: _mean_metric(ranked_questions, "issuer_recall_at_k", k)
             for k in normalized_ks
         },
         issuer_precision_at_k={
-            k: mean(metric.issuer_precision_at_k[k] for metric in per_question)
+            k: _mean_metric(ranked_questions, "issuer_precision_at_k", k)
             for k in normalized_ks
         },
         evidence_recall_at_k={
-            k: mean(metric.evidence_recall_at_k[k] for metric in per_question)
+            k: _mean_metric(evidence_questions, "evidence_recall_at_k", k)
             for k in normalized_ks
         },
         mean_max_issuer_evidence_share=mean(
@@ -129,13 +121,9 @@ def _evaluate_question(
     expected_set = set(expected)
     returned_set = set(returned)
     evidence_tickers = [
-        row.ticker
-        for row in response.rows
-        for _candidate in row.evidence
+        row.ticker for row in response.rows for _candidate in row.evidence
     ]
-    zero_result_correct = None
-    if not expected:
-        zero_result_correct = not returned
+    zero_result_correct = None if expected else not returned
     return CrossSectionalQuestionMetrics(
         question_id=question.question_id or "",
         task_type=question.resolved_task_type,
@@ -145,6 +133,7 @@ def _evaluate_question(
         false_positive_tickers=tuple(
             ticker for ticker in returned if ticker not in expected_set
         ),
+        relevant_evidence_count=len(question.relevant_evidence),
         issuer_recall_at_k={
             k: issuer_recall_at_k(returned, expected_set, k) for k in ks
         },
@@ -176,7 +165,11 @@ def _evidence_recall_at_k(
             for index, reference in enumerate(question.relevant_evidence):
                 if reference.accession_number != row.accession_number:
                     continue
-                if reference.ticker is not None and _normalize_ticker(reference.ticker) != _normalize_ticker(row.ticker):
+                if (
+                    reference.ticker is not None
+                    and _normalize_ticker(reference.ticker)
+                    != _normalize_ticker(row.ticker)
+                ):
                     continue
                 if reference.content_fingerprint == fingerprint:
                     matched.add(index)
@@ -194,6 +187,34 @@ def _has_pit_leakage(response: ResearchScreenResponse) -> bool:
     )
 
 
+def _empty_metrics(ks: tuple[int, ...]) -> CrossSectionalMetrics:
+    return CrossSectionalMetrics(
+        question_count=0,
+        ks=ks,
+        issuer_recall_at_k={k: 0.0 for k in ks},
+        issuer_precision_at_k={k: 0.0 for k in ks},
+        evidence_recall_at_k={k: 0.0 for k in ks},
+        mean_max_issuer_evidence_share=0.0,
+        pit_leakage_rate=0.0,
+        zero_result_accuracy=None,
+        latency_p50_ms=0.0,
+        latency_p95_ms=0.0,
+        mean_semantic_search_calls=0.0,
+        max_semantic_search_calls=0,
+        per_question=(),
+    )
+
+
+def _mean_metric(
+    metrics: list[CrossSectionalQuestionMetrics],
+    field: str,
+    k: int,
+) -> float:
+    if not metrics:
+        return 0.0
+    return mean(getattr(metric, field)[k] for metric in metrics)
+
+
 def _normalize_ks(ks: tuple[int, ...]) -> tuple[int, ...]:
     if not ks:
         raise ValueError("ks must not be empty")
@@ -202,13 +223,8 @@ def _normalize_ks(ks: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(sorted(set(ks)))
 
 
-def _unique_tickers(tickers: object) -> list[str]:
-    return list(
-        dict.fromkeys(
-            _normalize_ticker(ticker)
-            for ticker in tickers  # type: ignore[union-attr]
-        )
-    )
+def _unique_tickers(tickers: Iterable[str]) -> list[str]:
+    return list(dict.fromkeys(_normalize_ticker(ticker) for ticker in tickers))
 
 
 def _normalize_ticker(ticker: str) -> str:
