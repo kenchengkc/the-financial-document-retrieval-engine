@@ -8,9 +8,11 @@ import pytest
 from fdre.evals.datasets import (
     EvalQuestion,
     EvidenceReference,
+    compute_dataset_sha256,
     evidence_fingerprint,
     load_jsonl_dataset,
     normalize_evidence_text,
+    validate_benchmark,
     validate_reviewed_benchmark,
     write_jsonl_dataset,
 )
@@ -136,3 +138,195 @@ def test_reviewed_benchmark_contract_rejects_incomplete_dataset() -> None:
                 )
             ]
         )
+
+
+# ---------------------------------------------------------------------------
+# Part 1 — task_type, as_of, validate_benchmark, compute_dataset_sha256
+# ---------------------------------------------------------------------------
+
+
+def test_resolved_task_type_falls_back_to_category() -> None:
+    question = EvalQuestion(
+        question="What were Apple's risks?",
+        category="narrative",
+    )
+    assert question.task_type is None
+    assert question.resolved_task_type == "narrative"
+
+
+def test_resolved_task_type_prefers_explicit_task_type() -> None:
+    question = EvalQuestion(
+        question="What changed in Apple's latest 10-K?",
+        category="temporal",
+        task_type="latest_filing",
+    )
+    assert question.resolved_task_type == "latest_filing"
+
+
+def test_as_of_field_optional_and_round_trips() -> None:
+    without = EvalQuestion(question="No temporal constraint")
+    assert without.as_of is None
+
+    with_date = EvalQuestion(
+        question="Apple risks as of June 2024",
+        as_of="2024-06-30",
+    )
+    assert with_date.as_of == "2024-06-30"
+
+    with_datetime = EvalQuestion(
+        question="Apple risks as of midday",
+        as_of="2024-06-30T16:30:00Z",
+    )
+    assert with_datetime.as_of == "2024-06-30T16:30:00Z"
+
+
+def test_new_fields_round_trip_through_jsonl(tmp_path: Path) -> None:
+    questions = [
+        EvalQuestion(
+            question="Latest 10-K risk factors",
+            category="temporal",
+            task_type="latest_filing",
+            as_of="2024-12-31",
+            relevant_chunk_ids=[1],
+            metadata={"reviewed_by": "test"},
+        )
+    ]
+    path = tmp_path / "questions.jsonl"
+    write_jsonl_dataset(path, questions)
+    loaded = load_jsonl_dataset(path)
+    assert loaded[0].task_type == "latest_filing"
+    assert loaded[0].as_of == "2024-12-31"
+    assert loaded[0].resolved_task_type == "latest_filing"
+
+
+def test_legacy_jsonl_without_new_fields_loads_cleanly(tmp_path: Path) -> None:
+    """Records written before v2 fields were added must still parse."""
+    legacy_record = json.dumps(
+        {
+            "question": "What were Apple's revenues?",
+            "split": "development",
+            "category": "narrative",
+            "expected_tickers": ["AAPL"],
+            "relevant_chunk_ids": [42],
+            "metadata": {"reviewed_by": "legacy"},
+        },
+        sort_keys=True,
+    )
+    path = tmp_path / "legacy.jsonl"
+    path.write_text(legacy_record + "\n")
+    loaded = load_jsonl_dataset(path)
+    assert loaded[0].task_type is None
+    assert loaded[0].as_of is None
+    assert loaded[0].resolved_task_type == "narrative"
+
+
+def test_validate_benchmark_accepts_custom_counts() -> None:
+    questions = _make_reviewed_questions(count=6, dev=4, holdout=2)
+    # Should pass with matching constraints
+    validate_benchmark(
+        questions,
+        expected_count=6,
+        expected_splits={"development": 4, "holdout": 2},
+    )
+
+
+def test_validate_benchmark_rejects_wrong_count() -> None:
+    questions = _make_reviewed_questions(count=6, dev=4, holdout=2)
+    with pytest.raises(ValueError, match="expected 10 questions, found 6"):
+        validate_benchmark(questions, expected_count=10)
+
+
+def test_validate_benchmark_rejects_wrong_split() -> None:
+    questions = _make_reviewed_questions(count=6, dev=4, holdout=2)
+    with pytest.raises(ValueError, match="expected 5 development"):
+        validate_benchmark(
+            questions,
+            expected_splits={"development": 5, "holdout": 1},
+        )
+
+
+def test_validate_benchmark_rejects_missing_categories() -> None:
+    questions = _make_reviewed_questions(count=2, dev=1, holdout=1)
+    with pytest.raises(ValueError, match="missing categories"):
+        validate_benchmark(
+            questions,
+            required_categories={"narrative", "table", "legal"},
+        )
+
+
+def test_validate_reviewed_benchmark_still_strict() -> None:
+    """The legacy validator must still reject anything other than 120/80/40."""
+    questions = _make_reviewed_questions(count=6, dev=4, holdout=2)
+    with pytest.raises(ValueError, match="expected 120 questions"):
+        validate_reviewed_benchmark(questions)
+
+
+def test_compute_dataset_sha256_deterministic() -> None:
+    questions = [
+        EvalQuestion(question="Query A", relevant_chunk_ids=[1], metadata={"reviewed_by": "x"}),
+        EvalQuestion(question="Query B", relevant_chunk_ids=[2], metadata={"reviewed_by": "x"}),
+    ]
+    hash_1 = compute_dataset_sha256(questions)
+    hash_2 = compute_dataset_sha256(questions)
+    assert hash_1 == hash_2
+    assert len(hash_1) == 64  # SHA-256 hex digest length
+
+
+def test_compute_dataset_sha256_changes_on_different_content() -> None:
+    base = [
+        EvalQuestion(question="Query A", relevant_chunk_ids=[1], metadata={"reviewed_by": "x"}),
+    ]
+    modified = [
+        EvalQuestion(question="Query B", relevant_chunk_ids=[1], metadata={"reviewed_by": "x"}),
+    ]
+    assert compute_dataset_sha256(base) != compute_dataset_sha256(modified)
+
+
+def test_existing_benchmark_loads_and_validates() -> None:
+    """The real v1 benchmark must still pass unchanged."""
+    benchmark_path = Path("data/evals/retrieval_benchmark.jsonl")
+    if not benchmark_path.exists():
+        pytest.skip("Benchmark file not present in this environment")
+    questions = load_jsonl_dataset(benchmark_path)
+    validate_reviewed_benchmark(questions)
+    # New fields default cleanly
+    for question in questions:
+        assert question.task_type is None
+        assert question.as_of is None
+        assert question.resolved_task_type == question.category
+
+
+# ---------------------------------------------------------------------------
+# Test helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_reviewed_questions(
+    *,
+    count: int,
+    dev: int,
+    holdout: int,
+) -> list[EvalQuestion]:
+    """Build a minimal set of reviewed questions for validator tests."""
+    questions: list[EvalQuestion] = []
+    for i in range(dev):
+        questions.append(
+            EvalQuestion(
+                question=f"Dev question {i}",
+                split="development",
+                category="narrative",
+                relevant_chunk_ids=[i],
+                metadata={"reviewed_by": "test"},
+            )
+        )
+    for i in range(holdout):
+        questions.append(
+            EvalQuestion(
+                question=f"Holdout question {i}",
+                split="holdout",
+                category="narrative",
+                relevant_chunk_ids=[100 + i],
+                metadata={"reviewed_by": "test"},
+            )
+        )
+    return questions

@@ -3,7 +3,9 @@
 from fdre.evals.datasets import (
     EvalQuestion,
     EvidenceReference,
+    compute_dataset_sha256,
     load_jsonl_dataset,
+    validate_benchmark,
     validate_reviewed_benchmark,
     write_jsonl_dataset,
 )
@@ -19,8 +21,10 @@ __all__ = [
     "EvaluationOutcome",
     "EvidenceReference",
     "VariantMetrics",
+    "compute_dataset_sha256",
     "evaluate_variants",
     "load_jsonl_dataset",
+    "validate_benchmark",
     "validate_reviewed_benchmark",
     "write_eval_report",
     "write_jsonl_dataset",

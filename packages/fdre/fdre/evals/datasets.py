@@ -66,12 +66,43 @@ class EvalQuestion(BaseModel):
     should_abstain: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    # v2 fields — all optional for backward compatibility with existing benchmarks.
+    # v2 fields — optional for backward compatibility with existing benchmarks.
+    task_type: str | None = None
+    """Precise retrieval/research operation (e.g. ``latest_filing``,
+    ``comparison``, ``hard_negative``).  Falls back to *category* via
+    :pyattr:`resolved_task_type` when absent."""
+
+    difficulty: str | None = None
+    """``easy``, ``medium``, or ``hard``.  Populated during benchmark
+    curation; left ``None`` on legacy questions."""
+
+    as_of: str | None = None
+    """ISO-8601 date or datetime indicating the point-in-time boundary.
+    Evidence must be available at or before this timestamp."""
+
+    expected_forms: list[str] = Field(default_factory=list)
+    """Expected SEC filing types (e.g. ``["10-K"]``, ``["10-Q"]``)."""
+
+    expected_periods: list[str] = Field(default_factory=list)
+    """Expected fiscal periods (e.g. ``["FY2025"]``, ``["latest"]``)."""
+
     @model_validator(mode="after")
     def assign_question_id(self) -> EvalQuestion:
         if self.question_id is None:
             digest = hashlib.sha256(self.question.encode("utf-8")).hexdigest()[:12]
             self.question_id = f"{self.split}-{digest}"
         return self
+
+    @property
+    def resolved_task_type(self) -> str:
+        """Return *task_type* when set, otherwise fall back to *category*.
+
+        This lets v2 diagnostics slice by precise task taxonomy while
+        preserving historical comparisons by the broader *category* field.
+        """
+        """Return *task_type* when set, otherwise fall back to *category*."""
+        return self.task_type or self.category
 
 
 REQUIRED_BENCHMARK_CATEGORIES = {
@@ -86,18 +117,64 @@ REQUIRED_BENCHMARK_CATEGORIES = {
 }
 
 
-def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
+class BenchmarkMetadata(BaseModel):
+    """Lightweight provenance envelope for a benchmark dataset."""
+
+    benchmark_name: str = "fdre-retrieval"
+    benchmark_version: str = "v1"
+    dataset_sha256: str = ""
+    question_count: int = 0
+    split_counts: dict[str, int] = Field(default_factory=dict)
+    category_counts: dict[str, int] = Field(default_factory=dict)
+    created_at: str = ""
+
+
+def compute_dataset_sha256(questions: list[EvalQuestion]) -> str:
+    """Deterministic SHA-256 of canonical benchmark content.
+
+    Serializes each question to sorted-key JSON, joins with newlines, and
+    hashes. The result is stable across re-serialization as long as the
+    Pydantic model fields and values remain identical.
+    """
+    canonical = "\n".join(
+        json.dumps(question.model_dump(mode="json"), sort_keys=True)
+        for question in questions
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def validate_benchmark(
+    questions: list[EvalQuestion],
+    *,
+    expected_count: int | None = None,
+    expected_splits: dict[str, int] | None = None,
+    required_categories: set[str] | None = None,
+) -> None:
+    """Flexible benchmark validation for v2+ datasets.
+
+    All constraints are optional.  Pass only the invariants that apply to
+    the dataset under test.
+    """
     errors: list[str] = []
-    if len(questions) != 120:
-        errors.append(f"expected 120 questions, found {len(questions)}")
-    development = sum(question.split == "development" for question in questions)
-    holdout = sum(question.split == "holdout" for question in questions)
-    if development != 80 or holdout != 40:
-        errors.append(f"expected 80/40 development/holdout split, found {development}/{holdout}")
-    categories = {question.category for question in questions}
-    missing_categories = REQUIRED_BENCHMARK_CATEGORIES - categories
-    if missing_categories:
-        errors.append(f"missing categories: {', '.join(sorted(missing_categories))}")
+    if expected_count is not None and len(questions) != expected_count:
+        errors.append(f"expected {expected_count} questions, found {len(questions)}")
+    if expected_splits is not None:
+        split_counts: dict[str, int] = {}
+        for question in questions:
+            split_counts[question.split] = split_counts.get(question.split, 0) + 1
+        for split_name, expected in expected_splits.items():
+            actual = split_counts.get(split_name, 0)
+            if actual != expected:
+                errors.append(
+                    f"expected {expected} {split_name} questions, found {actual}"
+                )
+    if required_categories is not None:
+        categories = {question.category for question in questions}
+        missing_categories = required_categories - categories
+        if missing_categories:
+            errors.append(
+                f"missing categories: {', '.join(sorted(missing_categories))}"
+            )
     duplicate_ids = _duplicates(
         question.question_id for question in questions if question.question_id is not None
     )
@@ -111,7 +188,17 @@ def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
         if not question.metadata.get("reviewed_by"):
             errors.append(f"{question.question_id}: missing metadata.reviewed_by")
     if errors:
-        raise ValueError("Invalid reviewed benchmark:\n- " + "\n- ".join(errors))
+        raise ValueError("Invalid benchmark:\n- " + "\n- ".join(errors))
+
+
+def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
+    """Validate the immutable v1 reviewed benchmark contract (120 / 80 / 40)."""
+    validate_benchmark(
+        questions,
+        expected_count=120,
+        expected_splits={"development": 80, "holdout": 40},
+        required_categories=REQUIRED_BENCHMARK_CATEGORIES,
+    )
 
 
 def load_jsonl_dataset(path: str | Path) -> list[EvalQuestion]:
