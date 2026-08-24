@@ -22,7 +22,12 @@ from fdre.evals.metrics import (
     recall_at_k,
     reciprocal_rank,
 )
-from fdre.evals.runner import EvaluationOutcome, evaluate_variants, write_eval_report
+from fdre.evals.runner import (
+    EvaluationOutcome,
+    evaluate_variants,
+    evaluate_variants_at_ks,
+    write_eval_report,
+)
 from fdre.retrieval.query import RetrievalCandidate
 
 
@@ -294,6 +299,115 @@ def test_existing_benchmark_loads_and_validates() -> None:
         assert question.task_type is None
         assert question.as_of is None
         assert question.resolved_task_type == question.category
+
+
+# ---------------------------------------------------------------------------
+# Part 2 — evaluate_variants_at_ks (multi-K evaluation core)
+# ---------------------------------------------------------------------------
+
+
+def _make_ranked_candidates(count: int) -> list[RetrievalCandidate]:
+    """Build a ranking of ``count`` candidates with chunk_ids 1..count."""
+    return [
+        RetrievalCandidate(
+            chunk_id=i,
+            text=f"chunk {i}",
+            metadata={"ticker": "TEST", "section": "Risk Factors"},
+        )
+        for i in range(1, count + 1)
+    ]
+
+
+def test_multi_k_recall_from_single_retrieval() -> None:
+    """Known ranking: relevant items at positions 2 and 7 (1-indexed).
+
+    Recall@5  = 1/2 = 0.5   (only item at rank 2 is within top 5)
+    Recall@10 = 2/2 = 1.0   (both items within top 10)
+    """
+    candidates = _make_ranked_candidates(10)
+    question = EvalQuestion(
+        question="Test question",
+        relevant_chunk_ids=[2, 7],
+    )
+
+    results = evaluate_variants_at_ks(
+        [question],
+        {"test": lambda _q: candidates},
+        ks=(5, 10),
+    )
+
+    assert results[5][0].recall_at_k == 0.5
+    assert results[10][0].recall_at_k == 1.0
+    # MRR is the same regardless of K (first relevant at rank 2)
+    assert results[5][0].mrr == results[10][0].mrr == 0.5
+
+
+def test_retriever_called_once_per_question() -> None:
+    """Each question must be retrieved exactly once, not once per K."""
+    calls = 0
+    candidates = _make_ranked_candidates(20)
+    questions = [
+        EvalQuestion(question=f"Q{i}", relevant_chunk_ids=[1])
+        for i in range(3)
+    ]
+
+    def counting_retriever(_q: EvalQuestion) -> list[RetrievalCandidate]:
+        nonlocal calls
+        calls += 1
+        return candidates
+
+    evaluate_variants_at_ks(
+        questions,
+        {"test": counting_retriever},
+        ks=(5, 10, 20),
+    )
+
+    assert calls == len(questions)  # not len(questions) * 3
+
+
+def test_evaluate_variants_delegates_to_at_ks() -> None:
+    """evaluate_variants(..., k=N) must produce identical results to
+    evaluate_variants_at_ks(..., ks=(N,))[N]."""
+    candidates = _make_ranked_candidates(10)
+    questions = [
+        EvalQuestion(question="Test", relevant_chunk_ids=[3]),
+    ]
+
+    def retrieve(_q: EvalQuestion) -> list[RetrievalCandidate]:
+        return candidates
+
+    old = evaluate_variants(questions, {"test": retrieve}, k=5)
+    new = evaluate_variants_at_ks(questions, {"test": retrieve}, ks=(5,))[5]
+
+    assert old == new
+
+
+def test_evaluate_variants_at_ks_rejects_empty_ks() -> None:
+    with pytest.raises(ValueError, match="ks must not be empty"):
+        evaluate_variants_at_ks([], {}, ks=())
+
+
+def test_evaluate_variants_at_ks_rejects_non_positive_ks() -> None:
+    with pytest.raises(ValueError, match="ks must contain positive integers"):
+        evaluate_variants_at_ks([], {}, ks=(0, 5))
+    with pytest.raises(ValueError, match="ks must contain positive integers"):
+        evaluate_variants_at_ks([], {}, ks=(-1, 10))
+
+
+def test_evaluate_variants_at_ks_deduplicates_ks() -> None:
+    """ks=(10, 5, 10) should behave as (5, 10)."""
+    candidates = _make_ranked_candidates(10)
+    questions = [
+        EvalQuestion(question="Test", relevant_chunk_ids=[1]),
+    ]
+
+    results = evaluate_variants_at_ks(
+        questions,
+        {"test": lambda _q: candidates},
+        ks=(10, 5, 10),
+    )
+
+    assert sorted(results.keys()) == [5, 10]
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from fdre.evals.runner import (
     EvaluationOutcome,
     VariantMetrics,
     evaluate_variants,
+    evaluate_variants_at_ks,
     write_eval_report,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "VariantMetrics",
     "compute_dataset_sha256",
     "evaluate_variants",
+    "evaluate_variants_at_ks",
     "load_jsonl_dataset",
     "validate_benchmark",
     "validate_reviewed_benchmark",

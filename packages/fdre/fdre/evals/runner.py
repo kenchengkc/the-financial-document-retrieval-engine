@@ -67,10 +67,7 @@ def evaluate_variants(
     *,
     k: int = 5,
 ) -> list[VariantMetrics]:
-    return [
-        _evaluate_variant(name, questions, retrieve, k=k)
-        for name, retrieve in variants.items()
-    ]
+    return evaluate_variants_at_ks(questions, variants, ks=(k,))[k]
 
 
 def write_eval_report(
@@ -109,48 +106,70 @@ def write_eval_report(
     return json_path, markdown_path
 
 
-def _evaluate_variant(
+def evaluate_variants_at_ks(
+    questions: list[EvalQuestion],
+    variants: dict[str, RetrieverVariant],
+    *,
+    ks: tuple[int, ...] = (5, 10, 20),
+) -> dict[int, list[VariantMetrics]]:
+    """Evaluate retriever variants at multiple K cutoffs.
+
+    Each query is retrieved **once** per variant.  The same ranked result
+    list is then scored at every requested K.
+
+    Returns ``{k: [VariantMetrics, ...]}`` — one ``VariantMetrics`` per
+    variant at each K.
+    """
+    if not ks:
+        raise ValueError("ks must not be empty")
+    if any(k <= 0 for k in ks):
+        raise ValueError("ks must contain positive integers")
+    ks = tuple(sorted(set(ks)))
+
+    results: dict[int, list[VariantMetrics]] = {k: [] for k in ks}
+    for name, retrieve in variants.items():
+        per_k = _evaluate_variant_at_ks(name, questions, retrieve, ks=ks)
+        for k in ks:
+            results[k].append(per_k[k])
+    return results
+
+
+def _evaluate_variant_at_ks(
     name: str,
     questions: list[EvalQuestion],
     retrieve: RetrieverVariant,
     *,
-    k: int,
-) -> VariantMetrics:
-    if not questions:
-        return VariantMetrics(
-            name,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0,
-        )
+    ks: tuple[int, ...],
+) -> dict[int, VariantMetrics]:
 
-    recalls: list[float] = []
-    precisions: list[float] = []
+    if not questions:
+        return {
+            k: VariantMetrics(
+                name, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+            )
+            for k in ks
+        }
+
+    # Per-K accumulators
+    recalls: dict[int, list[float]] = {k: [] for k in ks}
+    precisions: dict[int, list[float]] = {k: [] for k in ks}
+    ndcgs: dict[int, list[float]] = {k: [] for k in ks}
+    section_hits: dict[int, list[float]] = {k: [] for k in ks}
+    ticker_hits: dict[int, list[float]] = {k: [] for k in ks}
+    table_recalls: dict[int, list[float]] = {k: [] for k in ks}
+
+    # K-independent accumulators
     reciprocal_ranks: list[float] = []
-    ndcgs: list[float] = []
-    section_hits: list[float] = []
-    ticker_hits: list[float] = []
-    table_recalls: list[float] = []
     citation_precisions: list[float] = []
     abstention_expected: list[bool] = []
     abstention_predicted: list[bool] = []
     entity_hits: list[float] = []
     latencies: list[float] = []
     provider_costs: list[float] = []
+
     for question in questions:
+        # Retrieve ONCE
         retrieved = retrieve(question)
         outcome = (
             retrieved
@@ -159,34 +178,42 @@ def _evaluate_variant(
         )
         candidates = outcome.candidates
         ranked_ids, relevant_ids = _evidence_labels(question, candidates)
-        recalls.append(recall_at_k(ranked_ids, relevant_ids, k))
-        precisions.append(precision_at_k(ranked_ids, relevant_ids, k))
+
+        # MRR — independent of K
         reciprocal_ranks.append(reciprocal_rank(ranked_ids, relevant_ids))
-        ndcgs.append(ndcg_at_k(ranked_ids, relevant_ids, k))
-        returned_sections = {
-            str(candidate.metadata.get("section"))
-            for candidate in candidates[:k]
-            if candidate.metadata.get("section")
-        }
-        returned_tickers = {
-            str(candidate.metadata.get("ticker"))
-            for candidate in candidates[:k]
-            if candidate.metadata.get("ticker")
-        }
-        section_hits.append(
-            float(
-                not question.expected_sections
-                or bool(returned_sections & set(question.expected_sections))
+
+        # Score at each K cutoff from the same ranking
+        for k in ks:
+            recalls[k].append(recall_at_k(ranked_ids, relevant_ids, k))
+            precisions[k].append(precision_at_k(ranked_ids, relevant_ids, k))
+            ndcgs[k].append(ndcg_at_k(ranked_ids, relevant_ids, k))
+
+            returned_sections = {
+                str(candidate.metadata.get("section"))
+                for candidate in candidates[:k]
+                if candidate.metadata.get("section")
+            }
+            returned_tickers = {
+                str(candidate.metadata.get("ticker"))
+                for candidate in candidates[:k]
+                if candidate.metadata.get("ticker")
+            }
+            section_hits[k].append(
+                float(
+                    not question.expected_sections
+                    or bool(returned_sections & set(question.expected_sections))
+                )
             )
-        )
-        ticker_hits.append(
-            float(
-                not question.expected_tickers
-                or bool(returned_tickers & set(question.expected_tickers))
+            ticker_hits[k].append(
+                float(
+                    not question.expected_tickers
+                    or bool(returned_tickers & set(question.expected_tickers))
+                )
             )
-        )
-        if question.answer_type == "table":
-            table_recalls.append(recall_at_k(ranked_ids, relevant_ids, k))
+            if question.answer_type == "table":
+                table_recalls[k].append(recall_at_k(ranked_ids, relevant_ids, k))
+
+        # K-independent metrics
         expected_citations = {
             _reference_label(reference) for reference in question.relevant_evidence
         }
@@ -212,25 +239,37 @@ def _evaluate_variant(
         abstention_predicted,
     )
 
-    return VariantMetrics(
-        variant=name,
-        recall_at_k=_mean(recalls),
-        precision_at_k=_mean(precisions),
-        mrr=_mean(reciprocal_ranks),
-        ndcg_at_k=_mean(ndcgs),
-        section_hit_rate=_mean(section_hits),
-        ticker_filter_accuracy=_mean(ticker_hits),
-        table_recall_at_k=_mean(table_recalls),
-        citation_precision=_mean(citation_precisions),
-        abstention_precision=abstention_precision,
-        abstention_recall=abstention_recall,
-        abstention_macro_f1=abstention_f1,
-        entity_resolution_accuracy=_mean(entity_hits),
-        latency_p50_ms=median(latencies),
-        latency_p95_ms=_percentile(latencies, 0.95),
-        average_provider_cost_usd=_mean(provider_costs),
-        question_count=len(questions),
-    )
+    # Shared K-independent aggregates
+    mrr = _mean(reciprocal_ranks)
+    citation_prec = _mean(citation_precisions)
+    entity_acc = _mean(entity_hits)
+    lat_p50 = median(latencies)
+    lat_p95 = _percentile(latencies, 0.95)
+    avg_cost = _mean(provider_costs)
+    count = len(questions)
+
+    return {
+        k: VariantMetrics(
+            variant=name,
+            recall_at_k=_mean(recalls[k]),
+            precision_at_k=_mean(precisions[k]),
+            mrr=mrr,
+            ndcg_at_k=_mean(ndcgs[k]),
+            section_hit_rate=_mean(section_hits[k]),
+            ticker_filter_accuracy=_mean(ticker_hits[k]),
+            table_recall_at_k=_mean(table_recalls[k]),
+            citation_precision=citation_prec,
+            abstention_precision=abstention_precision,
+            abstention_recall=abstention_recall,
+            abstention_macro_f1=abstention_f1,
+            entity_resolution_accuracy=entity_acc,
+            latency_p50_ms=lat_p50,
+            latency_p95_ms=lat_p95,
+            average_provider_cost_usd=avg_cost,
+            question_count=count,
+        )
+        for k in ks
+    }
 
 
 def _mean(values: list[float]) -> float:
