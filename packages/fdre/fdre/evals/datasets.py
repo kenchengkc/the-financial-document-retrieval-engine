@@ -66,26 +66,15 @@ class EvalQuestion(BaseModel):
     should_abstain: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    # v2 fields — all optional for backward compatibility with existing benchmarks.
     # v2 fields — optional for backward compatibility with existing benchmarks.
     task_type: str | None = None
     """Precise retrieval/research operation (e.g. ``latest_filing``,
     ``comparison``, ``hard_negative``).  Falls back to *category* via
     :pyattr:`resolved_task_type` when absent."""
 
-    difficulty: str | None = None
-    """``easy``, ``medium``, or ``hard``.  Populated during benchmark
-    curation; left ``None`` on legacy questions."""
-
     as_of: str | None = None
     """ISO-8601 date or datetime indicating the point-in-time boundary.
     Evidence must be available at or before this timestamp."""
-
-    expected_forms: list[str] = Field(default_factory=list)
-    """Expected SEC filing types (e.g. ``["10-K"]``, ``["10-Q"]``)."""
-
-    expected_periods: list[str] = Field(default_factory=list)
-    """Expected fiscal periods (e.g. ``["FY2025"]``, ``["latest"]``)."""
 
     @model_validator(mode="after")
     def assign_question_id(self) -> EvalQuestion:
@@ -96,11 +85,6 @@ class EvalQuestion(BaseModel):
 
     @property
     def resolved_task_type(self) -> str:
-        """Return *task_type* when set, otherwise fall back to *category*.
-
-        This lets v2 diagnostics slice by precise task taxonomy while
-        preserving historical comparisons by the broader *category* field.
-        """
         """Return *task_type* when set, otherwise fall back to *category*."""
         return self.task_type or self.category
 
@@ -115,18 +99,6 @@ REQUIRED_BENCHMARK_CATEGORIES = {
     "filters",
     "abstention",
 }
-
-
-class BenchmarkMetadata(BaseModel):
-    """Lightweight provenance envelope for a benchmark dataset."""
-
-    benchmark_name: str = "fdre-retrieval"
-    benchmark_version: str = "v1"
-    dataset_sha256: str = ""
-    question_count: int = 0
-    split_counts: dict[str, int] = Field(default_factory=dict)
-    category_counts: dict[str, int] = Field(default_factory=dict)
-    created_at: str = ""
 
 
 def compute_dataset_sha256(questions: list[EvalQuestion]) -> str:
