@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from apps.api.app.models import Chunk, Company, Document
 from fdre.research.panel import (
     FEATURE_VERSION,
-    ResearchPanelRow,
     ResearchPanelQuery,
+    ResearchPanelRow,
     build_research_panel,
 )
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
@@ -172,7 +172,10 @@ def execute_research_screen(
                 else []
             ),
             form_types=[form.upper() for form in plan.form_types],
-            accepted_at_from=min(row.available_at for row in survivor_rows),
+            accepted_at_from=_aware_datetime(
+                min(row.available_at for row in survivor_rows),
+                reference=plan.as_of,
+            ),
             accepted_at_to=plan.as_of,
             as_of=plan.as_of,
             amendment_policy="exclude",
@@ -232,7 +235,10 @@ def execute_research_screen(
     rows.sort(key=lambda item: _rank_key(item, descending=plan.descending))
     rows = rows[: plan.limit]
     max_information_timestamp = max(
-        (row.max_source_available_at for row in latest_rows.values()),
+        (
+            _aware_datetime(row.max_source_available_at, reference=plan.as_of)
+            for row in latest_rows.values()
+        ),
         default=None,
     )
     if max_information_timestamp is not None and max_information_timestamp > plan.as_of:
@@ -373,6 +379,12 @@ def _rank_key(
     missing = row.rank_value is None
     value = row.rank_value or 0.0
     return (missing, -value if descending else value, row.ticker)
+
+
+def _aware_datetime(value: datetime, *, reference: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=reference.tzinfo)
+    return value
 
 
 def _plan_hash(plan: ResearchScreenPlan) -> str:
