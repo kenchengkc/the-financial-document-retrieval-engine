@@ -1,5 +1,11 @@
 """Retrieval evaluation datasets, metrics, and runner."""
 
+from fdre.evals.cross_sectional import (
+    CrossSectionalMetrics,
+    CrossSectionalOutcome,
+    CrossSectionalQuestionMetrics,
+    evaluate_cross_sectional_outcomes,
+)
 from fdre.evals.datasets import (
     EvalQuestion,
     EvidenceReference,
@@ -19,11 +25,15 @@ from fdre.evals.runner import (
 )
 
 __all__ = [
+    "CrossSectionalMetrics",
+    "CrossSectionalOutcome",
+    "CrossSectionalQuestionMetrics",
     "EvalQuestion",
     "EvaluationOutcome",
     "EvidenceReference",
     "VariantMetrics",
     "compute_dataset_sha256",
+    "evaluate_cross_sectional_outcomes",
     "evaluate_variants",
     "evaluate_variants_at_ks",
     "load_jsonl_dataset",
