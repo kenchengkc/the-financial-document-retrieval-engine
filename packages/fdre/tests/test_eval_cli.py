@@ -4,9 +4,11 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from scripts import retrieval_pipeline
+from sqlalchemy.orm import Session
 
 from fdre.evals.datasets import EvalQuestion
 from fdre.evals.runner import evaluate_variants_at_ks, write_multi_k_eval_report
@@ -126,7 +128,7 @@ def test_run_retrieval_eval_uses_max_k_once_per_variant(
     )
 
     results = retrieval_pipeline.run_retrieval_eval(
-        object(),
+        cast(Session, object()),
         questions=[EvalQuestion(question="test", relevant_chunk_ids=[1])],
         ks=(5, 10, 20),
     )
@@ -184,7 +186,7 @@ def test_build_benchmark_metadata_records_hash_and_cutoffs(
     monkeypatch.setattr(retrieval_pipeline, "_git_sha", lambda: "deadbeef")
 
     metadata = retrieval_pipeline.build_benchmark_metadata(
-        FakeSession([10, 20, 20]),
+        cast(Session, FakeSession([10, 20, 20])),
         dataset="benchmark.jsonl",
         dataset_sha256="abc123",
         split="development",
