@@ -53,6 +53,28 @@ class EvidenceReference(BaseModel):
         return self
 
 
+def evidence_reference_matches(
+    reference: EvidenceReference,
+    *,
+    accession_number: str,
+    section: str | None,
+    text: str,
+) -> bool:
+    """Match reviewed excerpt evidence against a returned filing passage."""
+    reference_section = normalize_evidence_text(reference.section or "")
+    candidate_section = normalize_evidence_text(section or "")
+    section_ok = (
+        not reference_section
+        or not candidate_section
+        or candidate_section == reference_section
+    )
+    return (
+        accession_number == reference.accession_number
+        and section_ok
+        and reference.normalized_quote in normalize_evidence_text(text)
+    )
+
+
 class EvalQuestion(BaseModel):
     question_id: str | None = None
     question: str
