@@ -112,5 +112,6 @@ Holdout construction used only the PIT research panel and direct chunks from the
 selected filing. It did **not** execute `execute_research_screen`, `/research/screen`,
 `/search`, hybrid retrieval, embeddings, or reranking. The holdout manifest therefore
 records `status: sealed` and `evaluation_status: never_run`. Part 7.5 is the first permitted
-benchmark execution. Any label/content change after that first run requires a new benchmark
+benchmark execution, and the CLI requires the explicit `--allow-sealed-holdout` flag for
+that deliberate first run. Any label/content change after that first run requires a new benchmark
 version rather than editing v2 in place.
