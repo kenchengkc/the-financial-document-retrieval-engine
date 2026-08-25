@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from fdre.evals.cross_sectional import (
     CrossSectionalOutcome,
     evaluate_cross_sectional_outcomes,
+)
+from fdre.evals.cross_sectional_reporting import (
+    slice_cross_sectional_metrics_by_task,
+    write_cross_sectional_eval_report,
 )
 from fdre.evals.datasets import EvalQuestion, EvidenceReference
 from fdre.evals.metrics import (
@@ -216,3 +222,152 @@ def test_cross_sectional_evaluator_validates_cutoffs() -> None:
         evaluate_cross_sectional_outcomes([], ks=())
     with pytest.raises(ValueError, match="positive integers"):
         evaluate_cross_sectional_outcomes([], ks=(0, 5))
+
+
+def test_cross_sectional_reporting_slices_tasks_and_writes_deterministic_artifacts(
+    tmp_path: Path,
+) -> None:
+    semantic_question = EvalQuestion(
+        question_id="semantic-001",
+        question="Find the issuer with AI capex disclosure.",
+        category="cross_sectional",
+        task_type="semantic_screen",
+        expected_tickers=["AAA"],
+        relevant_evidence=[
+            EvidenceReference.from_quote(
+                accession_number="aaa-2026-q1",
+                ticker="AAA",
+                quote="AI capex evidence",
+            )
+        ],
+        metadata={"reviewed_by": "test"},
+    )
+    structured_question = EvalQuestion(
+        question_id="structured-001",
+        question="Find the issuer passing the structured condition.",
+        category="cross_sectional",
+        task_type="structured_screen",
+        expected_tickers=["BBB"],
+        metadata={"reviewed_by": "test"},
+    )
+    zero_question = EvalQuestion(
+        question_id="negative-001",
+        question="Return no issuers for the negative control.",
+        category="cross_sectional",
+        task_type="hard_negative",
+        expected_tickers=[],
+        metadata={"reviewed_by": "test"},
+    )
+    metrics = evaluate_cross_sectional_outcomes(
+        [
+            CrossSectionalOutcome(
+                question=semantic_question,
+                response=_response(
+                    [
+                        _row(
+                            ticker="AAA",
+                            accession="aaa-2026-q1",
+                            text="AI capex evidence",
+                            score=0.9,
+                        )
+                    ],
+                    latency_ms=100,
+                    semantic_search_calls=1,
+                ),
+            ),
+            CrossSectionalOutcome(
+                question=structured_question,
+                response=_response(
+                    [
+                        _row(
+                            ticker="CCC",
+                            accession="ccc-2026-q1",
+                            text="False positive",
+                            score=0.8,
+                        )
+                    ],
+                    latency_ms=300,
+                    semantic_search_calls=0,
+                ),
+            ),
+            CrossSectionalOutcome(
+                question=zero_question,
+                response=_response([], latency_ms=50, semantic_search_calls=0),
+            ),
+        ],
+        ks=(1, 2),
+    )
+
+    slices = slice_cross_sectional_metrics_by_task(metrics)
+    assert list(slices) == ["hard_negative", "semantic_screen", "structured_screen"]
+    assert slices["semantic_screen"].issuer_recall_at_k == {1: 1.0, 2: 1.0}
+    assert slices["structured_screen"].issuer_recall_at_k == {1: 0.0, 2: 0.0}
+    assert slices["hard_negative"].zero_result_accuracy == 1.0
+    assert slices["semantic_screen"].mean_semantic_search_calls == 1.0
+    assert slices["structured_screen"].mean_semantic_search_calls == 0.0
+
+    metadata = {
+        "corpus_snapshot_id": "snapshot-1",
+        "dataset_sha256": "abc123",
+        "git_sha": "deadbeef",
+    }
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_paths = write_cross_sectional_eval_report(
+        first_dir,
+        metrics,
+        benchmark_metadata=metadata,
+    )
+    second_paths = write_cross_sectional_eval_report(
+        second_dir,
+        metrics,
+        benchmark_metadata=metadata,
+    )
+
+    assert [path.name for path in first_paths] == [
+        "cross_sectional_eval.json",
+        "cross_sectional_eval.md",
+        "cross_sectional_per_query.jsonl",
+    ]
+    for first, second in zip(first_paths, second_paths, strict=True):
+        assert first.read_text() == second.read_text()
+
+    payload = json.loads(first_paths[0].read_text())
+    assert payload["metadata"] == metadata
+    assert payload["overall"]["question_count"] == 3
+    assert payload["overall"]["issuer_recall_at_k"] == {"1": 0.5, "2": 0.5}
+    assert payload["by_task_type"]["semantic_screen"]["issuer_recall_at_k"] == {
+        "1": 1.0,
+        "2": 1.0,
+    }
+    assert payload["by_task_type"]["hard_negative"]["zero_result_accuracy"] == 1.0
+
+    per_query = [json.loads(line) for line in first_paths[2].read_text().splitlines()]
+    assert [record["question_id"] for record in per_query] == [
+        "semantic-001",
+        "structured-001",
+        "negative-001",
+    ]
+    assert per_query[1]["missed_tickers"] == ["BBB"]
+    assert per_query[1]["false_positive_tickers"] == ["CCC"]
+
+    markdown = first_paths[1].read_text()
+    assert "FDRE Cross-Sectional Evaluation" in markdown
+    assert "Issuer Recall" in markdown
+    assert "PIT leakage" in markdown
+    assert "semantic_screen" in markdown
+    assert "structured_screen" in markdown
+    assert "hard_negative" in markdown
+
+
+def test_cross_sectional_reporting_handles_empty_metrics(tmp_path: Path) -> None:
+    metrics = evaluate_cross_sectional_outcomes([], ks=(5, 10))
+
+    assert slice_cross_sectional_metrics_by_task(metrics) == {}
+    paths = write_cross_sectional_eval_report(tmp_path, metrics)
+
+    payload = json.loads(paths[0].read_text())
+    assert payload["overall"]["question_count"] == 0
+    assert payload["by_task_type"] == {}
+    assert paths[2].read_text() == ""
+    assert "No task slices available." in paths[1].read_text()

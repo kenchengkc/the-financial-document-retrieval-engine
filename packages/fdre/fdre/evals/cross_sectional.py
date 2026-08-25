@@ -65,6 +65,19 @@ def evaluate_cross_sectional_outcomes(
     per_question = tuple(
         _evaluate_question(outcome, ks=normalized_ks) for outcome in outcomes
     )
+    return aggregate_cross_sectional_question_metrics(
+        per_question,
+        ks=normalized_ks,
+    )
+
+
+def aggregate_cross_sectional_question_metrics(
+    metrics: Iterable[CrossSectionalQuestionMetrics],
+    *,
+    ks: tuple[int, ...],
+) -> CrossSectionalMetrics:
+    normalized_ks = _normalize_ks(ks)
+    per_question = tuple(metrics)
     if not per_question:
         return _empty_metrics(normalized_ks)
 
