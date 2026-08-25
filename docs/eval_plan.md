@@ -99,3 +99,18 @@ that new holdout must remain sealed until the final v2 evaluation stage.
 Generated questions and development results must not be reported as holdout performance.
 The 33-query content-grounded ablation in the README remains the primary retrieval-quality
 signal until holdout labels are human-paraphrased.
+
+
+## Cross-Sectional v2 sealed holdout (Part 7.4)
+
+The v2 holdout is frozen at `data/evals/cross_sectional_benchmark.v2.holdout.jsonl`.
+It contains 14 newly reviewed holdout questions with no question-ID or gold-issuer overlap
+with the 28-case development benchmark. The locked task mix is 5 semantic, 1 temporal,
+3 structured, 2 change, and 3 semantic+structured screens.
+
+Holdout construction used only the PIT research panel and direct chunks from the exact
+selected filing. It did **not** execute `execute_research_screen`, `/research/screen`,
+`/search`, hybrid retrieval, embeddings, or reranking. The holdout manifest therefore
+records `status: sealed` and `evaluation_status: never_run`. Part 7.5 is the first permitted
+benchmark execution. Any label/content change after that first run requires a new benchmark
+version rather than editing v2 in place.
