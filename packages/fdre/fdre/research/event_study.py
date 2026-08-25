@@ -15,6 +15,28 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.panel import FeatureLineage, PanelFeature
+
+
+_PANEL_VALUE_LINEAGE: dict[str, PanelFeature] = {
+    "filing_length_tokens": "filing_length",
+    "filing_length_characters": "filing_length",
+    "disclosure_similarity": "disclosure_similarity",
+    "risk_added_passages": "risk_changes",
+    "risk_removed_passages": "risk_changes",
+    "risk_current_passages": "risk_changes",
+    "risk_previous_passages": "risk_changes",
+    "risk_churn_rate": "risk_changes",
+    "table_density": "document_density",
+    "numeric_density": "document_density",
+    "filing_delay_days": "filing_timing",
+    "amendment_indicator": "filing_timing",
+    "revenue_growth": "xbrl_growth",
+    "operating_margin": "xbrl_margins",
+    "net_margin": "xbrl_margins",
+    "capex_to_revenue": "xbrl_margins",
+    "operating_cash_flow_to_revenue": "xbrl_margins",
+}
 
 
 class MarketBar(BaseModel):
@@ -29,6 +51,7 @@ class FilingEvent(BaseModel):
     available_at: datetime
     max_source_available_at: datetime
     feature_value: float | None = None
+    feature_lineage: FeatureLineage | None = None
 
 
 class EventWindow(BaseModel):
@@ -148,20 +171,29 @@ def load_filing_events(
         if not isinstance(payload, list):
             raise ValueError("Research panel JSON must be an array of row objects")
         rows = payload
-    events = [
-        FilingEvent(
-            ticker=str(row["ticker"]).upper(),
-            accession_number=str(row["accession_number"]),
-            available_at=_parse_datetime(row["available_at"]),
-            max_source_available_at=_parse_datetime(row["max_source_available_at"]),
-            feature_value=(
-                float(row[feature])
-                if feature and row.get(feature) not in {None, ""}
-                else None
-            ),
+
+    events: list[FilingEvent] = []
+    for row in rows:
+        lineage = _selected_feature_lineage(row, feature)
+        row_max_source_available_at = _parse_datetime(row["max_source_available_at"])
+        events.append(
+            FilingEvent(
+                ticker=str(row["ticker"]).upper(),
+                accession_number=str(row["accession_number"]),
+                available_at=_parse_datetime(row["available_at"]),
+                max_source_available_at=(
+                    lineage.max_source_available_at
+                    if lineage is not None
+                    else row_max_source_available_at
+                ),
+                feature_value=(
+                    float(row[feature])
+                    if feature and row.get(feature) not in {None, ""}
+                    else None
+                ),
+                feature_lineage=lineage,
+            )
         )
-        for row in rows
-    ]
     dataset_version = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
     feature_version = (
         str(rows[0].get("calculation_version", "unknown")) if rows else "unknown"
@@ -304,6 +336,61 @@ def validate_event_inputs(events: list[FilingEvent]) -> None:
                 f"Feature leakage for {event.accession_number}: source timestamp "
                 "is after event availability"
             )
+        lineage = event.feature_lineage
+        if lineage is None:
+            continue
+        if set(lineage.source_accessions) != set(lineage.source_available_at):
+            raise ValueError(
+                f"Feature lineage sources incomplete for {event.accession_number}"
+            )
+        if event.accession_number not in lineage.source_accessions:
+            raise ValueError(
+                f"Feature lineage omits event filing {event.accession_number}"
+            )
+        expected_max = max(
+            lineage.source_available_at.values(),
+            default=event.available_at,
+        )
+        if lineage.max_source_available_at != expected_max:
+            raise ValueError(
+                f"Feature lineage availability mismatch for {event.accession_number}"
+            )
+        if event.max_source_available_at != lineage.max_source_available_at:
+            raise ValueError(
+                f"Event feature timestamp does not match lineage for "
+                f"{event.accession_number}"
+            )
+
+
+def _selected_feature_lineage(
+    row: dict[str, object],
+    feature: str | None,
+) -> FeatureLineage | None:
+    if feature is None:
+        return None
+    lineage_feature = _PANEL_VALUE_LINEAGE.get(feature)
+    if lineage_feature is None:
+        return None
+    raw_lineage = row.get("feature_lineage")
+    if raw_lineage is None or raw_lineage == "":
+        return None
+    if isinstance(raw_lineage, str):
+        parsed = json.loads(raw_lineage)
+    elif isinstance(raw_lineage, dict):
+        parsed = raw_lineage
+    else:
+        raise ValueError("Panel feature_lineage must be an object or JSON object string")
+    if not isinstance(parsed, dict):
+        raise ValueError("Panel feature_lineage must decode to an object")
+    candidate = parsed.get(lineage_feature)
+    if candidate is None:
+        return None
+    lineage = FeatureLineage.model_validate(candidate)
+    if lineage.feature != lineage_feature:
+        raise ValueError(
+            f"Feature lineage key mismatch: {lineage_feature} != {lineage.feature}"
+        )
+    return lineage
 
 
 def _event_session_index(
