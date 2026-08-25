@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, 'guard sealed holdout execution') }}
+    if: ${{ !contains(github.event.head_commit.message, 'apply sealed holdout execution guard') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -48,5 +48,5 @@ jobs:
           git add -A
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'eval: guard sealed holdout execution'
+          git commit -m 'eval: apply sealed holdout execution guard'
           git push origin HEAD:phase0-part7-4-sealed-v2-holdout
