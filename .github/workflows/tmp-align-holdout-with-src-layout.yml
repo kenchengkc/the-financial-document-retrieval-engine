@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   align:
-    if: ${{ !contains(github.event.head_commit.message, 'align holdout with src layout') }}
+    if: ${{ !contains(github.event.head_commit.message, 'applied src layout dependency') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -43,5 +43,5 @@ jobs:
           fi
           rm .github/workflows/tmp-align-holdout-with-src-layout.yml
           git add -A
-          git commit --allow-empty -m 'chore: align holdout with src layout'
+          git commit --allow-empty -m 'chore: applied src layout dependency'
           git push origin HEAD:phase0-part7-4-sealed-v2-holdout
