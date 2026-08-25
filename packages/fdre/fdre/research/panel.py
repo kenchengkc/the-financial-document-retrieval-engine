@@ -20,7 +20,6 @@ from apps.api.app.models import Company, Document, DocumentElement, FinancialFac
 from fdre.ingestion.xbrl import CANONICAL_CONCEPTS
 from fdre.research.filing_diffs import select_comparable_document_from_candidates
 
-FEATURE_VERSION = "fdre-panel-v2"
 PanelFeature = Literal[
     "filing_length",
     "section_novelty",
@@ -33,6 +32,69 @@ PanelFeature = Literal[
     "xbrl_margins",
 ]
 ExportFormat = Literal["json", "csv", "parquet"]
+FEATURE_VERSION = "fdre-panel-v3"
+PANEL_FEATURE_ORDER: tuple[PanelFeature, ...] = (
+    "filing_length",
+    "section_novelty",
+    "disclosure_similarity",
+    "risk_changes",
+    "document_density",
+    "topic_mentions",
+    "filing_timing",
+    "xbrl_growth",
+    "xbrl_margins",
+)
+DEFAULT_PANEL_FEATURES: tuple[PanelFeature, ...] = (
+    "filing_length",
+    "section_novelty",
+    "risk_changes",
+    "document_density",
+    "topic_mentions",
+    "filing_timing",
+    "xbrl_growth",
+    "xbrl_margins",
+)
+_FEATURE_CALCULATION_VERSIONS: dict[PanelFeature, str] = {
+    "filing_length": "filing-length-v1",
+    "section_novelty": "section-novelty-v1",
+    "disclosure_similarity": "disclosure-similarity-v1",
+    "risk_changes": "risk-changes-v1",
+    "document_density": "document-density-v1",
+    "topic_mentions": "topic-mentions-v1",
+    "filing_timing": "filing-timing-v1",
+    "xbrl_growth": "xbrl-growth-v1",
+    "xbrl_margins": "xbrl-margins-v1",
+}
+_COMPARISON_FEATURES: frozenset[PanelFeature] = frozenset(
+    {
+        "section_novelty",
+        "disclosure_similarity",
+        "risk_changes",
+        "xbrl_growth",
+    }
+)
+_SECTION_PARAMETER_FEATURES: frozenset[PanelFeature] = frozenset(
+    {
+        "filing_length",
+        "section_novelty",
+        "disclosure_similarity",
+        "risk_changes",
+        "document_density",
+        "topic_mentions",
+    }
+)
+_FEATURE_FACT_METRICS: dict[PanelFeature, frozenset[str]] = {
+    "xbrl_growth": frozenset({"revenue"}),
+    "xbrl_margins": frozenset(
+        {
+            "revenue",
+            "operating_income",
+            "net_income",
+            "capex",
+            "operating_cash_flow",
+        }
+    ),
+}
 TOPIC_PATTERNS = {
     "ai": re.compile(r"\b(?:artificial intelligence|generative ai|machine learning)\b", re.I),
     "climate": re.compile(r"\b(?:climate|carbon|greenhouse gas|emissions)\b", re.I),
@@ -74,6 +136,17 @@ class RiskChangeMetrics:
             self.current_passages + self.previous_passages,
             1,
         )
+
+
+class FeatureLineage(BaseModel):
+    feature: PanelFeature
+    calculation_version: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    source_accessions: list[str]
+    source_available_at: dict[str, datetime]
+    max_source_available_at: datetime
+    corpus_snapshot_id: str
+    lineage_id: str = Field(min_length=64, max_length=64)
 
 
 class ResearchPanelQuery(BaseModel):
@@ -119,6 +192,7 @@ class ResearchPanelRow(BaseModel):
     operating_cash_flow_to_revenue: float | None = None
     source_accessions: list[str]
     feature_provenance: dict[str, list[str]]
+    feature_lineage: dict[PanelFeature, FeatureLineage] = Field(default_factory=dict)
     calculation_version: str
     corpus_snapshot_id: str
     max_source_available_at: datetime
@@ -162,8 +236,8 @@ def build_research_panel(
     if not query.include_amendments:
         statement = statement.where(Document.is_amendment.is_(False))
     documents = list(session.scalars(statement.limit(query.limit)).unique())
-    snapshot_id = _corpus_snapshot_id(documents)
     if not documents:
+        snapshot_id = _corpus_snapshot_id([])
         return ResearchPanel(
             query=query,
             feature_version=FEATURE_VERSION,
@@ -184,7 +258,7 @@ def build_research_panel(
         documents_by_company[document.company_id].append(document)
 
     prior_by_document: dict[int, Document | None] = {}
-    source_document_ids = {document.id for document in documents}
+    source_documents_by_id = {document.id: document for document in documents}
     for document in documents:
         prior, _ = select_comparable_document_from_candidates(
             document,
@@ -193,8 +267,10 @@ def build_research_panel(
         )
         prior_by_document[document.id] = prior
         if prior is not None:
-            source_document_ids.add(prior.id)
+            source_documents_by_id[prior.id] = prior
 
+    source_document_ids = set(source_documents_by_id)
+    snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))
     elements_by_document = _load_panel_elements(session, source_document_ids)
     facts_by_document = _load_panel_facts(session, source_document_ids)
     rows = [
@@ -271,6 +347,54 @@ def validate_point_in_time_rows(rows: list[ResearchPanelRow]) -> None:
                 f"source available {row.max_source_available_at.isoformat()} "
                 f"after row {row.available_at.isoformat()}"
             )
+        for feature, lineage in row.feature_lineage.items():
+            if lineage.feature != feature:
+                raise ValueError(
+                    f"Feature lineage key mismatch for {row.accession_number}: "
+                    f"{feature} != {lineage.feature}"
+                )
+            if set(lineage.source_accessions) != set(lineage.source_available_at):
+                raise ValueError(
+                    f"Feature lineage sources incomplete for {row.accession_number}: "
+                    f"{feature}"
+                )
+            if any(
+                accession not in row.source_accessions
+                for accession in lineage.source_accessions
+            ):
+                raise ValueError(
+                    f"Feature lineage references an unknown source for "
+                    f"{row.accession_number}: {feature}"
+                )
+            expected_max = max(
+                lineage.source_available_at.values(),
+                default=row.available_at,
+            )
+            if lineage.max_source_available_at != expected_max:
+                raise ValueError(
+                    f"Feature lineage availability mismatch for "
+                    f"{row.accession_number}: {feature}"
+                )
+            if lineage.max_source_available_at > row.available_at:
+                raise ValueError(
+                    f"Point-in-time feature leakage for {row.accession_number}: "
+                    f"{feature} source available "
+                    f"{lineage.max_source_available_at.isoformat()} after row "
+                    f"{row.available_at.isoformat()}"
+                )
+            expected_lineage_id = _feature_lineage_id(
+                feature=lineage.feature,
+                calculation_version=lineage.calculation_version,
+                parameters=lineage.parameters,
+                source_accessions=lineage.source_accessions,
+                source_available_at=lineage.source_available_at,
+                corpus_snapshot_id=lineage.corpus_snapshot_id,
+            )
+            if lineage.lineage_id != expected_lineage_id:
+                raise ValueError(
+                    f"Feature lineage hash mismatch for {row.accession_number}: "
+                    f"{feature}"
+                )
 
 
 def _load_panel_elements(
@@ -345,26 +469,12 @@ def _build_row(
     facts_by_document: dict[int, list[PanelFact]],
 ) -> ResearchPanelRow:
     available_at = _required_datetime(document.available_at)
-    selected_features = set(query.features) or {
-        "filing_length",
-        "section_novelty",
-        "risk_changes",
-        "document_density",
-        "topic_mentions",
-        "filing_timing",
-        "xbrl_growth",
-        "xbrl_margins",
-    }
+    selected_features: set[PanelFeature] = set(query.features or DEFAULT_PANEL_FEATURES)
     elements = elements_by_document.get(document.id, [])
     texts_by_section = _texts_by_section(elements, query.sections)
     all_text = " ".join(text for texts in texts_by_section.values() for text in texts)
     source_documents = [document, *([prior] if prior is not None else [])]
     source_accessions = [source.accession_number for source in source_documents]
-    source_times = [
-        _required_datetime(source.available_at)
-        for source in source_documents
-        if source.available_at is not None
-    ]
     prior_sections = (
         _texts_by_section(
             elements_by_document.get(prior.id, []),
@@ -382,14 +492,6 @@ def _build_row(
         if prior is not None
         else {}
     )
-    fact_times = [
-        fact.available_at
-        for source in source_documents
-        for fact in facts_by_document.get(source.id, [])
-        if fact.available_at is not None
-        and fact.available_at <= available_at
-    ]
-    source_times.extend(fact_times)
     risk_change = (
         _risk_factor_changes(texts_by_section, prior_sections)
         if prior is not None and "risk_changes" in selected_features
@@ -397,6 +499,19 @@ def _build_row(
     )
     revenue = current_facts.get("revenue")
     previous_revenue = prior_facts.get("revenue")
+    feature_lineage = {
+        feature: _build_feature_lineage(
+            feature,
+            document=document,
+            prior=prior,
+            selected_sections=query.sections,
+            row_available_at=available_at,
+            facts_by_document=facts_by_document,
+            snapshot_id=snapshot_id,
+        )
+        for feature in PANEL_FEATURE_ORDER
+        if feature in selected_features
+    }
     return ResearchPanelRow(
         ticker=document.company.ticker,
         cik=document.company.cik,
@@ -413,7 +528,10 @@ def _build_row(
             len(all_text) if "filing_length" in selected_features else None
         ),
         section_token_counts=(
-            {section: len(" ".join(texts).split()) for section, texts in texts_by_section.items()}
+            {
+                section: len(" ".join(texts).split())
+                for section, texts in texts_by_section.items()
+            }
             if "filing_length" in selected_features
             else {}
         ),
@@ -500,10 +618,103 @@ def _build_row(
             ),
             "xbrl_features": source_accessions,
         },
+        feature_lineage=feature_lineage,
         calculation_version=FEATURE_VERSION,
         corpus_snapshot_id=snapshot_id,
-        max_source_available_at=max(source_times, default=available_at),
+        max_source_available_at=max(
+            (
+                lineage.max_source_available_at
+                for lineage in feature_lineage.values()
+            ),
+            default=available_at,
+        ),
     )
+
+
+def _build_feature_lineage(
+    feature: PanelFeature,
+    *,
+    document: Document,
+    prior: Document | None,
+    selected_sections: list[str],
+    row_available_at: datetime,
+    facts_by_document: dict[int, list[PanelFact]],
+    snapshot_id: str,
+) -> FeatureLineage:
+    source_documents = [document]
+    if feature in _COMPARISON_FEATURES and prior is not None:
+        source_documents.append(prior)
+    parameters: dict[str, Any] = {}
+    if feature in _SECTION_PARAMETER_FEATURES:
+        parameters["sections"] = list(selected_sections)
+
+    fact_metrics = _FEATURE_FACT_METRICS.get(feature, frozenset())
+    source_available_at: dict[str, datetime] = {}
+    for source in source_documents:
+        source_time = _required_datetime(source.available_at)
+        if fact_metrics:
+            relevant_fact_times = [
+                fact.available_at
+                for fact in facts_by_document.get(source.id, [])
+                if fact.canonical_metric in fact_metrics
+                and fact.available_at is not None
+                and fact.available_at <= row_available_at
+            ]
+            source_time = max(
+                [source_time, *relevant_fact_times],
+            )
+        source_available_at[source.accession_number] = source_time
+
+    source_accessions = [source.accession_number for source in source_documents]
+    calculation_version = _FEATURE_CALCULATION_VERSIONS[feature]
+    lineage_id = _feature_lineage_id(
+        feature=feature,
+        calculation_version=calculation_version,
+        parameters=parameters,
+        source_accessions=source_accessions,
+        source_available_at=source_available_at,
+        corpus_snapshot_id=snapshot_id,
+    )
+    return FeatureLineage(
+        feature=feature,
+        calculation_version=calculation_version,
+        parameters=parameters,
+        source_accessions=source_accessions,
+        source_available_at=source_available_at,
+        max_source_available_at=max(
+            source_available_at.values(),
+            default=row_available_at,
+        ),
+        corpus_snapshot_id=snapshot_id,
+        lineage_id=lineage_id,
+    )
+
+
+def _feature_lineage_id(
+    *,
+    feature: PanelFeature,
+    calculation_version: str,
+    parameters: dict[str, Any],
+    source_accessions: list[str],
+    source_available_at: dict[str, datetime],
+    corpus_snapshot_id: str,
+) -> str:
+    payload = json.dumps(
+        {
+            "feature": feature,
+            "calculation_version": calculation_version,
+            "parameters": parameters,
+            "source_accessions": source_accessions,
+            "source_available_at": {
+                accession: source_available_at[accession].isoformat()
+                for accession in sorted(source_available_at)
+            },
+            "corpus_snapshot_id": corpus_snapshot_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _texts_by_section(
@@ -602,8 +813,12 @@ def _risk_factor_changes(
     previous: dict[str, list[str]],
 ) -> RiskChangeMetrics:
     """Measure two-sided Item 1A passage churn versus the comparable filing."""
-    current_risk = {_text_fingerprint(passage) for passage in current.get("Risk Factors", [])}
-    previous_risk = {_text_fingerprint(passage) for passage in previous.get("Risk Factors", [])}
+    current_risk = {
+        _text_fingerprint(passage) for passage in current.get("Risk Factors", [])
+    }
+    previous_risk = {
+        _text_fingerprint(passage) for passage in previous.get("Risk Factors", [])
+    }
     return RiskChangeMetrics(
         added=len(current_risk - previous_risk),
         removed=len(previous_risk - current_risk),
@@ -617,9 +832,27 @@ def _text_fingerprint(value: str) -> str:
 
 
 def _corpus_snapshot_id(documents: list[Document]) -> str:
-    payload = "|".join(
-        f"{document.accession_number}:{document.sha256_hash or ''}"
-        for document in documents
+    payload = json.dumps(
+        [
+            {
+                "accession_number": document.accession_number,
+                "available_at": (
+                    document.available_at.isoformat()
+                    if document.available_at is not None
+                    else None
+                ),
+                "form_type": document.form_type,
+                "period_end": (
+                    document.period_end_date.isoformat()
+                    if document.period_end_date is not None
+                    else None
+                ),
+                "sha256_hash": document.sha256_hash or "",
+            }
+            for document in sorted(documents, key=lambda item: item.accession_number)
+        ],
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
