@@ -1,0 +1,47 @@
+name: Temporary align holdout with src layout
+
+on:
+  push:
+    branches:
+      - phase0-part7-4-sealed-v2-holdout
+
+permissions:
+  contents: write
+
+jobs:
+  align:
+    if: ${{ !contains(github.event.head_commit.message, 'align holdout with src layout') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase0-part7-4-sealed-v2-holdout
+          fetch-depth: 0
+      - name: Merge layout branch and move holdout test
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin repo-layout-src-fdre:refs/remotes/origin/repo-layout-src-fdre
+          git merge --no-edit origin/repo-layout-src-fdre
+          if [ -f packages/fdre/tests/test_cross_sectional_v2_holdout.py ]; then
+            mkdir -p tests/fdre
+            git mv packages/fdre/tests/test_cross_sectional_v2_holdout.py tests/fdre/test_cross_sectional_v2_holdout.py
+            rmdir packages/fdre/tests 2>/dev/null || true
+            rmdir packages/fdre 2>/dev/null || true
+            rmdir packages 2>/dev/null || true
+            python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/fdre/test_cross_sectional_v2_holdout.py')
+          path.write_text(
+              path.read_text().replace(
+                  'Path(__file__).resolve().parents[3]',
+                  'Path(__file__).resolve().parents[2]',
+              )
+          )
+          PY
+          fi
+          rm .github/workflows/tmp-align-holdout-with-src-layout.yml
+          git add -A
+          git commit --allow-empty -m 'chore: align holdout with src layout'
+          git push origin HEAD:phase0-part7-4-sealed-v2-holdout
