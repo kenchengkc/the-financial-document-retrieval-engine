@@ -50,6 +50,13 @@ from fdre.research.thematic import (
     ThematicScanResponse,
     diversify_candidates_by_issuer,
 )
+from fdre.research.verification import (
+    verify_feature_lineage,
+    verify_research_panel_export,
+    verify_research_panel_lineage,
+    verify_research_screen_lineage,
+    verify_signal_study_lineage,
+)
 
 __all__ = [
     "EventStudyConfig",
@@ -88,6 +95,11 @@ __all__ = [
     "serialize_research_panel",
     "validate_event_inputs",
     "validate_point_in_time_rows",
+    "verify_feature_lineage",
+    "verify_research_panel_export",
+    "verify_research_panel_lineage",
+    "verify_research_screen_lineage",
+    "verify_signal_study_lineage",
     "write_event_study_report",
     "write_research_panel",
 ]
