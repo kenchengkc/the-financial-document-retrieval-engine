@@ -22,6 +22,53 @@ Evidence quotes were re-grounded onto stored chunks
 (`scripts/reground_benchmark_evidence.py`). Prior 33-query ablation set kept at
 `data/evals/retrieval_benchmark.pre120.jsonl`.
 
+## Cross-Sectional v1 development baseline — Part 5 closeout
+
+Measured on the live corpus/provider environment on **2026-08-25** against the frozen
+24-case development split in `data/evals/cross_sectional_benchmark.v1.jsonl`. The
+corpus at measurement contained **499/499 S&P 500 names, 3,203 filings, and
+3,038,204 chunks**.
+
+The live FastAPI deployment had not yet picked up the merged `/research/screen`
+route. Because every v1 development plan is semantic-only, the measurement reproduced
+the merged `execute_research_screen` semantic path over the live API: point-in-time
+`/research/panel/export` → latest eligible 10-Q per issuer → one `/search` call with
+the same filters and `top_k=50` → exact selected-accession filtering → up to two
+evidence passages per issuer → semantic-score ranking. The implementation was pinned
+to merge commit `b317a79ae3c403588c52680371c3869ad15025ac`.
+
+| Metric | Development result | Promotion status |
+| --- | ---: | --- |
+| Issuer Recall@1 | **0.667** (16/24) | baseline |
+| Issuer Recall@3 | **0.833** (20/24) | baseline |
+| Issuer Recall@5 | **0.833** (20/24) | baseline |
+| PIT leakage rate | **0.0%** | pass |
+| Mean semantic-search calls | **1.00** | pass |
+| Max semantic-search calls | **1** | pass |
+| Missing gold issuer | **4/24** | diagnostic |
+| Evidence Recall@1/3/5 | **0.042** | **do not promote** |
+| p50 / p95 probe latency | 7.20 s / 9.85 s | **do not promote** |
+
+The issuer-level result is strong enough to freeze Cross-Sectional v1 as the first
+measured baseline and proceed to feature-lineage work: two thirds of reviewed issuers
+rank first, five sixths rank in the top three, the historical boundary is clean, and
+each screen uses one bounded semantic search.
+
+The evidence score is **not** evidence of a 4.2% retrieval ceiling. A follow-up lineage
+audit found that only **1/24** reviewed evidence accessions is the latest eligible
+10-Q selected by the screen as of the benchmark timestamp; that same JPM case is the
+only case with Evidence Recall = 1.0. The other 23 labels were inherited from older
+source questions and are structurally ineligible for this screen. Re-ground evidence
+onto each case's selected filing before using evidence Recall as a promotion metric.
+
+The latency probe also is not the canonical `/research/screen` SLO because it includes
+two external HTTP requests used to reproduce the merged path while the Python API was
+stale. Re-measure end-to-end latency after deploying the merged FastAPI route.
+
+**Part 5 status: closed.** Keep the frozen issuer-ranking baseline; treat evidence-label
+re-grounding and backend deployment parity as bounded follow-ups, not reasons to add
+more evaluation infrastructure before the next benchmark need.
+
 ## Holdout retrieval (`--split holdout --k 10`)
 
 | Variant | Recall@10 | MRR | Table Recall@10 |
