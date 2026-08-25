@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from apps.api.app.models import Chunk, Company, Document
 from fdre.research.panel import (
     FEATURE_VERSION,
+    FeatureLineage,
+    PanelFeature,
     ResearchPanelQuery,
     ResearchPanelRow,
     build_research_panel,
@@ -40,6 +42,16 @@ ScreenRankField = Literal[
     "filing_delay_days",
 ]
 SemanticSearch = Callable[[str, SearchFilters, int], list[RetrievalCandidate]]
+
+_SCREEN_METRIC_FEATURE: dict[ScreenMetric, PanelFeature] = {
+    "revenue_growth": "xbrl_growth",
+    "operating_margin": "xbrl_margins",
+    "net_margin": "xbrl_margins",
+    "capex_to_revenue": "xbrl_margins",
+    "operating_cash_flow_to_revenue": "xbrl_margins",
+    "risk_churn_rate": "risk_changes",
+    "filing_delay_days": "filing_timing",
+}
 
 
 class ScreenCondition(BaseModel):
@@ -79,6 +91,7 @@ class ResearchScreenPlan(BaseModel):
 
 class ScreenConditionResult(BaseModel):
     metric: ScreenMetric
+    feature: PanelFeature
     operator: ComparisonOperator
     threshold: float
     change_from_prior: bool
@@ -86,6 +99,10 @@ class ScreenConditionResult(BaseModel):
     prior_value: float | None
     observed_value: float | None
     passed: bool
+    current_lineage_id: str = Field(min_length=64, max_length=64)
+    prior_lineage_id: str | None = Field(default=None, min_length=64, max_length=64)
+    source_accessions: list[str]
+    max_information_timestamp: datetime
 
 
 class ResearchScreenRow(BaseModel):
@@ -101,11 +118,14 @@ class ResearchScreenRow(BaseModel):
     evidence: list[RetrievalCandidate]
     source_accessions: list[str]
     feature_provenance: dict[str, list[str]]
+    feature_lineage: dict[PanelFeature, FeatureLineage] = Field(default_factory=dict)
+    prior_feature_lineage: dict[PanelFeature, FeatureLineage] = Field(default_factory=dict)
     max_source_available_at: datetime
 
 
 class ResearchScreenManifest(BaseModel):
     plan_hash: str
+    feature_lineage_digest: str = Field(min_length=64, max_length=64)
     corpus_snapshot_id: str
     feature_version: str
     universe_count: int
@@ -152,7 +172,12 @@ def execute_research_screen(
     structured_matches: list[tuple[ResearchPanelRow, list[ScreenConditionResult]]] = []
     for row in latest_rows.values():
         condition_results = [
-            _evaluate_condition(row, rows_by_accession, condition)
+            _evaluate_condition(
+                row,
+                rows_by_accession,
+                condition,
+                as_of=plan.as_of,
+            )
             for condition in plan.conditions
         ]
         if all(result.passed for result in condition_results):
@@ -212,12 +237,13 @@ def execute_research_screen(
             if plan.rank_by == "semantic_score"
             else _metric_value(row, plan.rank_by)
         )
+        prior_row = _prior_row(row, rows_by_accession)
         rows.append(
             ResearchScreenRow(
                 ticker=row.ticker,
                 accession_number=row.accession_number,
                 prior_accession_number=(
-                    row.source_accessions[1] if len(row.source_accessions) > 1 else None
+                    prior_row.accession_number if prior_row is not None else None
                 ),
                 form_type=row.form_type,
                 period_end=row.period_end,
@@ -228,12 +254,18 @@ def execute_research_screen(
                 evidence=evidence,
                 source_accessions=row.source_accessions,
                 feature_provenance=row.feature_provenance,
+                feature_lineage=row.feature_lineage,
+                prior_feature_lineage=(
+                    prior_row.feature_lineage if prior_row is not None else {}
+                ),
                 max_source_available_at=row.max_source_available_at,
             )
         )
 
     rows.sort(key=lambda item: _rank_key(item, descending=plan.descending))
     rows = rows[: plan.limit]
+    validate_screen_lineage(plan, rows)
+
     max_information_timestamp = max(
         (
             _aware_datetime(row.max_source_available_at, reference=plan.as_of)
@@ -244,10 +276,18 @@ def execute_research_screen(
     if max_information_timestamp is not None and max_information_timestamp > plan.as_of:
         raise ValueError("point-in-time screen included information after as_of")
 
+    plan_hash = _plan_hash(plan)
     return ResearchScreenResponse(
         plan=plan,
         manifest=ResearchScreenManifest(
-            plan_hash=_plan_hash(plan),
+            plan_hash=plan_hash,
+            feature_lineage_digest=_feature_lineage_digest(
+                plan,
+                plan_hash=plan_hash,
+                corpus_snapshot_id=panel.corpus_snapshot_id,
+                latest_rows=latest_rows,
+                rows_by_accession=rows_by_accession,
+            ),
             corpus_snapshot_id=panel.corpus_snapshot_id,
             feature_version=FEATURE_VERSION,
             universe_count=len(latest_rows),
@@ -259,6 +299,95 @@ def execute_research_screen(
         ),
         rows=rows,
     )
+
+
+def validate_screen_lineage(
+    plan: ResearchScreenPlan,
+    rows: list[ResearchScreenRow],
+) -> None:
+    for row in rows:
+        for lineage in [
+            *row.feature_lineage.values(),
+            *row.prior_feature_lineage.values(),
+        ]:
+            lineage_time = _aware_datetime(
+                lineage.max_source_available_at,
+                reference=plan.as_of,
+            )
+            if lineage_time > plan.as_of:
+                raise ValueError(
+                    f"point-in-time screen lineage included information after as_of: "
+                    f"{row.ticker} {lineage.feature}"
+                )
+
+        for condition in row.conditions:
+            current_lineage = row.feature_lineage.get(condition.feature)
+            if (
+                current_lineage is None
+                or current_lineage.lineage_id != condition.current_lineage_id
+            ):
+                raise ValueError(
+                    f"screen condition lineage mismatch for {row.ticker}: "
+                    f"{condition.metric}"
+                )
+
+            prior_lineage = row.prior_feature_lineage.get(condition.feature)
+            if condition.prior_lineage_id is None:
+                if condition.change_from_prior and prior_lineage is not None:
+                    raise ValueError(
+                        f"screen condition prior lineage missing for {row.ticker}: "
+                        f"{condition.metric}"
+                    )
+            elif (
+                prior_lineage is None
+                or prior_lineage.lineage_id != condition.prior_lineage_id
+            ):
+                raise ValueError(
+                    f"screen condition prior lineage mismatch for {row.ticker}: "
+                    f"{condition.metric}"
+                )
+
+            expected_sources = _combined_source_accessions(
+                current_lineage,
+                prior_lineage if condition.prior_lineage_id is not None else None,
+            )
+            if condition.source_accessions != expected_sources:
+                raise ValueError(
+                    f"screen condition sources mismatch for {row.ticker}: "
+                    f"{condition.metric}"
+                )
+
+            expected_max = max(
+                _aware_datetime(
+                    current_lineage.max_source_available_at,
+                    reference=plan.as_of,
+                ),
+                *(
+                    [
+                        _aware_datetime(
+                            prior_lineage.max_source_available_at,
+                            reference=plan.as_of,
+                        )
+                    ]
+                    if condition.prior_lineage_id is not None
+                    and prior_lineage is not None
+                    else []
+                ),
+            )
+            observed_max = _aware_datetime(
+                condition.max_information_timestamp,
+                reference=plan.as_of,
+            )
+            if observed_max != expected_max:
+                raise ValueError(
+                    f"screen condition information timestamp mismatch for "
+                    f"{row.ticker}: {condition.metric}"
+                )
+            if observed_max > plan.as_of:
+                raise ValueError(
+                    f"point-in-time condition lineage included information after as_of: "
+                    f"{row.ticker} {condition.metric}"
+                )
 
 
 def _latest_rows_by_ticker(
@@ -280,23 +409,49 @@ def _evaluate_condition(
     row: ResearchPanelRow,
     rows_by_accession: dict[str, ResearchPanelRow],
     condition: ScreenCondition,
+    *,
+    as_of: datetime,
 ) -> ScreenConditionResult:
+    feature = _SCREEN_METRIC_FEATURE[condition.metric]
+    current_lineage = _required_feature_lineage(row, feature)
     current_value = _metric_value(row, condition.metric)
+    prior_row = _prior_row(row, rows_by_accession)
     prior_value: float | None = None
+    prior_lineage: FeatureLineage | None = None
     observed_value = current_value
     if condition.change_from_prior:
-        prior_accession = row.source_accessions[1] if len(row.source_accessions) > 1 else None
-        prior_row = rows_by_accession.get(prior_accession) if prior_accession else None
-        prior_value = (
-            _metric_value(prior_row, condition.metric) if prior_row is not None else None
-        )
+        if prior_row is not None:
+            prior_value = _metric_value(prior_row, condition.metric)
+            prior_lineage = _required_feature_lineage(prior_row, feature)
         observed_value = (
             current_value - prior_value
             if current_value is not None and prior_value is not None
             else None
         )
+
+    lineage_times = [
+        _aware_datetime(
+            current_lineage.max_source_available_at,
+            reference=as_of,
+        )
+    ]
+    if prior_lineage is not None:
+        lineage_times.append(
+            _aware_datetime(
+                prior_lineage.max_source_available_at,
+                reference=as_of,
+            )
+        )
+    max_information_timestamp = max(lineage_times)
+    if max_information_timestamp > as_of:
+        raise ValueError(
+            f"point-in-time condition lineage included information after as_of: "
+            f"{row.ticker} {condition.metric}"
+        )
+
     return ScreenConditionResult(
         metric=condition.metric,
+        feature=feature,
         operator=condition.operator,
         threshold=condition.value,
         change_from_prior=condition.change_from_prior,
@@ -307,7 +462,48 @@ def _evaluate_condition(
             observed_value is not None
             and _compare(observed_value, condition.operator, condition.value)
         ),
+        current_lineage_id=current_lineage.lineage_id,
+        prior_lineage_id=(prior_lineage.lineage_id if prior_lineage is not None else None),
+        source_accessions=_combined_source_accessions(
+            current_lineage,
+            prior_lineage,
+        ),
+        max_information_timestamp=max_information_timestamp,
     )
+
+
+def _required_feature_lineage(
+    row: ResearchPanelRow,
+    feature: PanelFeature,
+) -> FeatureLineage:
+    lineage = row.feature_lineage.get(feature)
+    if lineage is None:
+        raise ValueError(
+            f"screen metric requires missing feature lineage: {row.ticker} {feature}"
+        )
+    return lineage
+
+
+def _prior_row(
+    row: ResearchPanelRow,
+    rows_by_accession: dict[str, ResearchPanelRow],
+) -> ResearchPanelRow | None:
+    prior_accession = row.source_accessions[1] if len(row.source_accessions) > 1 else None
+    return rows_by_accession.get(prior_accession) if prior_accession else None
+
+
+def _combined_source_accessions(
+    current_lineage: FeatureLineage,
+    prior_lineage: FeatureLineage | None,
+) -> list[str]:
+    combined: list[str] = []
+    for accession in [
+        *current_lineage.source_accessions,
+        *(prior_lineage.source_accessions if prior_lineage is not None else []),
+    ]:
+        if accession not in combined:
+            combined.append(accession)
+    return combined
 
 
 def _metric_value(row: ResearchPanelRow, metric: ScreenMetric) -> float | None:
@@ -379,6 +575,67 @@ def _rank_key(
     missing = row.rank_value is None
     value = row.rank_value or 0.0
     return (missing, -value if descending else value, row.ticker)
+
+
+def _feature_lineage_digest(
+    plan: ResearchScreenPlan,
+    *,
+    plan_hash: str,
+    corpus_snapshot_id: str,
+    latest_rows: dict[str, ResearchPanelRow],
+    rows_by_accession: dict[str, ResearchPanelRow],
+) -> str:
+    required_features = _required_screen_features(plan)
+    input_rows: list[dict[str, object]] = []
+    for ticker in sorted(latest_rows):
+        row = latest_rows[ticker]
+        feature_inputs: dict[str, dict[str, str | None]] = {}
+        prior_row = _prior_row(row, rows_by_accession)
+        for feature in sorted(required_features):
+            current_lineage = _required_feature_lineage(row, feature)
+            needs_prior = any(
+                condition.change_from_prior
+                and _SCREEN_METRIC_FEATURE[condition.metric] == feature
+                for condition in plan.conditions
+            )
+            prior_lineage = (
+                _required_feature_lineage(prior_row, feature)
+                if needs_prior and prior_row is not None
+                else None
+            )
+            feature_inputs[feature] = {
+                "current": current_lineage.lineage_id,
+                "prior": prior_lineage.lineage_id if prior_lineage is not None else None,
+            }
+        input_rows.append(
+            {
+                "ticker": ticker,
+                "accession_number": row.accession_number,
+                "feature_inputs": feature_inputs,
+            }
+        )
+
+    payload = json.dumps(
+        {
+            "plan_hash": plan_hash,
+            "corpus_snapshot_id": corpus_snapshot_id,
+            "feature_version": FEATURE_VERSION,
+            "inputs": input_rows,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _required_screen_features(plan: ResearchScreenPlan) -> set[PanelFeature]:
+    features = {
+        _SCREEN_METRIC_FEATURE[condition.metric]
+        for condition in plan.conditions
+    }
+    if plan.rank_by != "semantic_score":
+        features.add(_SCREEN_METRIC_FEATURE[plan.rank_by])
+    return features
 
 
 def _aware_datetime(value: datetime, *, reference: datetime) -> datetime:
