@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import subprocess
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -130,7 +131,7 @@ def main(argv: list[str] | None = None) -> None:
 def _production_screen_executor(
     session: Session,
     settings: Settings,
-):
+) -> Callable[[ResearchScreenPlan], ResearchScreenResponse]:
     def semantic_search(
         query: str,
         filters: SearchFilters,
