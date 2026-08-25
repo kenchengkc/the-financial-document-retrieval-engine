@@ -105,7 +105,8 @@ def _markdown_report(
             (
                 "- Condition grounding: "
                 f"**{_optional_rate(metrics.condition_grounding_accuracy)}** "
-                f"across **{metrics.condition_grounding_question_count}** reviewed-condition questions"
+                f"across **{metrics.condition_grounding_question_count}** "
+                "reviewed-condition questions"
             ),
             f"- PIT leakage: **{metrics.pit_leakage_rate:.3%}**",
             f"- Zero-result accuracy: **{_optional_rate(metrics.zero_result_accuracy)}**",
