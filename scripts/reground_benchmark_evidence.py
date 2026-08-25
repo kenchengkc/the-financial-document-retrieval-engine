@@ -4,7 +4,7 @@ For each labeled evidence quote, find a stored chunk with the same accession tha
 contains the normalized quote, then refresh section metadata from that chunk.
 Shortens overlong quotes to a distinctive in-chunk window when needed.
 
-    FDRE_ALLOW_PROD=1 PYTHONPATH=packages/fdre:. \\
+    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. \\
       python3 -m scripts.reground_benchmark_evidence
 """
 
