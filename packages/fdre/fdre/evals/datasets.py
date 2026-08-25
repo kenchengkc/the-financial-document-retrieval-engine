@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -175,8 +176,11 @@ def validate_benchmark(
     if duplicate_ids:
         errors.append(f"duplicate question IDs: {', '.join(sorted(duplicate_ids))}")
     for question in questions:
+        has_structured_gold = bool(_reviewed_conditions(question))
         if not question.should_abstain and not (
-            question.relevant_evidence or question.relevant_chunk_ids
+            question.relevant_evidence
+            or question.relevant_chunk_ids
+            or has_structured_gold
         ):
             errors.append(f"{question.question_id}: no relevant evidence")
         if not question.metadata.get("reviewed_by"):
@@ -198,9 +202,19 @@ def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
 def validate_cross_sectional_evidence_grounding(
     questions: list[EvalQuestion],
 ) -> None:
-    """Require reviewed evidence to come from each screen's selected gold filing."""
+    """Require semantic screen evidence to come from the selected gold filing."""
     errors: list[str] = []
     for question in questions:
+        screen_plan = question.metadata.get("screen_plan")
+        semantic_query = (
+            screen_plan.get("semantic_query") if isinstance(screen_plan, dict) else None
+        )
+        if not question.relevant_evidence:
+            if isinstance(semantic_query, str) and semantic_query:
+                errors.append(
+                    f"{question.question_id}: semantic screen has no reviewed evidence"
+                )
+            continue
         if len(question.expected_tickers) != 1:
             errors.append(f"{question.question_id}: expected exactly one gold ticker")
             continue
@@ -208,9 +222,6 @@ def validate_cross_sectional_evidence_grounding(
         selected_accession = question.metadata.get("selected_accession")
         if not isinstance(selected_accession, str) or not selected_accession:
             errors.append(f"{question.question_id}: missing metadata.selected_accession")
-            continue
-        if not question.relevant_evidence:
-            errors.append(f"{question.question_id}: no screen-selected reviewed evidence")
             continue
         for reference in question.relevant_evidence:
             if reference.accession_number != selected_accession:
@@ -226,6 +237,116 @@ def validate_cross_sectional_evidence_grounding(
     if errors:
         raise ValueError(
             "Invalid cross-sectional evidence grounding:\n- " + "\n- ".join(errors)
+        )
+
+
+def validate_cross_sectional_condition_grounding(
+    questions: list[EvalQuestion],
+) -> None:
+    """Require every structured screen condition to carry reviewed PIT gold."""
+    errors: list[str] = []
+    for question in questions:
+        expected_conditions = _reviewed_conditions(question)
+        if not expected_conditions:
+            continue
+        if len(question.expected_tickers) != 1:
+            errors.append(f"{question.question_id}: expected exactly one gold ticker")
+            continue
+
+        selected_accession = question.metadata.get("selected_accession")
+        if not isinstance(selected_accession, str) or not selected_accession:
+            errors.append(f"{question.question_id}: missing metadata.selected_accession")
+        if "selected_prior_accession" not in question.metadata:
+            errors.append(
+                f"{question.question_id}: missing metadata.selected_prior_accession"
+            )
+
+        screen_plan = question.metadata.get("screen_plan")
+        if not isinstance(screen_plan, dict):
+            errors.append(f"{question.question_id}: missing metadata.screen_plan")
+            continue
+        plan_conditions = screen_plan.get("conditions")
+        if not isinstance(plan_conditions, list) or not plan_conditions:
+            errors.append(f"{question.question_id}: screen plan has no conditions")
+            continue
+        if len(plan_conditions) != len(expected_conditions):
+            errors.append(
+                f"{question.question_id}: expected_conditions count does not match "
+                "screen_plan.conditions"
+            )
+
+        for index, expected in enumerate(expected_conditions):
+            prefix = f"{question.question_id}: expected_conditions[{index}]"
+            required_keys = {
+                "metric",
+                "feature",
+                "operator",
+                "threshold",
+                "change_from_prior",
+                "passed",
+                "current_value",
+                "prior_value",
+                "observed_value",
+                "current_lineage_id",
+                "prior_lineage_id",
+                "source_accessions",
+            }
+            missing = required_keys - expected.keys()
+            if missing:
+                errors.append(f"{prefix}: missing {', '.join(sorted(missing))}")
+                continue
+            if not _is_number(expected["threshold"]):
+                errors.append(f"{prefix}: threshold must be numeric")
+            if not isinstance(expected["change_from_prior"], bool):
+                errors.append(f"{prefix}: change_from_prior must be boolean")
+            if not isinstance(expected["passed"], bool):
+                errors.append(f"{prefix}: passed must be boolean")
+            if not _is_number(expected["current_value"]):
+                errors.append(f"{prefix}: current_value must be numeric")
+            if not _is_number(expected["observed_value"]):
+                errors.append(f"{prefix}: observed_value must be numeric")
+            if not _valid_lineage_id(expected["current_lineage_id"]):
+                errors.append(f"{prefix}: invalid current_lineage_id")
+            sources = expected["source_accessions"]
+            if not (
+                isinstance(sources, list)
+                and sources
+                and all(isinstance(value, str) and value for value in sources)
+            ):
+                errors.append(f"{prefix}: invalid source_accessions")
+
+            if expected["change_from_prior"]:
+                prior_accession = question.metadata.get("selected_prior_accession")
+                if not isinstance(prior_accession, str) or not prior_accession:
+                    errors.append(
+                        f"{prefix}: change condition requires selected prior accession"
+                    )
+                if not _is_number(expected["prior_value"]):
+                    errors.append(f"{prefix}: prior_value must be numeric for change")
+                if not _valid_lineage_id(expected["prior_lineage_id"]):
+                    errors.append(f"{prefix}: invalid prior_lineage_id for change")
+            elif expected["prior_value"] is not None or expected["prior_lineage_id"] is not None:
+                errors.append(
+                    f"{prefix}: current-value condition must not pin prior value/lineage"
+                )
+
+            matching_plan_conditions = [
+                condition
+                for condition in plan_conditions
+                if isinstance(condition, dict)
+                and condition.get("metric") == expected["metric"]
+                and condition.get("operator") == expected["operator"]
+                and bool(condition.get("change_from_prior", False))
+                == expected["change_from_prior"]
+                and _numbers_match(condition.get("value"), expected["threshold"])
+            ]
+            if len(matching_plan_conditions) != 1:
+                errors.append(
+                    f"{prefix}: no unique matching condition in screen_plan.conditions"
+                )
+    if errors:
+        raise ValueError(
+            "Invalid cross-sectional condition grounding:\n- " + "\n- ".join(errors)
         )
 
 
@@ -249,10 +370,10 @@ def load_cross_sectional_benchmark(
 ) -> list[EvalQuestion]:
     """Load reviewed cross-sectional cases, with legacy evidence hydration fallback.
 
-    Cross-sectional cases may carry evidence reviewed directly against the exact
-    point-in-time filing selected by the screen.  Older v1 cases that do not yet
-    carry direct evidence can still hydrate from the canonical retrieval benchmark.
-    ``source_question_ids`` remains provenance in either case.
+    Cross-sectional cases may carry direct filing evidence, reviewed structured-condition
+    gold, or both. Older v1 cases without direct grounding can still hydrate evidence
+    from the canonical retrieval benchmark. ``source_question_ids`` is provenance only
+    when present on directly grounded cases.
     """
     questions = load_jsonl_dataset(path)
     source_by_id: dict[str, EvalQuestion] = {}
@@ -266,20 +387,27 @@ def load_cross_sectional_benchmark(
     hydrated: list[EvalQuestion] = []
     for question in questions:
         source_ids = question.metadata.get("source_question_ids")
+        has_direct_grounding = bool(question.relevant_evidence) or bool(
+            _reviewed_conditions(question)
+        )
         if not isinstance(source_ids, list) or not source_ids:
+            if has_direct_grounding:
+                hydrated.append(question)
+                continue
             raise ValueError(f"{question.question_id}: missing source_question_ids")
+
         if source_by_id:
             for source_id in source_ids:
                 if not isinstance(source_id, str) or source_id not in source_by_id:
                     raise ValueError(
                         f"{question.question_id}: unknown source question {source_id!r}"
                     )
-        if question.relevant_evidence:
+        if has_direct_grounding:
             hydrated.append(question)
             continue
         if not source_by_id:
             raise ValueError(
-                f"{question.question_id}: no direct evidence and no source dataset"
+                f"{question.question_id}: no direct grounding and no source dataset"
             )
         evidence: list[EvidenceReference] = []
         for source_id in source_ids:
@@ -301,6 +429,29 @@ def write_jsonl_dataset(path: str | Path, questions: list[EvalQuestion]) -> None
             for question in questions
         )
         + "\n"
+    )
+
+
+def _reviewed_conditions(question: EvalQuestion) -> list[dict[str, Any]]:
+    payload = question.metadata.get("expected_conditions")
+    if not isinstance(payload, list):
+        return []
+    return [record for record in payload if isinstance(record, dict)]
+
+
+def _is_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float))
+
+
+def _valid_lineage_id(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64
+
+
+def _numbers_match(left: Any, right: Any) -> bool:
+    return (
+        _is_number(left)
+        and _is_number(right)
+        and math.isclose(float(left), float(right), rel_tol=1e-9, abs_tol=1e-12)
     )
 
 
