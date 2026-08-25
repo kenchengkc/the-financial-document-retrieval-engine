@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, date, datetime
 
 from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent, MarketBar
+from fdre.research.panel import FeatureLineage
 from fdre.research.signal_study import (
     run_realized_volatility_signal_study,
     run_signal_study,
@@ -34,6 +36,24 @@ def _event(
         feature_value=feature,
     )
     return event, bars
+
+
+def _with_disclosure_lineage(
+    event: FilingEvent,
+    *,
+    lineage_id: str | None = None,
+) -> FilingEvent:
+    lineage = FeatureLineage(
+        feature="disclosure_similarity",
+        calculation_version="disclosure-similarity-v1",
+        source_accessions=[event.accession_number],
+        source_available_at={event.accession_number: event.available_at},
+        max_source_available_at=event.available_at,
+        corpus_snapshot_id="snapshot-v1",
+        lineage_id=lineage_id
+        or hashlib.sha256(event.accession_number.encode("utf-8")).hexdigest(),
+    )
+    return event.model_copy(update={"feature_lineage": lineage})
 
 
 def test_signal_study_recovers_a_monotonic_signal() -> None:
@@ -82,6 +102,9 @@ def test_signal_study_recovers_a_monotonic_signal() -> None:
     assert report.period_results[0].period == "2024"
     assert report.period_results[0].information_coefficient is not None
     assert report.period_results[0].information_coefficient > 0.95
+    assert report.feature_lineage_complete is False
+    assert report.feature_lineage_digest is None
+    assert report.feature_lineage_by_accession == {}
 
 
 def test_signal_study_handles_thin_samples() -> None:
@@ -152,3 +175,74 @@ def test_realized_volatility_signal_study_recovers_monotonic_risk() -> None:
     ]
     assert means == sorted(means)
     assert window.long_short_mean is not None and window.long_short_mean > 0
+
+
+def test_signal_study_fingerprints_complete_feature_lineage() -> None:
+    events: list[FilingEvent] = []
+    bars: list[MarketBar] = _benchmark()
+    n = 10
+    for index in range(n):
+        feature = (index + 1) / (n + 1)
+        event, ticker_bars = _event(index, feature, 0.05 * (feature - 0.5))
+        events.append(_with_disclosure_lineage(event))
+        bars.extend(ticker_bars)
+
+    config = EventStudyConfig(windows=[EventWindow(start=0, end=1)], bootstrap_iterations=100)
+    first = run_signal_study(
+        events,
+        bars,
+        config,
+        signal_name="disclosure_similarity",
+        n_quantiles=5,
+        dataset_version="same-dataset",
+        feature_version="fdre-panel-v3",
+        code_sha="same-code",
+    )
+
+    assert first.feature_lineage_complete is True
+    assert len(first.feature_lineage_by_accession) == n
+    assert first.feature_lineage_digest is not None
+    assert len(first.feature_lineage_digest) == 64
+
+    changed_events = list(events)
+    changed_events[0] = _with_disclosure_lineage(
+        changed_events[0],
+        lineage_id="f" * 64,
+    )
+    second = run_signal_study(
+        changed_events,
+        bars,
+        config,
+        signal_name="disclosure_similarity",
+        n_quantiles=5,
+        dataset_version="same-dataset",
+        feature_version="fdre-panel-v3",
+        code_sha="same-code",
+    )
+
+    assert second.feature_lineage_digest != first.feature_lineage_digest
+    assert second.experiment_key != first.experiment_key
+
+
+def test_signal_study_marks_partial_lineage_without_claiming_complete_digest() -> None:
+    first_event, first_bars = _event(0, 0.2, -0.01)
+    second_event, second_bars = _event(1, 0.8, 0.01)
+    first_event = _with_disclosure_lineage(first_event)
+    config = EventStudyConfig(windows=[EventWindow(start=0, end=1)], bootstrap_iterations=100)
+
+    report = run_signal_study(
+        [first_event, second_event],
+        [*_benchmark(), *first_bars, *second_bars],
+        config,
+        signal_name="disclosure_similarity",
+        n_quantiles=1,
+        dataset_version="test",
+        feature_version="fdre-panel-v3",
+        code_sha="test",
+    )
+
+    assert report.feature_lineage_complete is False
+    assert report.feature_lineage_digest is None
+    assert report.feature_lineage_by_accession == {
+        first_event.accession_number: first_event.feature_lineage.lineage_id
+    }
