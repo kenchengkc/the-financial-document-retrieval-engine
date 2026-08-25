@@ -23,6 +23,7 @@ from fdre.evals import (
     load_jsonl_dataset,
     run_cross_sectional_benchmark,
     validate_benchmark,
+    validate_cross_sectional_condition_grounding,
     validate_cross_sectional_evidence_grounding,
     validate_reviewed_benchmark,
     write_cross_sectional_eval_report,
@@ -43,9 +44,7 @@ DEFAULT_OUTPUT_DIR = "data/processed/evals/cross-sectional-v1"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run an FDRE cross-sectional benchmark"
-    )
+    parser = argparse.ArgumentParser(description="Run an FDRE cross-sectional benchmark")
     parser.add_argument("dataset", nargs="?", default=DEFAULT_DATASET)
     parser.add_argument("--source-dataset", default=DEFAULT_SOURCE_DATASET)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
@@ -88,6 +87,7 @@ def main(argv: list[str] | None = None) -> None:
             required_categories={"cross_sectional"},
         )
         validate_cross_sectional_evidence_grounding(hydrated_questions)
+        validate_cross_sectional_condition_grounding(hydrated_questions)
 
     questions = hydrated_questions
     if args.split != "all":
@@ -130,6 +130,7 @@ def main(argv: list[str] | None = None) -> None:
             "questions": metrics.question_count,
             "issuer_recall_at_k": metrics.issuer_recall_at_k,
             "evidence_recall_at_k": metrics.evidence_recall_at_k,
+            "condition_grounding_accuracy": metrics.condition_grounding_accuracy,
             "pit_leakage_rate": metrics.pit_leakage_rate,
             "latency_p95_ms": metrics.latency_p95_ms,
         }
@@ -187,16 +188,16 @@ def build_cross_sectional_benchmark_metadata(
     )
     plans = [build_cross_sectional_screen_plan(question) for question in questions]
     task_counts = Counter(question.resolved_task_type for question in questions)
-    dataset_path = Path(dataset)
+    dataset_name = Path(dataset).name
     benchmark_name = (
         "FDRE Cross-Sectional v1"
-        if dataset_path.name == Path(DEFAULT_DATASET).name
-        else dataset_path.stem
+        if dataset_name == Path(DEFAULT_DATASET).name
+        else Path(dataset).stem
     )
     return {
         "benchmark_name": benchmark_name,
         "generated_at": datetime.now(UTC).isoformat(),
-        "dataset": str(dataset_path),
+        "dataset": str(Path(dataset)),
         "dataset_sha256": dataset_sha256,
         "hydrated_dataset_sha256": hydrated_dataset_sha256,
         "source_dataset": str(Path(source_dataset)),
