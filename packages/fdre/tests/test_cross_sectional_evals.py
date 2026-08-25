@@ -29,6 +29,7 @@ from fdre.research.screen import (
 from fdre.retrieval.query import RetrievalCandidate
 
 AS_OF = datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)
+TEST_LINEAGE_DIGEST = "0" * 64
 
 
 def _row(
@@ -79,6 +80,7 @@ def _response(
         plan=plan,
         manifest=ResearchScreenManifest(
             plan_hash="plan",
+            feature_lineage_digest=TEST_LINEAGE_DIGEST,
             corpus_snapshot_id="snapshot",
             feature_version="test",
             universe_count=3,
