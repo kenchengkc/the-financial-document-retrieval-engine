@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fdre.evals.datasets import (
     compute_dataset_sha256,
     load_cross_sectional_benchmark,
@@ -14,6 +15,7 @@ from fdre.evals.datasets import (
     validate_cross_sectional_evidence_grounding,
 )
 from fdre.research.screen import ResearchScreenPlan
+from scripts.evaluate_cross_sectional import require_sealed_holdout_optin
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EVAL_DIR = REPO_ROOT / "data/evals"
@@ -113,3 +115,9 @@ def test_v2_holdout_manifest_pins_seal_and_content() -> None:
         "retrieval_execution": False,
         "screen_execution": False,
     }
+
+
+def test_v2_holdout_requires_explicit_first_run_optin() -> None:
+    with pytest.raises(ValueError, match="sealed holdout"):
+        require_sealed_holdout_optin(str(HOLDOUT), allow=False)
+    require_sealed_holdout_optin(str(HOLDOUT), allow=True)
