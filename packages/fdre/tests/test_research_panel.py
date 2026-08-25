@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from apps.api.app.db import Base
 from apps.api.app.models import Company, Document, DocumentElement, FinancialFact
 from fdre.research.panel import (
+    FEATURE_VERSION,
+    FeatureLineage,
     ResearchPanelQuery,
     ResearchPanelRow,
     build_research_panel,
@@ -128,17 +130,22 @@ def test_research_panel_builds_reproducible_point_in_time_features(
                 statement
             ),
         )
-        panel = build_research_panel(
-            session,
-            ResearchPanelQuery(
-                tickers=["TEST"],
-                as_of=datetime(2026, 6, 1, tzinfo=UTC),
-            ),
+        query = ResearchPanelQuery(
+            tickers=["TEST"],
+            as_of=datetime(2026, 6, 1, tzinfo=UTC),
         )
+        panel = build_research_panel(session, query)
+        repeated_panel = build_research_panel(session, query)
 
-    assert len(statements) == 4
+    assert len(statements) == 8
     row = next(row for row in panel.rows if row.accession_number == current.accession_number)
+    repeated_row = next(
+        row
+        for row in repeated_panel.rows
+        if row.accession_number == current.accession_number
+    )
     assert len(panel.rows) == 2
+    assert panel.feature_version == FEATURE_VERSION == "fdre-panel-v3"
     assert row.revenue_growth == pytest.approx(0.2)
     assert row.operating_margin == pytest.approx(0.25)
     assert row.section_novelty["Risk Factors"] == pytest.approx(0.5)
@@ -151,15 +158,100 @@ def test_research_panel_builds_reproducible_point_in_time_features(
     assert row.max_source_available_at <= row.available_at
     assert row.source_accessions == ["annual-2025", "annual-2024"]
     assert panel.corpus_snapshot_id == row.corpus_snapshot_id
+    assert "disclosure_similarity" not in row.feature_lineage
+
+    filing_length = row.feature_lineage["filing_length"]
+    assert filing_length.source_accessions == ["annual-2025"]
+    assert filing_length.parameters == {"sections": []}
+    assert filing_length.calculation_version == "filing-length-v1"
+
+    novelty = row.feature_lineage["section_novelty"]
+    assert novelty.source_accessions == ["annual-2025", "annual-2024"]
+    assert novelty.max_source_available_at == row.available_at
+
+    growth = row.feature_lineage["xbrl_growth"]
+    assert growth.source_accessions == ["annual-2025", "annual-2024"]
+    assert growth.calculation_version == "xbrl-growth-v1"
+
+    margins = row.feature_lineage["xbrl_margins"]
+    assert margins.source_accessions == ["annual-2025"]
+    assert margins.calculation_version == "xbrl-margins-v1"
+
+    assert {
+        feature: lineage.lineage_id for feature, lineage in row.feature_lineage.items()
+    } == {
+        feature: lineage.lineage_id
+        for feature, lineage in repeated_row.feature_lineage.items()
+    }
+    assert all(
+        lineage.corpus_snapshot_id == panel.corpus_snapshot_id
+        and lineage.max_source_available_at <= row.available_at
+        for lineage in row.feature_lineage.values()
+    )
 
     output_dir = tmp_path
     json_path = write_research_panel(output_dir / "panel.json", panel, output_format="json")
     csv_path = write_research_panel(output_dir / "panel.csv", panel, output_format="csv")
-    assert json.loads(json_path.read_text())[0]["ticker"] == "TEST"
+    exported = json.loads(json_path.read_text())
+    assert exported[0]["ticker"] == "TEST"
+    assert "feature_lineage" in exported[0]
     assert "corpus_snapshot_id" in csv_path.read_text().splitlines()[0]
     content, media_type = serialize_research_panel(panel, output_format="csv")
     assert media_type == "text/csv"
+    assert b"feature_lineage" in content
     assert b"corpus_snapshot_id" in content
+
+
+def test_panel_snapshot_includes_filtered_comparable_source() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    company = Company(ticker="TEST", cik="0000000001", name="Test Company")
+    prior = _add_document(
+        company,
+        accession="annual-2024",
+        period_end=date(2024, 12, 31),
+        available_at=datetime(2025, 2, 1, tzinfo=UTC),
+        revenue=Decimal("100"),
+        operating_income=Decimal("20"),
+        passages=["Prior risk."],
+    )
+    prior.sha256_hash = "prior-v1"
+    current = _add_document(
+        company,
+        accession="annual-2025",
+        period_end=date(2025, 12, 31),
+        available_at=datetime(2026, 2, 1, tzinfo=UTC),
+        revenue=Decimal("120"),
+        operating_income=Decimal("30"),
+        passages=["Current risk."],
+    )
+    current.sha256_hash = "current-v1"
+
+    query = ResearchPanelQuery(
+        tickers=["TEST"],
+        period_end_from=date(2025, 1, 1),
+        as_of=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    with Session(engine) as session:
+        session.add(company)
+        session.commit()
+        first = build_research_panel(session, query)
+        assert [row.accession_number for row in first.rows] == ["annual-2025"]
+        first_row = first.rows[0]
+        assert first_row.feature_lineage["section_novelty"].source_accessions == [
+            "annual-2025",
+            "annual-2024",
+        ]
+
+        prior.sha256_hash = "prior-v2"
+        session.commit()
+        second = build_research_panel(session, query)
+
+    assert second.corpus_snapshot_id != first.corpus_snapshot_id
+    assert (
+        second.rows[0].feature_lineage["section_novelty"].lineage_id
+        != first_row.feature_lineage["section_novelty"].lineage_id
+    )
 
 
 def test_panel_leakage_validator_rejects_future_sources() -> None:
@@ -181,4 +273,39 @@ def test_panel_leakage_validator_rejects_future_sources() -> None:
     )
 
     with pytest.raises(ValueError, match="Point-in-time leakage"):
+        validate_point_in_time_rows([row])
+
+
+def test_panel_leakage_validator_rejects_future_feature_source() -> None:
+    available_at = datetime(2026, 2, 1, tzinfo=UTC)
+    future_at = available_at + timedelta(seconds=1)
+    row = ResearchPanelRow(
+        ticker="TEST",
+        cik="0000000001",
+        accession_number="annual-2025",
+        form_type="10-K",
+        period_end=date(2025, 12, 31),
+        accepted_at=available_at,
+        available_at=available_at,
+        is_amendment=False,
+        source_accessions=["annual-2025"],
+        feature_provenance={"filing_features": ["annual-2025"]},
+        feature_lineage={
+            "filing_length": FeatureLineage(
+                feature="filing_length",
+                calculation_version="filing-length-v1",
+                parameters={"sections": []},
+                source_accessions=["annual-2025"],
+                source_available_at={"annual-2025": future_at},
+                max_source_available_at=future_at,
+                corpus_snapshot_id="snapshot",
+                lineage_id="0" * 64,
+            )
+        },
+        calculation_version="test",
+        corpus_snapshot_id="snapshot",
+        max_source_available_at=available_at,
+    )
+
+    with pytest.raises(ValueError, match="Point-in-time feature leakage"):
         validate_point_in_time_rows([row])
