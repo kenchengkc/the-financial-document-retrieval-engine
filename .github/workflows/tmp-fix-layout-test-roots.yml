@@ -1,0 +1,37 @@
+name: Temporary fix layout test roots
+
+on:
+  push:
+    branches:
+      - repo-layout-src-fdre
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, 'fix test repository roots after src migration') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repo-layout-src-fdre
+      - name: Fix moved-test repository roots
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          changed = []
+          for path in Path('tests/fdre').glob('test_*.py'):
+              text = path.read_text()
+              updated = text.replace('Path(__file__).resolve().parents[3]', 'Path(__file__).resolve().parents[2]')
+              if updated != text:
+                  path.write_text(updated)
+                  changed.append(str(path))
+          print('\n'.join(changed))
+          PY
+          rm .github/workflows/tmp-fix-layout-test-roots.yml
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test: fix test repository roots after src migration'
+          git push origin HEAD:repo-layout-src-fdre
