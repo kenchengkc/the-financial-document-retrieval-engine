@@ -22,6 +22,7 @@ from fdre.evals.datasets import (
     load_cross_sectional_benchmark,
     load_jsonl_dataset,
     validate_benchmark,
+    validate_cross_sectional_evidence_grounding,
     validate_reviewed_benchmark,
     write_jsonl_dataset,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "run_cross_sectional_benchmark",
     "slice_cross_sectional_metrics_by_task",
     "validate_benchmark",
+    "validate_cross_sectional_evidence_grounding",
     "validate_reviewed_benchmark",
     "write_cross_sectional_eval_report",
     "write_eval_report",

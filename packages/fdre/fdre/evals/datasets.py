@@ -195,6 +195,40 @@ def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
     )
 
 
+def validate_cross_sectional_evidence_grounding(
+    questions: list[EvalQuestion],
+) -> None:
+    """Require reviewed evidence to come from each screen's selected gold filing."""
+    errors: list[str] = []
+    for question in questions:
+        if len(question.expected_tickers) != 1:
+            errors.append(f"{question.question_id}: expected exactly one gold ticker")
+            continue
+        expected_ticker = question.expected_tickers[0]
+        selected_accession = question.metadata.get("selected_accession")
+        if not isinstance(selected_accession, str) or not selected_accession:
+            errors.append(f"{question.question_id}: missing metadata.selected_accession")
+            continue
+        if not question.relevant_evidence:
+            errors.append(f"{question.question_id}: no screen-selected reviewed evidence")
+            continue
+        for reference in question.relevant_evidence:
+            if reference.accession_number != selected_accession:
+                errors.append(
+                    f"{question.question_id}: evidence accession "
+                    f"{reference.accession_number} != selected {selected_accession}"
+                )
+            if reference.ticker != expected_ticker:
+                errors.append(
+                    f"{question.question_id}: evidence ticker "
+                    f"{reference.ticker!r} != expected {expected_ticker}"
+                )
+    if errors:
+        raise ValueError(
+            "Invalid cross-sectional evidence grounding:\n- " + "\n- ".join(errors)
+        )
+
+
 def load_jsonl_dataset(path: str | Path) -> list[EvalQuestion]:
     questions: list[EvalQuestion] = []
     for line_number, line in enumerate(Path(path).read_text().splitlines(), start=1):
@@ -211,27 +245,47 @@ def load_jsonl_dataset(path: str | Path) -> list[EvalQuestion]:
 def load_cross_sectional_benchmark(
     path: str | Path,
     *,
-    source_dataset_path: str | Path,
+    source_dataset_path: str | Path | None = None,
 ) -> list[EvalQuestion]:
-    """Hydrate cross-sectional cases with canonical reviewed evidence."""
+    """Load reviewed cross-sectional cases, with legacy evidence hydration fallback.
+
+    Cross-sectional cases may carry evidence reviewed directly against the exact
+    point-in-time filing selected by the screen.  Older v1 cases that do not yet
+    carry direct evidence can still hydrate from the canonical retrieval benchmark.
+    ``source_question_ids`` remains provenance in either case.
+    """
     questions = load_jsonl_dataset(path)
-    source_questions = load_jsonl_dataset(source_dataset_path)
-    source_by_id = {
-        question.question_id: question
-        for question in source_questions
-        if question.question_id is not None
-    }
+    source_by_id: dict[str, EvalQuestion] = {}
+    if source_dataset_path is not None:
+        source_by_id = {
+            question.question_id: question
+            for question in load_jsonl_dataset(source_dataset_path)
+            if question.question_id is not None
+        }
 
     hydrated: list[EvalQuestion] = []
     for question in questions:
         source_ids = question.metadata.get("source_question_ids")
         if not isinstance(source_ids, list) or not source_ids:
             raise ValueError(f"{question.question_id}: missing source_question_ids")
+        if source_by_id:
+            for source_id in source_ids:
+                if not isinstance(source_id, str) or source_id not in source_by_id:
+                    raise ValueError(
+                        f"{question.question_id}: unknown source question {source_id!r}"
+                    )
+        if question.relevant_evidence:
+            hydrated.append(question)
+            continue
+        if not source_by_id:
+            raise ValueError(
+                f"{question.question_id}: no direct evidence and no source dataset"
+            )
         evidence: list[EvidenceReference] = []
         for source_id in source_ids:
-            if not isinstance(source_id, str) or source_id not in source_by_id:
+            if not isinstance(source_id, str):
                 raise ValueError(
-                    f"{question.question_id}: unknown source question {source_id!r}"
+                    f"{question.question_id}: invalid source question {source_id!r}"
                 )
             evidence.extend(source_by_id[source_id].relevant_evidence)
         hydrated.append(question.model_copy(update={"relevant_evidence": evidence}))
