@@ -66,8 +66,15 @@ class EvalQuestion(BaseModel):
     should_abstain: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    # v2 fields — optional for backward compatibility with existing benchmarks.
     task_type: str | None = None
+    """Precise retrieval/research operation (e.g. ``latest_filing``,
+    ``comparison``, ``hard_negative``).  Falls back to *category* via
+    :pyattr:`resolved_task_type` when absent."""
+
     as_of: str | None = None
+    """ISO-8601 date or datetime indicating the point-in-time boundary.
+    Evidence must be available at or before this timestamp."""
 
     @model_validator(mode="after")
     def assign_question_id(self) -> EvalQuestion:
@@ -78,6 +85,7 @@ class EvalQuestion(BaseModel):
 
     @property
     def resolved_task_type(self) -> str:
+        """Return *task_type* when set, otherwise fall back to *category*."""
         return self.task_type or self.category
 
 
@@ -94,6 +102,12 @@ REQUIRED_BENCHMARK_CATEGORIES = {
 
 
 def compute_dataset_sha256(questions: list[EvalQuestion]) -> str:
+    """Deterministic SHA-256 of canonical benchmark content.
+
+    Serializes each question to sorted-key JSON, joins with newlines, and
+    hashes. The result is stable across re-serialization as long as the
+    Pydantic model fields and values remain identical.
+    """
     canonical = "\n".join(
         json.dumps(question.model_dump(mode="json"), sort_keys=True)
         for question in questions
@@ -108,6 +122,11 @@ def validate_benchmark(
     expected_splits: dict[str, int] | None = None,
     required_categories: set[str] | None = None,
 ) -> None:
+    """Flexible benchmark validation for v2+ datasets.
+
+    All constraints are optional.  Pass only the invariants that apply to
+    the dataset under test.
+    """
     errors: list[str] = []
     if expected_count is not None and len(questions) != expected_count:
         errors.append(f"expected {expected_count} questions, found {len(questions)}")
@@ -145,6 +164,7 @@ def validate_benchmark(
 
 
 def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
+    """Validate the immutable v1 reviewed benchmark contract (120 / 80 / 40)."""
     validate_benchmark(
         questions,
         expected_count=120,
