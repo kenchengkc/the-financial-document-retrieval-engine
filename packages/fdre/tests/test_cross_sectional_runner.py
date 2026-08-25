@@ -26,6 +26,7 @@ from fdre.retrieval.query import RetrievalCandidate
 
 AS_OF = "2026-07-31T23:59:59+00:00"
 AVAILABLE_AT = datetime(2026, 7, 1, tzinfo=UTC)
+TEST_LINEAGE_DIGEST = "0" * 64
 
 
 def _question() -> EvalQuestion:
@@ -60,6 +61,7 @@ def _response(plan: ResearchScreenPlan) -> ResearchScreenResponse:
         plan=plan,
         manifest=ResearchScreenManifest(
             plan_hash="plan",
+            feature_lineage_digest=TEST_LINEAGE_DIGEST,
             corpus_snapshot_id="snapshot",
             feature_version="test",
             universe_count=5,
