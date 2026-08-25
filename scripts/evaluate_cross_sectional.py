@@ -187,10 +187,16 @@ def build_cross_sectional_benchmark_metadata(
     )
     plans = [build_cross_sectional_screen_plan(question) for question in questions]
     task_counts = Counter(question.resolved_task_type for question in questions)
+    dataset_path = Path(dataset)
+    benchmark_name = (
+        "FDRE Cross-Sectional v1"
+        if dataset_path.name == Path(DEFAULT_DATASET).name
+        else dataset_path.stem
+    )
     return {
-        "benchmark_name": Path(dataset).stem,
+        "benchmark_name": benchmark_name,
         "generated_at": datetime.now(UTC).isoformat(),
-        "dataset": str(Path(dataset)),
+        "dataset": str(dataset_path),
         "dataset_sha256": dataset_sha256,
         "hydrated_dataset_sha256": hydrated_dataset_sha256,
         "source_dataset": str(Path(source_dataset)),
