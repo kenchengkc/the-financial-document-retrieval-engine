@@ -15,7 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.panel import FeatureLineage, PanelFeature
+from fdre.research.panel import (
+    FeatureLineage,
+    PanelFeature,
+)
 
 
 _PANEL_VALUE_LINEAGE: dict[str, PanelFeature] = {
