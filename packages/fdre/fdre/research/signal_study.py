@@ -78,6 +78,9 @@ class SignalStudyReport(BaseModel):
     bootstrap_unit: str = "issuer"
     neutralization: str = "none"
     definition: dict[str, object] = Field(default_factory=dict)
+    feature_lineage_by_accession: dict[str, str] = Field(default_factory=dict)
+    feature_lineage_digest: str | None = None
+    feature_lineage_complete: bool = False
     config: EventStudyConfig
     event_count: int
     results: list[SignalWindowResult]
@@ -272,6 +275,7 @@ def _build_signal_report(
     by_period: dict[tuple[str, str], list[SignalPair]],
 ) -> SignalStudyReport:
     feature_by_accession = {event.accession_number: event.feature_value for event in scored}
+    lineage_by_accession, lineage_digest, lineage_complete = _feature_lineage_summary(scored)
     rng = random.Random(config.random_seed)
     results = [
         _summarize_window(
@@ -285,7 +289,7 @@ def _build_signal_report(
     ]
     _apply_benjamini_hochberg(results)
 
-    manifest = {
+    manifest: dict[str, object] = {
         "signal_name": signal_name,
         "outcome_name": outcome_name,
         "bootstrap_unit": "issuer",
@@ -298,6 +302,14 @@ def _build_signal_report(
         "config": config.model_dump(mode="json"),
         "events": sorted(feature_by_accession),
     }
+    if lineage_by_accession:
+        manifest.update(
+            {
+                "feature_lineage_by_accession": lineage_by_accession,
+                "feature_lineage_digest": lineage_digest,
+                "feature_lineage_complete": lineage_complete,
+            }
+        )
     experiment_key = hashlib.sha256(
         json.dumps(manifest, sort_keys=True).encode("utf-8")
     ).hexdigest()
@@ -311,11 +323,39 @@ def _build_signal_report(
         code_sha=code_sha,
         neutralization=neutralization,
         definition=definition,
+        feature_lineage_by_accession=lineage_by_accession,
+        feature_lineage_digest=lineage_digest,
+        feature_lineage_complete=lineage_complete,
         config=config,
         event_count=event_count,
         results=results,
         period_results=_period_results(by_period, n_quantiles),
     )
+
+
+def _feature_lineage_summary(
+    scored: list[FilingEvent],
+) -> tuple[dict[str, str], str | None, bool]:
+    pairs = sorted(
+        (
+            event.accession_number,
+            event.feature_lineage.lineage_id,
+        )
+        for event in scored
+        if event.feature_lineage is not None
+    )
+    lineage_by_accession = dict(pairs)
+    complete = bool(scored) and all(
+        event.feature_lineage is not None for event in scored
+    )
+    digest = (
+        hashlib.sha256(
+            json.dumps(pairs, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if complete
+        else None
+    )
+    return lineage_by_accession, digest, complete
 
 
 def _period_results(
@@ -391,10 +431,10 @@ def persist_signal_study(session: Session, report: SignalStudyReport) -> Researc
         )
         session.add(experiment)
     else:
-        # The experiment key is invariant to market-data coverage (it fingerprints
-        # the filing set, not which filings had bars), so a partial-coverage rerun
-        # hits the same row. Never let it overwrite a study built on more events —
-        # incremental Tiingo warming should only ever grow the published study.
+        # The experiment key is invariant to market-data coverage: it fingerprints
+        # the filing set and, when present, the exact PIT feature lineage, not which
+        # filings happened to have bars. Never let a partial-coverage rerun overwrite
+        # a study built on more events; incremental market-data warming should grow it.
         existing_events = int((experiment.results_json or {}).get("event_count", 0) or 0)
         if report.event_count < existing_events:
             return experiment
