@@ -4,7 +4,12 @@ from fdre.evals.cross_sectional import (
     CrossSectionalMetrics,
     CrossSectionalOutcome,
     CrossSectionalQuestionMetrics,
+    aggregate_cross_sectional_question_metrics,
     evaluate_cross_sectional_outcomes,
+)
+from fdre.evals.cross_sectional_reporting import (
+    slice_cross_sectional_metrics_by_task,
+    write_cross_sectional_eval_report,
 )
 from fdre.evals.datasets import (
     EvalQuestion,
@@ -32,13 +37,16 @@ __all__ = [
     "EvaluationOutcome",
     "EvidenceReference",
     "VariantMetrics",
+    "aggregate_cross_sectional_question_metrics",
     "compute_dataset_sha256",
     "evaluate_cross_sectional_outcomes",
     "evaluate_variants",
     "evaluate_variants_at_ks",
     "load_jsonl_dataset",
+    "slice_cross_sectional_metrics_by_task",
     "validate_benchmark",
     "validate_reviewed_benchmark",
+    "write_cross_sectional_eval_report",
     "write_eval_report",
     "write_jsonl_dataset",
     "write_multi_k_eval_report",
