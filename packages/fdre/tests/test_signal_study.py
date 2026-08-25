@@ -243,6 +243,7 @@ def test_signal_study_marks_partial_lineage_without_claiming_complete_digest() -
 
     assert report.feature_lineage_complete is False
     assert report.feature_lineage_digest is None
+    assert first_event.feature_lineage is not None
     assert report.feature_lineage_by_accession == {
         first_event.accession_number: first_event.feature_lineage.lineage_id
     }
