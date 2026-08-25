@@ -4,6 +4,10 @@ from datetime import UTC, date, datetime
 from typing import cast
 
 import pytest
+from scripts.evaluate_cross_sectional import (
+    build_cross_sectional_benchmark_metadata,
+    parse_args,
+)
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
@@ -19,10 +23,6 @@ from fdre.research.screen import (
     ResearchScreenRow,
 )
 from fdre.retrieval.query import RetrievalCandidate
-from scripts.evaluate_cross_sectional import (
-    build_cross_sectional_benchmark_metadata,
-    parse_args,
-)
 
 AS_OF = "2026-07-31T23:59:59+00:00"
 AVAILABLE_AT = datetime(2026, 7, 1, tzinfo=UTC)
@@ -138,7 +138,7 @@ def test_cross_sectional_screen_plan_requires_top_level_as_of_and_plan() -> None
         build_cross_sectional_screen_plan(missing_as_of)
 
     missing_plan = _question().model_copy(update={"metadata": {"reviewed_by": "test"}})
-    with pytest.raises(ValueError, match="missing metadata.screen_plan"):
+    with pytest.raises(ValueError, match=r"missing metadata\.screen_plan"):
         build_cross_sectional_screen_plan(missing_plan)
 
     duplicate_as_of = _question().model_copy(
