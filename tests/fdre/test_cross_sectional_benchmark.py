@@ -14,7 +14,7 @@ from fdre.evals import (
 )
 from fdre.research.screen import ResearchScreenPlan
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 CROSS_SECTIONAL_BENCHMARK = REPO_ROOT / "data/evals/cross_sectional_benchmark.v1.jsonl"
 GROUNDED_DEVELOPMENT_BENCHMARK = (
     REPO_ROOT / "data/evals/cross_sectional_benchmark.v2.dev.jsonl"
