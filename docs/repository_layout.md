@@ -13,11 +13,13 @@ data/         Version-controlled benchmark and seed artifacts
 docs/         Architecture, methodology, benchmark, and research documentation
 ```
 
-`src/fdre` is the shared engine used by the API, scripts, CI, and research workflows.
-It is not currently persistence-independent: several modules use the API SQLAlchemy models and
-settings directly. That dependency is intentional and explicit until a measured need justifies
-extracting a separate storage adapter layer. Do not create additional packages merely to make the
-repository look more modular.
+`src/fdre` is the shared engine used by the API, scripts, CI, and research workflows. The filesystem
+move does not change the public Python namespace: callers continue to import `fdre.*`.
+
+The shared engine is not currently persistence-independent: several modules use the API SQLAlchemy
+models and settings directly. That dependency is intentional and explicit until a measured need
+justifies extracting a separate storage adapter layer. Do not create additional packages merely to
+make the repository look more modular.
 
 The bounded LangGraph answer workflow remains in `src/fdre/graph` because the production answer
 service actively executes it.
