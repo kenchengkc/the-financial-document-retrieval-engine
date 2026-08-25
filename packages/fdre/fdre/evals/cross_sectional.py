@@ -271,7 +271,7 @@ def _condition_grounding_correct(
             if condition.metric == expected.get("metric")
             and condition.operator == expected.get("operator")
             and condition.change_from_prior
-            is bool(expected.get("change_from_prior", False))
+            == bool(expected.get("change_from_prior", False))
             and _float_matches(condition.threshold, expected.get("threshold"))
         ]
         if len(matches) != 1:
@@ -279,7 +279,7 @@ def _condition_grounding_correct(
         condition = matches[0]
         if condition.feature != expected.get("feature"):
             return False
-        if condition.passed is not bool(expected.get("passed")):
+        if condition.passed != bool(expected.get("passed")):
             return False
         if not _optional_float_matches(
             condition.current_value,
