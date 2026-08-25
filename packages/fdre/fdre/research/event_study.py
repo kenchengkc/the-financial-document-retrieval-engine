@@ -20,7 +20,6 @@ from fdre.research.panel import (
     PanelFeature,
 )
 
-
 _PANEL_VALUE_LINEAGE: dict[str, PanelFeature] = {
     "filing_length_tokens": "filing_length",
     "filing_length_characters": "filing_length",
