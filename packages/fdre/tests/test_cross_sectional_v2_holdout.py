@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts.evaluate_cross_sectional import require_sealed_holdout_optin
+
 from fdre.evals.datasets import (
     compute_dataset_sha256,
     load_cross_sectional_benchmark,
@@ -15,7 +17,6 @@ from fdre.evals.datasets import (
     validate_cross_sectional_evidence_grounding,
 )
 from fdre.research.screen import ResearchScreenPlan
-from scripts.evaluate_cross_sectional import require_sealed_holdout_optin
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EVAL_DIR = REPO_ROOT / "data/evals"
