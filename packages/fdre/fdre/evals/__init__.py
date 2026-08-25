@@ -11,6 +11,10 @@ from fdre.evals.cross_sectional_reporting import (
     slice_cross_sectional_metrics_by_task,
     write_cross_sectional_eval_report,
 )
+from fdre.evals.cross_sectional_runner import (
+    build_cross_sectional_screen_plan,
+    run_cross_sectional_benchmark,
+)
 from fdre.evals.datasets import (
     EvalQuestion,
     EvidenceReference,
@@ -39,12 +43,14 @@ __all__ = [
     "EvidenceReference",
     "VariantMetrics",
     "aggregate_cross_sectional_question_metrics",
+    "build_cross_sectional_screen_plan",
     "compute_dataset_sha256",
     "evaluate_cross_sectional_outcomes",
     "evaluate_variants",
     "evaluate_variants_at_ks",
     "load_cross_sectional_benchmark",
     "load_jsonl_dataset",
+    "run_cross_sectional_benchmark",
     "slice_cross_sectional_metrics_by_task",
     "validate_benchmark",
     "validate_reviewed_benchmark",
