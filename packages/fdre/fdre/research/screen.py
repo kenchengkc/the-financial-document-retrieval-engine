@@ -357,23 +357,20 @@ def validate_screen_lineage(
                     f"{condition.metric}"
                 )
 
-            expected_max = max(
+            lineage_times = [
                 _aware_datetime(
                     current_lineage.max_source_available_at,
                     reference=plan.as_of,
-                ),
-                *(
-                    [
-                        _aware_datetime(
-                            prior_lineage.max_source_available_at,
-                            reference=plan.as_of,
-                        )
-                    ]
-                    if condition.prior_lineage_id is not None
-                    and prior_lineage is not None
-                    else []
-                ),
-            )
+                )
+            ]
+            if condition.prior_lineage_id is not None and prior_lineage is not None:
+                lineage_times.append(
+                    _aware_datetime(
+                        prior_lineage.max_source_available_at,
+                        reference=plan.as_of,
+                    )
+                )
+            expected_max = max(lineage_times)
             observed_max = _aware_datetime(
                 condition.max_information_timestamp,
                 reference=plan.as_of,
