@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -14,11 +15,13 @@ from fdre.research.event_study import (
     EventWindow,
     FilingEvent,
     MarketBar,
+    load_filing_events,
     load_market_bars,
     persist_event_study,
     run_event_study,
     validate_event_inputs,
 )
+from fdre.research.panel import FeatureLineage
 
 
 def _bars(ticker: str, closes: list[float]) -> list[MarketBar]:
@@ -32,6 +35,23 @@ def _bars(ticker: str, closes: list[float]) -> list[MarketBar]:
         MarketBar(ticker=ticker, date=bar_date, adjusted_close=close)
         for bar_date, close in zip(dates, closes, strict=True)
     ]
+
+
+def _lineage(
+    accession: str,
+    available_at: datetime,
+    *,
+    lineage_id: str = "a" * 64,
+) -> FeatureLineage:
+    return FeatureLineage(
+        feature="disclosure_similarity",
+        calculation_version="disclosure-similarity-v1",
+        source_accessions=[accession],
+        source_available_at={accession: available_at},
+        max_source_available_at=available_at,
+        corpus_snapshot_id="snapshot-v1",
+        lineage_id=lineage_id,
+    )
 
 
 def test_event_study_aligns_sessions_bootstraps_and_persists() -> None:
@@ -115,3 +135,87 @@ def test_market_bar_csv_loader_and_leakage_guard(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Feature leakage"):
         validate_event_inputs([leaking])
+
+
+def test_filing_event_loader_reconstructs_selected_panel_feature_lineage(
+    tmp_path: Path,
+) -> None:
+    available_at = datetime(2026, 1, 5, 20, tzinfo=UTC)
+    lineage = _lineage("aaa-2026-q1", available_at)
+    path = tmp_path / "panel.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "ticker": "AAA",
+                    "accession_number": "aaa-2026-q1",
+                    "available_at": available_at.isoformat(),
+                    "max_source_available_at": available_at.isoformat(),
+                    "disclosure_similarity": 0.72,
+                    "calculation_version": "fdre-panel-v3",
+                    "feature_lineage": json.dumps(
+                        {
+                            "disclosure_similarity": lineage.model_dump(mode="json")
+                        },
+                        sort_keys=True,
+                    ),
+                }
+            ]
+        )
+    )
+
+    events, _, feature_version = load_filing_events(
+        path,
+        feature="disclosure_similarity",
+    )
+
+    assert feature_version == "fdre-panel-v3"
+    assert len(events) == 1
+    assert events[0].feature_value == pytest.approx(0.72)
+    assert events[0].feature_lineage == lineage
+    assert events[0].max_source_available_at == lineage.max_source_available_at
+
+
+def test_filing_event_loader_keeps_legacy_panel_exports_compatible(
+    tmp_path: Path,
+) -> None:
+    available_at = datetime(2026, 1, 5, 20, tzinfo=UTC)
+    path = tmp_path / "legacy-panel.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "ticker": "AAA",
+                    "accession_number": "aaa-2026-q1",
+                    "available_at": available_at.isoformat(),
+                    "max_source_available_at": available_at.isoformat(),
+                    "disclosure_similarity": 0.72,
+                    "calculation_version": "fdre-panel-v2",
+                }
+            ]
+        )
+    )
+
+    events, _, _ = load_filing_events(path, feature="disclosure_similarity")
+
+    assert events[0].feature_lineage is None
+    assert events[0].max_source_available_at == available_at
+
+
+def test_event_validation_rejects_lineage_timestamp_mismatch() -> None:
+    available_at = datetime(2026, 1, 5, 20, tzinfo=UTC)
+    lineage = _lineage(
+        "aaa-2026-q1",
+        available_at - timedelta(hours=1),
+    )
+    event = FilingEvent(
+        ticker="AAA",
+        accession_number="aaa-2026-q1",
+        available_at=available_at,
+        max_source_available_at=available_at,
+        feature_value=0.72,
+        feature_lineage=lineage,
+    )
+
+    with pytest.raises(ValueError, match="does not match lineage"):
+        validate_event_inputs([event])
