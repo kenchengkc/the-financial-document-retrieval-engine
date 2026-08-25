@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from statistics import mean
 
-from fdre.evals.datasets import EvalQuestion, evidence_fingerprint
+from fdre.evals.datasets import EvalQuestion, evidence_reference_matches
 from fdre.evals.metrics import (
     issuer_precision_at_k,
     issuer_recall_at_k,
@@ -186,17 +186,21 @@ def _evidence_recall_at_k(
     matched: set[int] = set()
     for row in response.rows[:k]:
         for candidate in row.evidence:
-            fingerprint = evidence_fingerprint(candidate.text)
+            candidate_section = candidate.metadata.get("section")
+            section = str(candidate_section) if candidate_section is not None else None
             for index, reference in enumerate(question.relevant_evidence):
-                if reference.accession_number != row.accession_number:
-                    continue
                 if (
                     reference.ticker is not None
                     and _normalize_ticker(reference.ticker)
                     != _normalize_ticker(row.ticker)
                 ):
                     continue
-                if reference.content_fingerprint == fingerprint:
+                if evidence_reference_matches(
+                    reference,
+                    accession_number=row.accession_number,
+                    section=section,
+                    text=candidate.text,
+                ):
                     matched.add(index)
     return len(matched) / len(question.relevant_evidence)
 
