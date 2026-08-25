@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -186,7 +186,7 @@ def _lexical_overlap_score(terms: set[str], text: str) -> int:
     return len(terms & text_terms)
 
 
-def _filing_sort_key(row: ResearchPanelRow) -> tuple[date, object, str]:
+def _filing_sort_key(row: ResearchPanelRow) -> tuple[date, datetime, str]:
     return (row.period_end or date.min, row.available_at, row.accession_number)
 
 
