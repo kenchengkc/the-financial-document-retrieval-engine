@@ -4,7 +4,7 @@ Exact search disables index scans and ranks by halfvec cosine distance in SQL.
 ANN uses the production HNSW path in DenseRetriever. Both share the same Voyage
 query embedding.
 
-    FDRE_ALLOW_PROD=1 PYTHONPATH=packages/fdre:. python3 -m scripts.benchmark_ann_recall
+    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. python3 -m scripts.benchmark_ann_recall
 """
 
 from __future__ import annotations

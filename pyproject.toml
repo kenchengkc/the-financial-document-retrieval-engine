@@ -49,23 +49,23 @@ opensearch = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["packages/fdre", "."]
+where = ["src", "."]
 include = ["fdre*", "apps*"]
 
 [tool.pytest.ini_options]
 testpaths = [
   "apps/api/tests",
-  "packages/fdre/tests",
+  "tests/fdre",
 ]
 pythonpath = [
   ".",
-  "packages/fdre",
+  "src",
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["apps", "packages/fdre", "scripts"]
+src = ["apps", "src", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
@@ -76,7 +76,7 @@ known-first-party = ["apps", "fdre"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["apps/api/app", "packages/fdre/fdre"]
+files = ["apps/api/app", "src/fdre"]
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true

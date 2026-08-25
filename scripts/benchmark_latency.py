@@ -1,6 +1,6 @@
 """Stratified retrieval latency benchmark (single-name vs cross-sectional).
 
-    FDRE_ALLOW_PROD=1 PYTHONPATH=packages/fdre:. python3 -m scripts.benchmark_latency
+    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. python3 -m scripts.benchmark_latency
 """
 
 from __future__ import annotations

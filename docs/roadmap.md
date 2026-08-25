@@ -149,5 +149,5 @@ FDRE is financial research infrastructure designed for **Research/Data Engineeri
 ## 4. Immediate Next Step
 
 Begin **Phase 0 (Evaluation Platform v2)**:
-1. Extend evaluation schemas in `packages/fdre/fdre/evals/datasets.py` for task stratification and gold-quote metadata.
+1. Extend evaluation schemas in `src/fdre/evals/datasets.py` for task stratification and gold-quote metadata.
 2. Build validation and evaluation commands to establish the frozen baseline.

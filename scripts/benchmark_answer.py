@@ -17,7 +17,7 @@ the answer — neighbor expansion's value would only surface with a synthesizing
 because the top hit is usually a different, also-relevant chunk in the same
 section; answer_on_target is the meaningful relevance proxy.
 
-    PYTHONPATH=packages/fdre:. VOYAGE_API_KEY=... python3.11 -m scripts.benchmark_answer
+    PYTHONPATH=src:. VOYAGE_API_KEY=... python3.11 -m scripts.benchmark_answer
 """
 
 from __future__ import annotations

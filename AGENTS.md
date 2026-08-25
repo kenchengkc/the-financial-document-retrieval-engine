@@ -17,7 +17,7 @@ FDRE is financial research infrastructure, not a generic chatbot or trading syst
 
 - `apps/api/`: FastAPI routes, schemas, services, models, migrations, and API tests.
 - `apps/web/`: Next.js research interface and Playwright tests.
-- `packages/fdre/`: reusable ingestion, parsing, retrieval, graph, evaluation, and research code.
+- `src/`: reusable ingestion, parsing, retrieval, graph, evaluation, and research code.
 - `scripts/retrieval_pipeline.py`: primary artifact/research CLI.
 - `scripts/ingest_ticker_batch.py`: resumable operational ingestion.
 - `data/sample/`: small deterministic fixtures only.
