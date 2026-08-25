@@ -1,0 +1,83 @@
+name: Temporary Part 7.3 freeze generator
+
+on:
+  push:
+    branches:
+      - tmp-part7-3-freeze-generator
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: ${{ !contains(github.event.head_commit.message, 'generated frozen v2 development benchmark') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: tmp-part7-3-freeze-generator
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Generate frozen benchmark and manifest
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          from fdre.evals.datasets import compute_dataset_sha256, load_jsonl_dataset
+
+          components = [
+              Path('data/evals/cross_sectional_benchmark.v2.dev.jsonl'),
+              Path('data/evals/cross_sectional_benchmark.v2.conditions.dev.jsonl'),
+          ]
+          output = Path('data/evals/cross_sectional_benchmark.v2.development.jsonl')
+          manifest_path = Path('data/evals/cross_sectional_benchmark.v2.development.manifest.json')
+
+          component_questions = [load_jsonl_dataset(path) for path in components]
+          questions = [q for group in component_questions for q in group]
+          output.write_text('\n'.join(q.model_dump_json(exclude_none=False) for q in questions) + '\n')
+
+          task_counts = Counter(q.resolved_task_type for q in questions)
+          ids = [q.question_id for q in questions]
+          if len(ids) != len(set(ids)):
+              raise SystemExit('duplicate question IDs across v2 development components')
+          if len(questions) != 28:
+              raise SystemExit(f'expected 28 questions, found {len(questions)}')
+
+          manifest = {
+              'benchmark_name': 'FDRE Cross-Sectional v2 Development',
+              'benchmark_version': 'v2',
+              'split': 'development',
+              'status': 'frozen',
+              'question_count': len(questions),
+              'task_type_counts': dict(sorted(task_counts.items())),
+              'dataset_path': str(output),
+              'dataset_sha256': compute_dataset_sha256(questions),
+              'file_sha256': hashlib.sha256(output.read_bytes()).hexdigest(),
+              'components': [
+                  {
+                      'path': str(path),
+                      'question_count': len(group),
+                      'dataset_sha256': compute_dataset_sha256(group),
+                      'file_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                  }
+                  for path, group in zip(components, component_questions, strict=True)
+              ],
+              'holdout_status': 'not_created',
+              'frozen_after_parts': ['7.1', '7.2'],
+          }
+          manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+      - name: Commit generated artifacts
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/evals/cross_sectional_benchmark.v2.development.jsonl data/evals/cross_sectional_benchmark.v2.development.manifest.json
+          git commit -m 'eval: generated frozen v2 development benchmark'
+          git push origin HEAD:tmp-part7-3-freeze-generator
