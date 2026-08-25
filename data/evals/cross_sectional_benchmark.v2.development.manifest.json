@@ -1,0 +1,36 @@
+{
+  "benchmark_name": "FDRE Cross-Sectional v2 Development",
+  "benchmark_version": "v2",
+  "components": [
+    {
+      "dataset_sha256": "a48fdb9094f31cbf9fc017a04a9bd17ec1a34f573add32850cfbb87a64ab06a5",
+      "file_sha256": "d717b50bf84d54fbc429118cab8c3842ad3736ee15b9d7566ce10cd925d8e5f0",
+      "path": "data/evals/cross_sectional_benchmark.v2.dev.jsonl",
+      "question_count": 13
+    },
+    {
+      "dataset_sha256": "73a071e127ef976ac1b2df147b0b7f28acc9203db11724f42a42d05d3f605e40",
+      "file_sha256": "312078aac800556cad3c884643c33e79ca549de9f35cec0730db3c5d0ba2c23b",
+      "path": "data/evals/cross_sectional_benchmark.v2.conditions.dev.jsonl",
+      "question_count": 15
+    }
+  ],
+  "dataset_path": "data/evals/cross_sectional_benchmark.v2.development.jsonl",
+  "dataset_sha256": "b3d0b17bd2da7ccaaf6cb655dff7de6e91c9506d5a61e15a19f0d049f8644571",
+  "file_sha256": "f6f6969fb6d1f316d88f4cd3a11ac58aed471ce0b2aeaefc71de733af383c6e7",
+  "frozen_after_parts": [
+    "7.1",
+    "7.2"
+  ],
+  "holdout_status": "not_created",
+  "question_count": 28,
+  "split": "development",
+  "status": "frozen",
+  "task_type_counts": {
+    "change_screen": 5,
+    "semantic_screen": 10,
+    "semantic_structured_screen": 5,
+    "structured_screen": 5,
+    "temporal_screen": 3
+  }
+}

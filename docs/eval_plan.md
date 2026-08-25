@@ -50,10 +50,38 @@ Candidate ranking in that helper is only reviewer triage; it is not a gold-label
 Cases whose original disclosure is absent from the selected filing must be replaced or rewritten
 as new reviewed cases rather than force-labeled.
 
+### Frozen v2 development benchmark
+
+Parts 7.1 and 7.2 are frozen together at
+`data/evals/cross_sectional_benchmark.v2.development.jsonl`. This is the canonical development
+input for subsequent Cross-Sectional v2 evaluation work. The two reviewed component files remain
+committed as provenance, but should not be independently edited after this freeze:
+
+- `cross_sectional_benchmark.v2.dev.jsonl`: 13 evidence-grounded semantic/temporal cases;
+- `cross_sectional_benchmark.v2.conditions.dev.jsonl`: 15 structured, change, and mixed cases.
+
+The canonical development set contains 28 questions with the following locked task distribution:
+
+| Task type | Count |
+| --- | ---: |
+| `semantic_screen` | 10 |
+| `temporal_screen` | 3 |
+| `structured_screen` | 5 |
+| `change_screen` | 5 |
+| `semantic_structured_screen` | 5 |
+
+Its canonical dataset SHA-256 is
+`b3d0b17bd2da7ccaaf6cb655dff7de6e91c9506d5a61e15a19f0d049f8644571`.
+The machine-readable freeze manifest at
+`data/evals/cross_sectional_benchmark.v2.development.manifest.json` also pins the raw file hash,
+component hashes, counts, task distribution, and holdout status. CI recomputes these values and
+fails if the materialized development benchmark drifts from either reviewed component.
+
 The six v1 cross-sectional holdout cases were accessed during the Part-7.1 evidence-alignment
 diagnostic. They are therefore **diagnostic only** for future work and must not be presented as an
-untouched OOS set. Cross-Sectional v2 will receive a new sealed holdout after the development task
-mix is finalized.
+untouched OOS set. The frozen v2 development manifest deliberately records `holdout_status` as
+`not_created`. Part 7.4 must create a new holdout only after this development task mix is locked;
+that new holdout must remain sealed until the final v2 evaluation stage.
 
 ## Release Gates
 
