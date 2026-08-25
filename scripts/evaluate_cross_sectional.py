@@ -23,6 +23,7 @@ from fdre.evals import (
     load_jsonl_dataset,
     run_cross_sectional_benchmark,
     validate_benchmark,
+    validate_cross_sectional_evidence_grounding,
     validate_reviewed_benchmark,
     write_cross_sectional_eval_report,
 )
@@ -43,7 +44,7 @@ DEFAULT_OUTPUT_DIR = "data/processed/evals/cross-sectional-v1"
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the frozen FDRE cross-sectional benchmark"
+        description="Run an FDRE cross-sectional benchmark"
     )
     parser.add_argument("dataset", nargs="?", default=DEFAULT_DATASET)
     parser.add_argument("--source-dataset", default=DEFAULT_SOURCE_DATASET)
@@ -58,7 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="+",
         type=int,
         default=[1, 3, 5],
-        help="Issuer-ranking cutoffs; defaults to 1 3 5 for the five-issuer v1 cases",
+        help="Issuer-ranking cutoffs; defaults to 1 3 5 for five-issuer cases",
     )
     return parser.parse_args(argv)
 
@@ -74,12 +75,19 @@ def main(argv: list[str] | None = None) -> None:
         args.dataset,
         source_dataset_path=args.source_dataset,
     )
-    validate_benchmark(
-        hydrated_questions,
-        expected_count=30,
-        expected_splits={"development": 24, "holdout": 6},
-        required_categories={"cross_sectional"},
-    )
+    if Path(args.dataset).name == Path(DEFAULT_DATASET).name:
+        validate_benchmark(
+            hydrated_questions,
+            expected_count=30,
+            expected_splits={"development": 24, "holdout": 6},
+            required_categories={"cross_sectional"},
+        )
+    else:
+        validate_benchmark(
+            hydrated_questions,
+            required_categories={"cross_sectional"},
+        )
+        validate_cross_sectional_evidence_grounding(hydrated_questions)
 
     questions = hydrated_questions
     if args.split != "all":
@@ -180,7 +188,7 @@ def build_cross_sectional_benchmark_metadata(
     plans = [build_cross_sectional_screen_plan(question) for question in questions]
     task_counts = Counter(question.resolved_task_type for question in questions)
     return {
-        "benchmark_name": "FDRE Cross-Sectional v1",
+        "benchmark_name": Path(dataset).stem,
         "generated_at": datetime.now(UTC).isoformat(),
         "dataset": str(Path(dataset)),
         "dataset_sha256": dataset_sha256,
