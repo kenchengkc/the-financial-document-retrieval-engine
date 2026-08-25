@@ -66,15 +66,8 @@ class EvalQuestion(BaseModel):
     should_abstain: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    # v2 fields — optional for backward compatibility with existing benchmarks.
     task_type: str | None = None
-    """Precise retrieval/research operation (e.g. ``latest_filing``,
-    ``comparison``, ``hard_negative``).  Falls back to *category* via
-    :pyattr:`resolved_task_type` when absent."""
-
     as_of: str | None = None
-    """ISO-8601 date or datetime indicating the point-in-time boundary.
-    Evidence must be available at or before this timestamp."""
 
     @model_validator(mode="after")
     def assign_question_id(self) -> EvalQuestion:
@@ -85,7 +78,6 @@ class EvalQuestion(BaseModel):
 
     @property
     def resolved_task_type(self) -> str:
-        """Return *task_type* when set, otherwise fall back to *category*."""
         return self.task_type or self.category
 
 
@@ -102,12 +94,6 @@ REQUIRED_BENCHMARK_CATEGORIES = {
 
 
 def compute_dataset_sha256(questions: list[EvalQuestion]) -> str:
-    """Deterministic SHA-256 of canonical benchmark content.
-
-    Serializes each question to sorted-key JSON, joins with newlines, and
-    hashes. The result is stable across re-serialization as long as the
-    Pydantic model fields and values remain identical.
-    """
     canonical = "\n".join(
         json.dumps(question.model_dump(mode="json"), sort_keys=True)
         for question in questions
@@ -122,11 +108,6 @@ def validate_benchmark(
     expected_splits: dict[str, int] | None = None,
     required_categories: set[str] | None = None,
 ) -> None:
-    """Flexible benchmark validation for v2+ datasets.
-
-    All constraints are optional.  Pass only the invariants that apply to
-    the dataset under test.
-    """
     errors: list[str] = []
     if expected_count is not None and len(questions) != expected_count:
         errors.append(f"expected {expected_count} questions, found {len(questions)}")
@@ -164,7 +145,6 @@ def validate_benchmark(
 
 
 def validate_reviewed_benchmark(questions: list[EvalQuestion]) -> None:
-    """Validate the immutable v1 reviewed benchmark contract (120 / 80 / 40)."""
     validate_benchmark(
         questions,
         expected_count=120,
@@ -184,6 +164,36 @@ def load_jsonl_dataset(path: str | Path) -> list[EvalQuestion]:
         except ValueError as error:
             raise ValueError(f"Invalid eval record on line {line_number}") from error
     return questions
+
+
+def load_cross_sectional_benchmark(
+    path: str | Path,
+    *,
+    source_dataset_path: str | Path,
+) -> list[EvalQuestion]:
+    """Hydrate cross-sectional cases with canonical reviewed evidence."""
+    questions = load_jsonl_dataset(path)
+    source_questions = load_jsonl_dataset(source_dataset_path)
+    source_by_id = {
+        question.question_id: question
+        for question in source_questions
+        if question.question_id is not None
+    }
+
+    hydrated: list[EvalQuestion] = []
+    for question in questions:
+        source_ids = question.metadata.get("source_question_ids")
+        if not isinstance(source_ids, list) or not source_ids:
+            raise ValueError(f"{question.question_id}: missing source_question_ids")
+        evidence: list[EvidenceReference] = []
+        for source_id in source_ids:
+            if not isinstance(source_id, str) or source_id not in source_by_id:
+                raise ValueError(
+                    f"{question.question_id}: unknown source question {source_id!r}"
+                )
+            evidence.extend(source_by_id[source_id].relevant_evidence)
+        hydrated.append(question.model_copy(update={"relevant_evidence": evidence}))
+    return hydrated
 
 
 def write_jsonl_dataset(path: str | Path, questions: list[EvalQuestion]) -> None:
