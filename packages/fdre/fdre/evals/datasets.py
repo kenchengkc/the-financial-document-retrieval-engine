@@ -186,6 +186,36 @@ def load_jsonl_dataset(path: str | Path) -> list[EvalQuestion]:
     return questions
 
 
+def load_cross_sectional_benchmark(
+    path: str | Path,
+    *,
+    source_dataset_path: str | Path,
+) -> list[EvalQuestion]:
+    """Hydrate cross-sectional cases with canonical reviewed evidence."""
+    questions = load_jsonl_dataset(path)
+    source_questions = load_jsonl_dataset(source_dataset_path)
+    source_by_id = {
+        question.question_id: question
+        for question in source_questions
+        if question.question_id is not None
+    }
+
+    hydrated: list[EvalQuestion] = []
+    for question in questions:
+        source_ids = question.metadata.get("source_question_ids")
+        if not isinstance(source_ids, list) or not source_ids:
+            raise ValueError(f"{question.question_id}: missing source_question_ids")
+        evidence: list[EvidenceReference] = []
+        for source_id in source_ids:
+            if not isinstance(source_id, str) or source_id not in source_by_id:
+                raise ValueError(
+                    f"{question.question_id}: unknown source question {source_id!r}"
+                )
+            evidence.extend(source_by_id[source_id].relevant_evidence)
+        hydrated.append(question.model_copy(update={"relevant_evidence": evidence}))
+    return hydrated
+
+
 def write_jsonl_dataset(path: str | Path, questions: list[EvalQuestion]) -> None:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
