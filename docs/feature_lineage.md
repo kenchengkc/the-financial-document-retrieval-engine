@@ -27,6 +27,20 @@ The same lineage identity is propagated through the research stack:
 
 Semantic-provider output is intentionally not represented as deterministic feature lineage. The screen digest fingerprints structured research inputs, not potentially nondeterministic retrieval-provider output.
 
+## Snapshot scope and benchmark replay
+
+`FeatureLineage.lineage_id` is intentionally **panel-snapshot scoped**. The `corpus_snapshot_id` included in the hash represents the complete source-document set used by that `ResearchPanel` query, not only the accessions required by one feature. Two panel queries can therefore produce the same feature value from the same source accessions while producing different lineage IDs if their PIT universes or source-document sets differ.
+
+That distinction matters for evaluation. Cross-sectional condition reports now separate:
+
+- **condition correctness/source grounding** — selected current/prior filings, metric/operator/threshold/change semantics, feature, pass/fail, current/prior/observed values, and exact source-accession chain;
+- **exact lineage replay** — equality of the snapshot-scoped current/prior lineage IDs;
+- **strict condition grounding** — both of the above.
+
+A snapshot-scoped lineage mismatch is therefore not silently treated as a numeric or source-grounding error. Production `validate_screen_lineage(...)` still fail-closes each actual condition against the actual feature-lineage object, source accessions, availability timestamps, and PIT ceiling.
+
+For future sealed benchmarks that want exact lineage replay to be meaningful, capture lineage IDs from a raw `ResearchPanel` built with the **same frozen ticker universe, forms, as-of timestamp, sections, and amendment policy as the eventual screen plan**. This preserves holdout sealing without executing semantic retrieval or the screen itself.
+
 ## Verification
 
 Part 6.4 adds fail-closed verification helpers:

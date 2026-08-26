@@ -34,6 +34,8 @@ class CrossSectionalQuestionMetrics:
     issuer_recall_at_k: dict[int, float]
     issuer_precision_at_k: dict[int, float]
     evidence_recall_at_k: dict[int, float]
+    condition_correct: bool | None
+    condition_lineage_replay_correct: bool | None
     condition_grounding_correct: bool | None
     max_issuer_evidence_share: float
     pit_leakage: bool
@@ -50,6 +52,8 @@ class CrossSectionalMetrics:
     issuer_precision_at_k: dict[int, float]
     evidence_recall_at_k: dict[int, float]
     condition_grounding_question_count: int
+    condition_correctness_accuracy: float | None
+    condition_lineage_replay_accuracy: float | None
     condition_grounding_accuracy: float | None
     mean_max_issuer_evidence_share: float
     pit_leakage_rate: float
@@ -90,7 +94,17 @@ def aggregate_cross_sectional_question_metrics(
     evidence_questions = [
         metric for metric in per_question if metric.relevant_evidence_count > 0
     ]
-    condition_results = [
+    condition_correctness_results = [
+        metric.condition_correct
+        for metric in per_question
+        if metric.condition_correct is not None
+    ]
+    condition_lineage_results = [
+        metric.condition_lineage_replay_correct
+        for metric in per_question
+        if metric.condition_lineage_replay_correct is not None
+    ]
+    condition_grounding_results = [
         metric.condition_grounding_correct
         for metric in per_question
         if metric.condition_grounding_correct is not None
@@ -129,10 +143,20 @@ def aggregate_cross_sectional_question_metrics(
             )
             for k in normalized_ks
         },
-        condition_grounding_question_count=len(condition_results),
+        condition_grounding_question_count=len(condition_grounding_results),
+        condition_correctness_accuracy=(
+            mean(float(value) for value in condition_correctness_results)
+            if condition_correctness_results
+            else None
+        ),
+        condition_lineage_replay_accuracy=(
+            mean(float(value) for value in condition_lineage_results)
+            if condition_lineage_results
+            else None
+        ),
         condition_grounding_accuracy=(
-            mean(float(value) for value in condition_results)
-            if condition_results
+            mean(float(value) for value in condition_grounding_results)
+            if condition_grounding_results
             else None
         ),
         mean_max_issuer_evidence_share=mean(
@@ -165,6 +189,13 @@ def _evaluate_question(
         row.ticker for row in response.rows for _candidate in row.evidence
     ]
     expected_conditions = _expected_conditions(question)
+    condition_correct, condition_lineage_replay, condition_grounding = (
+        _condition_replay_results(
+            question,
+            response,
+            expected_conditions=expected_conditions,
+        )
+    )
     zero_result_correct = None if expected else not returned
     return CrossSectionalQuestionMetrics(
         question_id=question.question_id or "",
@@ -186,11 +217,9 @@ def _evaluate_question(
         evidence_recall_at_k={
             k: _evidence_recall_at_k(question, response, k) for k in ks
         },
-        condition_grounding_correct=_condition_grounding_correct(
-            question,
-            response,
-            expected_conditions=expected_conditions,
-        ),
+        condition_correct=condition_correct,
+        condition_lineage_replay_correct=condition_lineage_replay,
+        condition_grounding_correct=condition_grounding,
         max_issuer_evidence_share=max_issuer_evidence_share(evidence_tickers),
         pit_leakage=_has_pit_leakage(response),
         zero_result_correct=zero_result_correct,
@@ -235,34 +264,39 @@ def _expected_conditions(question: EvalQuestion) -> list[dict[str, Any]]:
     return [record for record in payload if isinstance(record, dict)]
 
 
-def _condition_grounding_correct(
+def _condition_replay_results(
     question: EvalQuestion,
     response: ResearchScreenResponse,
     *,
     expected_conditions: list[dict[str, Any]],
-) -> bool | None:
+) -> tuple[bool | None, bool | None, bool | None]:
+    """Score decision correctness separately from snapshot-scoped lineage replay."""
     if not expected_conditions:
-        return None
+        return None, None, None
     if len(question.expected_tickers) != 1:
-        return False
+        return False, False, False
 
     expected_ticker = _normalize_ticker(question.expected_tickers[0])
     gold_rows = [
         row for row in response.rows if _normalize_ticker(row.ticker) == expected_ticker
     ]
     if len(gold_rows) != 1:
-        return False
+        return False, False, False
     row = gold_rows[0]
 
+    correctness = True
+    lineage_replay = True
     selected_accession = question.metadata.get("selected_accession")
     if isinstance(selected_accession, str) and row.accession_number != selected_accession:
-        return False
+        correctness = False
+        lineage_replay = False
     selected_prior_accession = question.metadata.get("selected_prior_accession")
     if (
         selected_prior_accession is not None
         and row.prior_accession_number != selected_prior_accession
     ):
-        return False
+        correctness = False
+        lineage_replay = False
 
     for expected in expected_conditions:
         matches = [
@@ -275,34 +309,37 @@ def _condition_grounding_correct(
             and _float_matches(condition.threshold, expected.get("threshold"))
         ]
         if len(matches) != 1:
-            return False
+            correctness = False
+            lineage_replay = False
+            continue
         condition = matches[0]
         if condition.feature != expected.get("feature"):
-            return False
+            correctness = False
         if condition.passed != bool(expected.get("passed")):
-            return False
+            correctness = False
         if not _optional_float_matches(
             condition.current_value,
             expected.get("current_value"),
         ):
-            return False
+            correctness = False
         if not _optional_float_matches(
             condition.prior_value,
             expected.get("prior_value"),
         ):
-            return False
+            correctness = False
         if not _optional_float_matches(
             condition.observed_value,
             expected.get("observed_value"),
         ):
-            return False
-        if condition.current_lineage_id != expected.get("current_lineage_id"):
-            return False
-        if condition.prior_lineage_id != expected.get("prior_lineage_id"):
-            return False
+            correctness = False
         if condition.source_accessions != expected.get("source_accessions"):
-            return False
-    return True
+            correctness = False
+        if condition.current_lineage_id != expected.get("current_lineage_id"):
+            lineage_replay = False
+        if condition.prior_lineage_id != expected.get("prior_lineage_id"):
+            lineage_replay = False
+
+    return correctness, lineage_replay, correctness and lineage_replay
 
 
 def _float_matches(actual: float, expected: Any) -> bool:
@@ -336,6 +373,8 @@ def _empty_metrics(ks: tuple[int, ...]) -> CrossSectionalMetrics:
         issuer_precision_at_k=dict.fromkeys(ks, 0.0),
         evidence_recall_at_k=dict.fromkeys(ks, 0.0),
         condition_grounding_question_count=0,
+        condition_correctness_accuracy=None,
+        condition_lineage_replay_accuracy=None,
         condition_grounding_accuracy=None,
         mean_max_issuer_evidence_share=0.0,
         pit_leakage_rate=0.0,

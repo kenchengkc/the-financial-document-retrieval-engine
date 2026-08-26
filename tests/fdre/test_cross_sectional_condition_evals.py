@@ -160,14 +160,20 @@ def test_condition_grounding_scores_exact_numeric_and_lineage_reason() -> None:
     )
 
     assert metrics.condition_grounding_question_count == 1
+    assert metrics.condition_correctness_accuracy == 1.0
+    assert metrics.condition_lineage_replay_accuracy == 1.0
     assert metrics.condition_grounding_accuracy == 1.0
     assert metrics.per_question[0].reviewed_condition_count == 1
+    assert metrics.per_question[0].condition_correct is True
+    assert metrics.per_question[0].condition_lineage_replay_correct is True
     assert metrics.per_question[0].condition_grounding_correct is True
     assert metrics.per_question[1].reviewed_condition_count == 0
+    assert metrics.per_question[1].condition_correct is None
+    assert metrics.per_question[1].condition_lineage_replay_correct is None
     assert metrics.per_question[1].condition_grounding_correct is None
 
 
-def test_condition_grounding_detects_lineage_mismatch() -> None:
+def test_condition_grounding_separates_snapshot_lineage_mismatch() -> None:
     metrics = evaluate_cross_sectional_outcomes(
         [
             CrossSectionalOutcome(
@@ -179,7 +185,11 @@ def test_condition_grounding_detects_lineage_mismatch() -> None:
     )
 
     assert metrics.condition_grounding_question_count == 1
+    assert metrics.condition_correctness_accuracy == 1.0
+    assert metrics.condition_lineage_replay_accuracy == 0.0
     assert metrics.condition_grounding_accuracy == 0.0
+    assert metrics.per_question[0].condition_correct is True
+    assert metrics.per_question[0].condition_lineage_replay_correct is False
     assert metrics.per_question[0].condition_grounding_correct is False
 
 
@@ -196,15 +206,22 @@ def test_condition_grounding_is_emitted_in_reproducible_reports(tmp_path: Path) 
 
     payload = json.loads(json_path.read_text())
     assert payload["overall"]["condition_grounding_question_count"] == 1
+    assert payload["overall"]["condition_correctness_accuracy"] == 1.0
+    assert payload["overall"]["condition_lineage_replay_accuracy"] == 1.0
     assert payload["overall"]["condition_grounding_accuracy"] == 1.0
-    assert payload["by_task_type"]["structured_screen"][
-        "condition_grounding_accuracy"
-    ] == 1.0
+    task_payload = payload["by_task_type"]["structured_screen"]
+    assert task_payload["condition_correctness_accuracy"] == 1.0
+    assert task_payload["condition_lineage_replay_accuracy"] == 1.0
+    assert task_payload["condition_grounding_accuracy"] == 1.0
 
     record = json.loads(per_query_path.read_text())
     assert record["reviewed_condition_count"] == 1
+    assert record["condition_correct"] is True
+    assert record["condition_lineage_replay_correct"] is True
     assert record["condition_grounding_correct"] is True
 
     markdown = markdown_path.read_text()
-    assert "Condition grounding" in markdown
+    assert "Condition correctness/source grounding" in markdown
+    assert "Exact lineage replay" in markdown
+    assert "Strict condition grounding" in markdown
     assert "100.000%" in markdown
