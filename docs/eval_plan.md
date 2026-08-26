@@ -100,7 +100,6 @@ Generated questions and development results must not be reported as holdout perf
 The 33-query content-grounded ablation in the README remains the primary retrieval-quality
 signal until holdout labels are human-paraphrased.
 
-
 ## Cross-Sectional v2 sealed holdout (Part 7.4)
 
 The v2 holdout is frozen at `data/evals/cross_sectional_benchmark.v2.holdout.jsonl`.
@@ -110,8 +109,51 @@ with the 28-case development benchmark. The locked task mix is 5 semantic, 1 tem
 
 Holdout construction used only the PIT research panel and direct chunks from the exact
 selected filing. It did **not** execute `execute_research_screen`, `/research/screen`,
-`/search`, hybrid retrieval, embeddings, or reranking. The holdout manifest therefore
-records `status: sealed` and `evaluation_status: never_run`. Part 7.5 is the first permitted
-benchmark execution, and the CLI requires the explicit `--allow-sealed-holdout` flag for
-that deliberate first run. Any label/content change after that first run requires a new benchmark
-version rather than editing v2 in place.
+`/search`, hybrid retrieval, embeddings, or reranking. The holdout was sealed with canonical
+dataset SHA-256
+`9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc`
+and remained unevaluated until Part 7.5. Any label/content change after the first run requires a
+new benchmark version rather than editing v2 in place.
+
+## Cross-Sectional v2 first holdout reveal (Part 7.5)
+
+The first permitted holdout execution completed on **2026-08-26** and is frozen under
+`data/evals/results/cross-sectional-v2-holdout-first-run/`. The run used the production corpus,
+Voyage `voyage-4-large` 512-D embeddings, PostgreSQL sparse retrieval, and no reranker
+(`hybrid+none`). The evaluated corpus contained 3,204 filings and 3,039,403 chunks/embeddings.
+The first-run git SHA is `ee80bae16d5f4d605db7ed15770c5158e79324bc`; corpus snapshot ID is
+`388fe80d07d5bd6e`.
+
+| Metric | First holdout result |
+| --- | ---: |
+| Issuer Recall@1 | **1.000 (14/14)** |
+| Issuer Recall@3 / @5 | **1.000 / 1.000** |
+| Exact evidence Recall@1 / @3 / @5 | **0.778 / 0.778 / 0.778** |
+| Strict condition grounding | **0.0% (0/8)** |
+| PIT leakage | **0.0%** |
+| p50 / p95 latency | **3.15 s / 6.15 s** |
+| Max semantic-search calls | **1** |
+
+The ranking result is strong: every held-out gold issuer ranked first. Evidence support is
+incomplete rather than uniformly weak: seven of nine evidence-bearing cases reproduced the exact
+reviewed passage, while `holdout-xs-005` (PFE) and `holdout-xs-012` (CRM) did not. Increasing K
+does not recover either miss because the failure is inside the gold issuer's bounded evidence set,
+not issuer ranking.
+
+The **0/8 strict condition-grounding result is a real failure and must not be hidden by the perfect
+issuer ranking**. All eight structured/change/mixed cases selected the correct issuer at rank 1,
+but the exact reviewed condition contract (values, prior values where applicable, lineage IDs,
+and source-accession chain) did not replay byte-for-byte against the evaluated production panel.
+Part 7.5 freezes that observation; it does not relabel the holdout after seeing the result. The next
+research task should isolate provenance drift versus a screen/lineage replay defect using explicit
+field-level diagnostics while keeping v2 labels immutable.
+
+The 6.15 s overall p95 also exceeds the earlier 5 s cross-sectional latency target. Structured-only
+screens remain near 2.08 s p95; semantic screens are the bottleneck at roughly 7.33 s p95. Optimize
+only after profiling this measured path rather than adding new infrastructure.
+
+The holdout remains `status: sealed` after the first reveal. Its manifest now records
+`evaluation_status: first_run_frozen`, the workflow/artifact identity, corpus snapshot, evaluation
+git SHA, and hashes of the committed JSON, Markdown, and per-query results. Future evaluations
+still require the explicit `--allow-sealed-holdout` flag and may not overwrite the first-run
+artifact.
