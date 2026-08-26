@@ -12,7 +12,7 @@ https://api.thefdre.com/research/screen
 
 All ten returned HTTP 404. Therefore the previously reported Cross-Sectional v2 holdout latency is **not** a canonical deployed `/research/screen` route SLO. It measures the production screen executor against the production Neon/provider environment. A real route p50/p95 must be measured only after the Railway API deployment exposes `/research/screen`.
 
-This finding does not justify a new deployment service or monitoring dependency. It is a deployment-parity gate: deploy the already-merged API route, then measure it directly.
+This finding does not justify a new deployment service or monitoring dependency. It is a deployment-parity gate: deploy the already-merged API route, then measure it directly. Until that gate is satisfied, executor latency and deployed-route latency remain separate metrics.
 
 ## Stage profile before optimization
 
