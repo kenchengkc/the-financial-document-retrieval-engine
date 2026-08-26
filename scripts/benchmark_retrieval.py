@@ -6,7 +6,7 @@ default (multi-query expansion, weighted fusion, ts_rank) and prints recall@k,
 MRR and nDCG@k for each. The labels are content-grounded: a retrieved chunk is
 relevant only if it shares the issuer + section and contains the labeled quote.
 
-    PYTHONPATH=packages/fdre:. python3.11 -m scripts.benchmark_retrieval
+    PYTHONPATH=src:. python3.11 -m scripts.benchmark_retrieval
 """
 
 from __future__ import annotations

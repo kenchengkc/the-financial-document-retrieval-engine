@@ -13,7 +13,7 @@ from fdre.evals.datasets import (
     validate_cross_sectional_evidence_grounding,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 EVAL_DIR = REPO_ROOT / "data/evals"
 SEED = EVAL_DIR / "cross_sectional_benchmark.v2.dev.jsonl"
 CONDITIONS = EVAL_DIR / "cross_sectional_benchmark.v2.conditions.dev.jsonl"

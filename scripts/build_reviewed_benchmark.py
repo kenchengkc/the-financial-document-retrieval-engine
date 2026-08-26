@@ -4,7 +4,7 @@ Pulls real chunk quotes for missing categories, preserves the existing 33 labele
 development questions, adds abstention/filter/temporal/table/cross-sectional items,
 assigns an 80/40 development/holdout split, and stamps metadata.reviewed_by.
 
-    FDRE_ALLOW_PROD=1 PYTHONPATH=packages/fdre:. \\
+    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. \\
       python3 -m scripts.build_reviewed_benchmark
 """
 

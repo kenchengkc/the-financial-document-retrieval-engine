@@ -117,7 +117,7 @@ candidate pools, ANN-first unfiltered path, capped sparse tokens, thematic
 
 ```bash
 export FDRE_ALLOW_PROD=1
-export PYTHONPATH=packages/fdre:.
+export PYTHONPATH=src:.
 
 python3 -m scripts.benchmark_latency --k 10 --warmup 2 --repeats 2
 python3 -m scripts.benchmark_ann_recall --k 10
