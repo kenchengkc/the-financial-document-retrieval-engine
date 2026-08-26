@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import subprocess
 from collections import Counter
 from collections.abc import Callable
@@ -60,11 +61,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[1, 3, 5],
         help="Issuer-ranking cutoffs; defaults to 1 3 5 for five-issuer cases",
     )
+    parser.add_argument(
+        "--allow-sealed-holdout",
+        action="store_true",
+        help="Explicitly authorize the first execution of a sealed holdout benchmark",
+    )
     return parser.parse_args(argv)
+
+
+def require_sealed_holdout_optin(dataset: str, *, allow: bool) -> None:
+    dataset_path = Path(dataset)
+    manifest_path = dataset_path.with_name(
+        f"{dataset_path.stem}.manifest.json"
+    )
+    if not manifest_path.exists():
+        return
+    manifest = json.loads(manifest_path.read_text())
+    if (
+        manifest.get("status") == "sealed"
+        and manifest.get("evaluation_status") == "never_run"
+        and not allow
+    ):
+        raise ValueError(
+            "Refusing to execute a sealed holdout benchmark. "
+            "Use --allow-sealed-holdout only for the deliberate first evaluation."
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    require_sealed_holdout_optin(args.dataset, allow=args.allow_sealed_holdout)
     require_neon_optin()
 
     raw_questions = load_jsonl_dataset(args.dataset)
