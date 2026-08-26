@@ -1,0 +1,31 @@
+{
+  "as_of": "2026-07-31T23:59:59+00:00",
+  "benchmark_name": "FDRE Cross-Sectional v2 Holdout",
+  "benchmark_version": "v2",
+  "construction_constraints": {
+    "embedding_calls": 0,
+    "reranker_calls": 0,
+    "retrieval_execution": false,
+    "screen_execution": false
+  },
+  "construction_method": "raw_pit_panel_and_selected_filing_review",
+  "dataset_path": "data/evals/cross_sectional_benchmark.v2.holdout.jsonl",
+  "dataset_sha256": "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc",
+  "development_dataset_path": "data/evals/cross_sectional_benchmark.v2.development.jsonl",
+  "development_dataset_sha256": "b3d0b17bd2da7ccaaf6cb655dff7de6e91c9506d5a61e15a19f0d049f8644571",
+  "development_gold_ticker_overlap": [],
+  "evaluation_status": "never_run",
+  "file_sha256": "30e584da7fc2665d848089b5ebe2480ef4e7d3d7ed8880f5053cf98ab26e6fbd",
+  "first_evaluation_part": "7.5",
+  "question_count": 14,
+  "sealed_at": "2026-08-25T22:46:00Z",
+  "split": "holdout",
+  "status": "sealed",
+  "task_type_counts": {
+    "change_screen": 2,
+    "semantic_screen": 5,
+    "semantic_structured_screen": 3,
+    "structured_screen": 3,
+    "temporal_screen": 1
+  }
+}
