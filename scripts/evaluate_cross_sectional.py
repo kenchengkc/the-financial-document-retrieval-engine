@@ -64,27 +64,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--allow-sealed-holdout",
         action="store_true",
-        help="Explicitly authorize the first execution of a sealed holdout benchmark",
+        help="Explicitly authorize execution of a sealed holdout benchmark",
     )
     return parser.parse_args(argv)
 
 
 def require_sealed_holdout_optin(dataset: str, *, allow: bool) -> None:
     dataset_path = Path(dataset)
-    manifest_path = dataset_path.with_name(
-        f"{dataset_path.stem}.manifest.json"
-    )
+    manifest_path = dataset_path.with_name(f"{dataset_path.stem}.manifest.json")
     if not manifest_path.exists():
         return
     manifest = json.loads(manifest_path.read_text())
-    if (
-        manifest.get("status") == "sealed"
-        and manifest.get("evaluation_status") == "never_run"
-        and not allow
-    ):
+    if manifest.get("status") == "sealed" and not allow:
         raise ValueError(
             "Refusing to execute a sealed holdout benchmark. "
-            "Use --allow-sealed-holdout only for the deliberate first evaluation."
+            "Use --allow-sealed-holdout only for a deliberate sealed-holdout evaluation."
         )
 
 
