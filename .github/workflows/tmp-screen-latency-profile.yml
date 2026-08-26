@@ -79,8 +79,7 @@ jobs:
           screen_test_path.write_text(tests.replace(old, new, 1))
           PY
       - name: Run focused tests
-        run: |
-          python -m pytest -q tests/fdre/test_research_panel.py tests/fdre/test_research_screen.py
+        run: python -m pytest -q tests/fdre/test_research_panel.py tests/fdre/test_research_screen.py
       - name: Select production database URL
         run: |
           if [ -n "${DATABASE_URL_DIRECT}" ]; then
@@ -89,28 +88,7 @@ jobs:
             echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
           fi
       - name: Re-profile production executor
-        run: |
-          python - <<'PY'
-          from __future__ import annotations
-
-          import json
-          import statistics
-          from pathlib import Path
-          from time import perf_counter
-          from typing import Any
-
-          from sqlalchemy.orm import Session
-
-          from apps.api.app.config import get_settings
-          from apps.api.app.db import create_db_engine
-          from apps.api.app.services.retrieval_service import search_documents
-          from fdre.evals import build_cross_sectional_screen_plan, load_cross_sectional_benchmark
-          import fdre.research.screen as screen_module
-          from fdre.retrieval.query import RetrievalCandidate, SearchFilters
-
-          dataset = Path('data/evals/cross_sectional_benchmark.v2.development.jsonl')
-          output = Path('data/processed/evals/screen-latency-profile-after.json')
-          task_counts = {\n              'structured_screen': 1,\n              'change_screen': 1,\n              'semantic_screen': 2,\n              'semantic_structured_screen': 1,\n          }\n          questions = load_cross_sectional_benchmark(dataset)\n          selected = []\n          remaining = dict(task_counts)\n          for question in questions:\n              task = question.resolved_task_type\n              if remaining.get(task, 0) > 0:\n                  selected.append(question)\n                  remaining[task] -= 1\n          assert all(value == 0 for value in remaining.values()), remaining\n\n          settings = get_settings()\n          original_panel = screen_module.build_research_panel\n          original_evidence = screen_module._latest_filing_evidence\n          active: dict[str, float] = {}\n\n          def timed_panel(*args: Any, **kwargs: Any) -> Any:\n              started = perf_counter()\n              try:\n                  return original_panel(*args, **kwargs)\n              finally:\n                  active['panel_ms'] = (perf_counter() - started) * 1000\n\n          def timed_evidence(*args: Any, **kwargs: Any) -> Any:\n              started = perf_counter()\n              try:\n                  return original_evidence(*args, **kwargs)\n              finally:\n                  active['evidence_filter_ms'] = (perf_counter() - started) * 1000\n\n          screen_module.build_research_panel = timed_panel\n          screen_module._latest_filing_evidence = timed_evidence\n\n          records: list[dict[str, Any]] = []\n          with Session(create_db_engine()) as session:\n              for repeat in range(2):\n                  for question in selected:\n                      plan = build_cross_sectional_screen_plan(question)\n                      active = {}\n\n                      def semantic_search(\n                          query: str,\n                          filters: SearchFilters,\n                          top_k: int,\n                      ) -> list[RetrievalCandidate]:\n                          started = perf_counter()\n                          try:\n                              result = search_documents(\n                                  session,\n                                  settings,\n                                  query=query,\n                                  filters=filters,\n                                  top_k=top_k,\n                              )\n                              active['semantic_service_ms'] = float(result.latency_ms)\n                              return result.candidates\n                          finally:\n                              active['semantic_search_ms'] = (perf_counter() - started) * 1000\n\n                      started = perf_counter()\n                      response = screen_module.execute_research_screen(\n                          session,\n                          plan,\n                          semantic_search=semantic_search,\n                      )\n                      total_ms = (perf_counter() - started) * 1000\n                      known = sum(\n                          active.get(key, 0.0)\n                          for key in ('panel_ms', 'semantic_search_ms', 'evidence_filter_ms')\n                      )\n                      records.append({\n                          'question_id': question.question_id,\n                          'task_type': question.resolved_task_type,\n                          'repeat': repeat + 1,\n                          'total_ms': round(total_ms, 2),\n                          'panel_ms': round(active.get('panel_ms', 0.0), 2),\n                          'semantic_search_ms': round(active.get('semantic_search_ms', 0.0), 2),\n                          'semantic_service_ms': round(active.get('semantic_service_ms', 0.0), 2),\n                          'evidence_filter_ms': round(active.get('evidence_filter_ms', 0.0), 2),\n                          'other_ms': round(max(0.0, total_ms - known), 2),\n                          'matched_count': response.manifest.matched_count,\n                      })\n\n          def summary(task: str, field: str) -> dict[str, float]:\n              values = [float(r[field]) for r in records if r['task_type'] == task]\n              ordered = sorted(values)\n              return {\n                  'mean': round(statistics.fmean(values), 2),\n                  'p50': round(statistics.median(values), 2),\n                  'p95': round(ordered[round(0.95 * (len(ordered) - 1))], 2),\n                  'max': round(max(values), 2),\n              }\n\n          task_summary = {\n              task: {\n                  field: summary(task, field)\n                  for field in (\n                      'total_ms',\n                      'panel_ms',\n                      'semantic_search_ms',\n                      'semantic_service_ms',\n                      'evidence_filter_ms',\n                      'other_ms',\n                  )\n              }\n              for task in task_counts\n          }\n          report = {\n              'base_sha': '4767412157a02ad9d4d68195243d28251848427e',\n              'selected_question_ids': [q.question_id for q in selected],\n              'task_summary': task_summary,\n              'records': records,\n          }\n          output.parent.mkdir(parents=True, exist_ok=True)\n          output.write_text(json.dumps(report, indent=2, sort_keys=True) + '\\n')\n          print(json.dumps(task_summary, indent=2, sort_keys=True))\n          PY
+        run: python scripts/tmp_profile_screen_latency.py
       - name: Upload optimized latency profile
         uses: actions/upload-artifact@v4
         with:
@@ -120,10 +98,10 @@ jobs:
           retention-days: 14
       - name: Commit measured optimization
         run: |
-          rm .github/workflows/tmp-screen-latency-profile.yml
+          rm .github/workflows/tmp-screen-latency-profile.yml scripts/tmp_profile_screen_latency.py
           git add src/fdre/research/panel.py src/fdre/research/screen.py \
             tests/fdre/test_research_panel.py tests/fdre/test_research_screen.py \
-            .github/workflows/tmp-screen-latency-profile.yml
+            .github/workflows/tmp-screen-latency-profile.yml scripts/tmp_profile_screen_latency.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'perf: avoid unused panel feature work in screens'
