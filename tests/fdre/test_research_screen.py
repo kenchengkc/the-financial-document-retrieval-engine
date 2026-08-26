@@ -259,6 +259,7 @@ def test_structured_only_screen_makes_no_semantic_call() -> None:
     assert [row.ticker for row in result.rows] == ["AAA"]
     row = result.rows[0]
     condition = row.conditions[0]
+    assert set(row.feature_lineage) == {"xbrl_margins"}
     assert row.rank_value == pytest.approx(0.20)
     assert condition.current_lineage_id == row.feature_lineage["xbrl_margins"].lineage_id
     assert condition.prior_lineage_id is None
@@ -297,6 +298,7 @@ def test_semantic_only_screen_has_no_structured_condition_lineage() -> None:
 
     assert len(result.rows) == 1
     assert result.rows[0].conditions == []
+    assert set(result.rows[0].feature_lineage) == {"filing_timing"}
     assert len(result.manifest.feature_lineage_digest) == 64
 
 
