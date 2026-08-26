@@ -52,10 +52,18 @@ jobs:
             --split development \
             --ks 1 3 5 \
             --output-dir data/processed/evals/condition-replay-dev-current
+      - name: Explain field-level mismatches
+        run: |
+          python scripts/diagnose_condition_replay.py \
+            data/evals/cross_sectional_benchmark.v2.conditions.dev.jsonl \
+            --split development \
+            --output data/processed/evals/condition-replay-diagnostic.json
       - name: Upload diagnostic
         uses: actions/upload-artifact@v4
         with:
           name: condition-replay-dev-${{ github.sha }}
-          path: data/processed/evals/condition-replay-dev-current/
+          path: |
+            data/processed/evals/condition-replay-dev-current/
+            data/processed/evals/condition-replay-diagnostic.json
           if-no-files-found: error
           retention-days: 14
