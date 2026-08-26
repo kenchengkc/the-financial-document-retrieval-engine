@@ -1,0 +1,240 @@
+{
+  "by_task_type": {
+    "change_screen": {
+      "condition_grounding_accuracy": 0.0,
+      "condition_grounding_question_count": 2,
+      "evidence_recall_at_k": {
+        "1": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "issuer_precision_at_k": {
+        "1": 1.0,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "issuer_recall_at_k": {
+        "1": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "ks": [
+        1,
+        3,
+        5
+      ],
+      "latency_p50_ms": 2898.0,
+      "latency_p95_ms": 2980.8,
+      "max_semantic_search_calls": 0,
+      "mean_max_issuer_evidence_share": 0.0,
+      "mean_semantic_search_calls": 0,
+      "pit_leakage_rate": 0.0,
+      "question_count": 2,
+      "zero_result_accuracy": null
+    },
+    "semantic_screen": {
+      "condition_grounding_accuracy": null,
+      "condition_grounding_question_count": 0,
+      "evidence_recall_at_k": {
+        "1": 0.8,
+        "3": 0.8,
+        "5": 0.8
+      },
+      "issuer_precision_at_k": {
+        "1": 1.0,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "issuer_recall_at_k": {
+        "1": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "ks": [
+        1,
+        3,
+        5
+      ],
+      "latency_p50_ms": 4356.0,
+      "latency_p95_ms": 7326.799999999999,
+      "max_semantic_search_calls": 1,
+      "mean_max_issuer_evidence_share": 0.33111111111111113,
+      "mean_semantic_search_calls": 1,
+      "pit_leakage_rate": 0.0,
+      "question_count": 5,
+      "zero_result_accuracy": null
+    },
+    "semantic_structured_screen": {
+      "condition_grounding_accuracy": 0.0,
+      "condition_grounding_question_count": 3,
+      "evidence_recall_at_k": {
+        "1": 0.6666666666666666,
+        "3": 0.6666666666666666,
+        "5": 0.6666666666666666
+      },
+      "issuer_precision_at_k": {
+        "1": 1.0,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "issuer_recall_at_k": {
+        "1": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "ks": [
+        1,
+        3,
+        5
+      ],
+      "latency_p50_ms": 2401.0,
+      "latency_p95_ms": 3523.3,
+      "max_semantic_search_calls": 1,
+      "mean_max_issuer_evidence_share": 1.0,
+      "mean_semantic_search_calls": 1,
+      "pit_leakage_rate": 0.0,
+      "question_count": 3,
+      "zero_result_accuracy": null
+    },
+    "structured_screen": {
+      "condition_grounding_accuracy": 0.0,
+      "condition_grounding_question_count": 3,
+      "evidence_recall_at_k": {
+        "1": 0.0,
+        "3": 0.0,
+        "5": 0.0
+      },
+      "issuer_precision_at_k": {
+        "1": 1.0,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "issuer_recall_at_k": {
+        "1": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "ks": [
+        1,
+        3,
+        5
+      ],
+      "latency_p50_ms": 2034.0,
+      "latency_p95_ms": 2080.8,
+      "max_semantic_search_calls": 0,
+      "mean_max_issuer_evidence_share": 0.0,
+      "mean_semantic_search_calls": 0,
+      "pit_leakage_rate": 0.0,
+      "question_count": 3,
+      "zero_result_accuracy": null
+    },
+    "temporal_screen": {
+      "condition_grounding_accuracy": null,
+      "condition_grounding_question_count": 0,
+      "evidence_recall_at_k": {
+        "1": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "issuer_precision_at_k": {
+        "1": 1.0,
+        "3": 0.3333333333333333,
+        "5": 0.2
+      },
+      "issuer_recall_at_k": {
+        "1": 1.0,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "ks": [
+        1,
+        3,
+        5
+      ],
+      "latency_p50_ms": 3820.0,
+      "latency_p95_ms": 3820.0,
+      "max_semantic_search_calls": 1,
+      "mean_max_issuer_evidence_share": 0.2857142857142857,
+      "mean_semantic_search_calls": 1,
+      "pit_leakage_rate": 0.0,
+      "question_count": 1,
+      "zero_result_accuracy": null
+    }
+  },
+  "metadata": {
+    "benchmark_name": "cross_sectional_benchmark.v2.holdout",
+    "chunk_count": 3039403,
+    "corpus_snapshot_id": "388fe80d07d5bd6e",
+    "dataset": "data/evals/cross_sectional_benchmark.v2.holdout.jsonl",
+    "dataset_sha256": "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc",
+    "document_count": 3204,
+    "embedding_count": 3039403,
+    "embedding_dimensions": 512,
+    "embedding_model": "voyage-4-large",
+    "embedding_provider": "voyage",
+    "evaluated_subset_sha256": "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc",
+    "feature_version": "fdre-panel-v3",
+    "generated_at": "2026-08-26T06:01:59.086448+00:00",
+    "git_sha": "ee80bae16d5f4d605db7ed15770c5158e79324bc",
+    "hydrated_dataset_sha256": "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc",
+    "issuer_ks": [
+      1,
+      3,
+      5
+    ],
+    "min_rerank_score": 0.0,
+    "question_count": 14,
+    "rerank_top_n": 50,
+    "reranker_model": "rerank-2.5",
+    "reranker_provider": "none",
+    "result_limits": [
+      5
+    ],
+    "screen_retrieval_path": "hybrid+none",
+    "semantic_candidate_limits": [
+      50
+    ],
+    "source_dataset": "data/evals/retrieval_benchmark.jsonl",
+    "source_dataset_sha256": "ed01d5c7a6ec52056af197d9034dcc87acaad5ecf8828b163f6cd934e6d397d5",
+    "split": "holdout",
+    "task_type_counts": {
+      "change_screen": 2,
+      "semantic_screen": 5,
+      "semantic_structured_screen": 3,
+      "structured_screen": 3,
+      "temporal_screen": 1
+    }
+  },
+  "overall": {
+    "condition_grounding_accuracy": 0.0,
+    "condition_grounding_question_count": 8,
+    "evidence_recall_at_k": {
+      "1": 0.7777777777777778,
+      "3": 0.7777777777777778,
+      "5": 0.7777777777777778
+    },
+    "issuer_precision_at_k": {
+      "1": 1.0,
+      "3": 0.3333333333333333,
+      "5": 0.2
+    },
+    "issuer_recall_at_k": {
+      "1": 1.0,
+      "3": 1.0,
+      "5": 1.0
+    },
+    "ks": [
+      1,
+      3,
+      5
+    ],
+    "latency_p50_ms": 3154.5,
+    "latency_p95_ms": 6145.099999999999,
+    "max_semantic_search_calls": 1,
+    "mean_max_issuer_evidence_share": 0.35294784580498867,
+    "mean_semantic_search_calls": 0.6428571428571429,
+    "pit_leakage_rate": 0.0,
+    "question_count": 14,
+    "zero_result_accuracy": null
+  }
+}

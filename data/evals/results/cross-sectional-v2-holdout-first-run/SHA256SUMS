@@ -1,0 +1,3 @@
+4c0073317f8b0d084c96a17fd99f8865d34fc4c7c0bec93b5567e48f8ff12b32  data/processed/evals/cross-sectional-v2-holdout-first-run/cross_sectional_eval.json
+42b5a92b96c7064a015a73974d2eb0a3de2b27e1894a67ae73484ba4603e8c9c  data/processed/evals/cross-sectional-v2-holdout-first-run/cross_sectional_eval.md
+99239b661a6d735609684e539df9bec27bf4fedc80643b884750b65aee779775  data/processed/evals/cross-sectional-v2-holdout-first-run/cross_sectional_per_query.jsonl
