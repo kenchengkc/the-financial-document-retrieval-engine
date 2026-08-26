@@ -69,6 +69,8 @@ def _metrics_summary(metrics: CrossSectionalMetrics) -> dict[str, Any]:
         "issuer_precision_at_k": metrics.issuer_precision_at_k,
         "evidence_recall_at_k": metrics.evidence_recall_at_k,
         "condition_grounding_question_count": metrics.condition_grounding_question_count,
+        "condition_correctness_accuracy": metrics.condition_correctness_accuracy,
+        "condition_lineage_replay_accuracy": metrics.condition_lineage_replay_accuracy,
         "condition_grounding_accuracy": metrics.condition_grounding_accuracy,
         "mean_max_issuer_evidence_share": metrics.mean_max_issuer_evidence_share,
         "pit_leakage_rate": metrics.pit_leakage_rate,
@@ -103,10 +105,18 @@ def _markdown_report(
             _cutoff_table(metrics),
             "",
             (
-                "- Condition grounding: "
-                f"**{_optional_rate(metrics.condition_grounding_accuracy)}** "
+                "- Condition correctness/source grounding: "
+                f"**{_optional_rate(metrics.condition_correctness_accuracy)}** "
                 f"across **{metrics.condition_grounding_question_count}** "
                 "reviewed-condition questions"
+            ),
+            (
+                "- Exact lineage replay: "
+                f"**{_optional_rate(metrics.condition_lineage_replay_accuracy)}**"
+            ),
+            (
+                "- Strict condition grounding (correctness + lineage replay): "
+                f"**{_optional_rate(metrics.condition_grounding_accuracy)}**"
             ),
             f"- PIT leakage: **{metrics.pit_leakage_rate:.3%}**",
             f"- Zero-result accuracy: **{_optional_rate(metrics.zero_result_accuracy)}**",
@@ -130,10 +140,11 @@ def _markdown_report(
     lines.extend(
         [
             f"| Task type | N | {recall_headers} | {precision_headers} | "
-            f"{evidence_headers} | Condition grounding | PIT leakage | "
-            "Zero-result acc. | p95 ms | Mean semantic calls |",
+            f"{evidence_headers} | Condition correctness | Lineage replay | "
+            "Strict grounding | PIT leakage | Zero-result acc. | p95 ms | "
+            "Mean semantic calls |",
             "| --- | ---: | "
-            + " | ".join("---:" for _ in range(len(metrics.ks) * 3 + 5))
+            + " | ".join("---:" for _ in range(len(metrics.ks) * 3 + 7))
             + " |",
         ]
     )
@@ -150,6 +161,8 @@ def _markdown_report(
         lines.append(
             f"| {task_type} | {task_metrics.question_count} | {recall_values} | "
             f"{precision_values} | {evidence_values} | "
+            f"{_optional_rate(task_metrics.condition_correctness_accuracy)} | "
+            f"{_optional_rate(task_metrics.condition_lineage_replay_accuracy)} | "
             f"{_optional_rate(task_metrics.condition_grounding_accuracy)} | "
             f"{task_metrics.pit_leakage_rate:.3%} | "
             f"{_optional_rate(task_metrics.zero_result_accuracy)} | "
