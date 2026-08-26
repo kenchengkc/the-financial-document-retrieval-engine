@@ -1,0 +1,93 @@
+name: Temporary full CI
+
+on:
+  push:
+    branches:
+      - phase0-screen-latency-profile
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg16-trixie
+        env:
+          POSTGRES_DB: fdre_test
+          POSTGRES_PASSWORD: fdre
+          POSTGRES_USER: fdre
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fdre -d fdre_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FDRE_POSTGRES_TEST_URL: postgresql+psycopg://fdre:fdre@localhost:5432/fdre_test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+      - name: Ruff
+        run: ruff check .
+      - name: Mypy
+        run: mypy .
+      - name: Pytest
+        run: pytest
+      - name: Validate Alembic migrations
+        env:
+          DATABASE_URL: sqlite+pysqlite:////tmp/fdre-ci.db
+        run: |
+          alembic upgrade head
+          alembic check
+          alembic downgrade base
+      - name: Validate PostgreSQL retrieval indexes
+        run: pytest -q apps/api/tests/test_migrations.py -k postgres_retrieval_indexes
+      - name: Validate Docker Compose
+        run: docker compose config
+      - name: Validate GitHub Actions
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e
