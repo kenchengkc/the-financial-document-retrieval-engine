@@ -19,7 +19,10 @@ from fdre.evals import (
 from fdre.evals.datasets import EvalQuestion
 from fdre.research.screen import ResearchScreenResponse, ScreenConditionResult
 from scripts.eval_guard import require_neon_optin
-from scripts.evaluate_cross_sectional import _production_screen_executor
+from scripts.evaluate_cross_sectional import (
+    _production_screen_executor,
+    require_sealed_holdout_optin,
+)
 
 DEFAULT_DATASET = "data/evals/cross_sectional_benchmark.v2.conditions.dev.jsonl"
 DEFAULT_SOURCE_DATASET = "data/evals/retrieval_benchmark.jsonl"
@@ -34,11 +37,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-dataset", default=DEFAULT_SOURCE_DATASET)
     parser.add_argument("--split", default="development")
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--allow-sealed-holdout",
+        action="store_true",
+        help="Explicitly authorize diagnostic execution of a sealed holdout benchmark",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    require_sealed_holdout_optin(
+        args.dataset,
+        allow=args.allow_sealed_holdout,
+    )
     require_neon_optin()
     questions = load_cross_sectional_benchmark(
         args.dataset,
@@ -82,7 +94,12 @@ def main(argv: list[str] | None = None) -> None:
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    print(json.dumps({key: value for key, value in payload.items() if key != "records"}, indent=2))
+    print(
+        json.dumps(
+            {key: value for key, value in payload.items() if key != "records"},
+            indent=2,
+        )
+    )
 
 
 def diagnose_condition_replay(
