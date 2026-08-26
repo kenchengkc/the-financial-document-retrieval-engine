@@ -27,6 +27,9 @@ RESULTS_DIR = EVAL_DIR / "results/cross-sectional-v2-holdout-first-run"
 RESULT_JSON = RESULTS_DIR / "cross_sectional_eval.json"
 RESULT_MARKDOWN = RESULTS_DIR / "cross_sectional_eval.md"
 RESULT_PER_QUERY = RESULTS_DIR / "cross_sectional_per_query.jsonl"
+EXPECTED_HOLDOUT_SHA256 = (
+    "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc"
+)
 EXPECTED_TASK_COUNTS = {
     "change_screen": 2,
     "semantic_screen": 5,
@@ -35,9 +38,15 @@ EXPECTED_TASK_COUNTS = {
     "temporal_screen": 1,
 }
 EXPECTED_RESULT_SHA256 = {
-    "cross_sectional_eval.json": "4c0073317f8b0d084c96a17fd99f8865d34fc4c7c0bec93b5567e48f8ff12b32",
-    "cross_sectional_eval.md": "42b5a92b96c7064a015a73974d2eb0a3de2b27e1894a67ae73484ba4603e8c9c",
-    "cross_sectional_per_query.jsonl": "99239b661a6d735609684e539df9bec27bf4fedc80643b884750b65aee779775",
+    "cross_sectional_eval.json": (
+        "4c0073317f8b0d084c96a17fd99f8865d34fc4c7c0bec93b5567e48f8ff12b32"
+    ),
+    "cross_sectional_eval.md": (
+        "42b5a92b96c7064a015a73974d2eb0a3de2b27e1894a67ae73484ba4603e8c9c"
+    ),
+    "cross_sectional_per_query.jsonl": (
+        "99239b661a6d735609684e539df9bec27bf4fedc80643b884750b65aee779775"
+    ),
 }
 FORBIDDEN_EXECUTION_KEYS = {
     "condition_grounding_correct",
@@ -148,7 +157,7 @@ def test_v2_holdout_first_run_artifacts_are_immutable_and_consistent() -> None:
     result = json.loads(RESULT_JSON.read_text())
     metadata = result["metadata"]
     overall = result["overall"]
-    assert metadata["dataset_sha256"] == "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc"
+    assert metadata["dataset_sha256"] == EXPECTED_HOLDOUT_SHA256
     assert metadata["hydrated_dataset_sha256"] == metadata["dataset_sha256"]
     assert metadata["evaluated_subset_sha256"] == metadata["dataset_sha256"]
     assert metadata["generated_at"] == "2026-08-26T06:01:59.086448+00:00"
@@ -183,12 +192,16 @@ def test_v2_holdout_first_run_artifacts_are_immutable_and_consistent() -> None:
     assert [record["question_id"] for record in per_query] == [
         f"holdout-xs-{i:03d}" for i in range(1, 15)
     ]
-    assert all(record["returned_tickers"][0] == record["expected_tickers"][0] for record in per_query)
+    assert all(
+        record["returned_tickers"][0] == record["expected_tickers"][0]
+        for record in per_query
+    )
     assert not any(record["pit_leakage"] for record in per_query)
     assert {
         record["question_id"]
         for record in per_query
-        if record["relevant_evidence_count"] and record["evidence_recall_at_k"]["1"] == 0.0
+        if record["relevant_evidence_count"]
+        and record["evidence_recall_at_k"]["1"] == 0.0
     } == {"holdout-xs-005", "holdout-xs-012"}
     assert sum(record["condition_grounding_correct"] is False for record in per_query) == 8
 
