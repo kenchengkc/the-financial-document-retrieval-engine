@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from apps.api.app.models import Company, Document, DocumentElement, FinancialFact
 from fdre.ingestion.xbrl import CANONICAL_CONCEPTS
@@ -213,10 +213,14 @@ def build_research_panel(
     timings_ms: dict[str, int] | None = None,
     latest_with_priors_only: bool = False,
 ) -> ResearchPanel:
+    db_checkout_started = perf_counter()
+    session.connection()
+    _record_timing(timings_ms, "panel_db_checkout", db_checkout_started)
+
     document_select_started = perf_counter()
     statement = (
         select(Document)
-        .options(joinedload(Document.company))
+        .options(contains_eager(Document.company))
         .join(Company, Company.id == Document.company_id)
         .where(
             Document.available_at.is_not(None),

@@ -90,6 +90,7 @@ def profiled_research_screen(
                 f"rerank;dur={search_stages.get('rerank', 0)}",
                 f"audit_persist;dur={search_stages.get('audit_persist', 0)}",
                 f"semantic_search;dur={search_wall_ms}",
+                f"panel_db_checkout;dur={screen_stages.get('panel_db_checkout', 0)}",
                 f"panel_document_select;dur={screen_stages.get('panel_document_select', 0)}",
                 f"panel_history_pool;dur={screen_stages.get('panel_history_pool', 0)}",
                 f"panel_prior_resolution;dur={screen_stages.get('panel_prior_resolution', 0)}",
