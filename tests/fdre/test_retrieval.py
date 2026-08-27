@@ -108,6 +108,7 @@ def test_retrieval_filters_by_exact_accession() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     provider = LocalHashEmbeddingProvider(dimensions=32)
+    older_text = "AI data center revenue increased dramatically."
     with Session(engine) as session:
         _seed_retrieval_data(session)
         company = session.scalar(select(Company).where(Company.ticker == "NVDA"))
@@ -122,16 +123,16 @@ def test_retrieval_filters_by_exact_accession() -> None:
             document=older_document,
             element_type="text",
             section="Business",
-            text="AI data center revenue increased dramatically.",
+            text=older_text,
             reading_order=1,
         )
         older_chunk = Chunk(
             document=older_document,
             element=older_element,
-            chunk_text=older_element.text,
+            chunk_text=older_text,
             chunk_type="text",
             section="Business",
-            token_count=len(older_element.text.split()),
+            token_count=len(older_text.split()),
             metadata_json={
                 "ticker": "NVDA",
                 "cik": "0001045810",
