@@ -271,8 +271,17 @@ def build_research_panel(
 
     source_document_ids = set(source_documents_by_id)
     snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))
-    elements_by_document = _load_panel_elements(session, source_document_ids)
-    facts_by_document = _load_panel_facts(session, source_document_ids)
+    selected_features = set(query.features or DEFAULT_PANEL_FEATURES)
+    elements_by_document = (
+        _load_panel_elements(session, source_document_ids)
+        if selected_features & _SECTION_PARAMETER_FEATURES
+        else {}
+    )
+    facts_by_document = (
+        _load_panel_facts(session, source_document_ids)
+        if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)
+        else {}
+    )
     rows = [
         _build_row(
             document,

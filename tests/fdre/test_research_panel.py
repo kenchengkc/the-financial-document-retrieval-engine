@@ -202,6 +202,55 @@ def test_research_panel_builds_reproducible_point_in_time_features(
     assert b"corpus_snapshot_id" in content
 
 
+
+def test_research_panel_skips_storage_for_unselected_lightweight_features() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    company = Company(ticker="TEST", cik="0000000001", name="Test Company")
+    _add_document(
+        company,
+        accession="annual-2024",
+        period_end=date(2024, 12, 31),
+        available_at=datetime(2025, 2, 1, tzinfo=UTC),
+        revenue=Decimal("100"),
+        operating_income=Decimal("20"),
+        passages=["Prior risk."],
+    )
+    _add_document(
+        company,
+        accession="annual-2025",
+        period_end=date(2025, 12, 31),
+        available_at=datetime(2026, 2, 1, tzinfo=UTC),
+        revenue=Decimal("120"),
+        operating_income=Decimal("30"),
+        passages=["Current risk."],
+    )
+
+    with Session(engine) as session:
+        session.add(company)
+        session.commit()
+        statements: list[str] = []
+        event.listen(
+            engine,
+            "before_cursor_execute",
+            lambda _conn, _cursor, statement, _params, _context, _many: statements.append(
+                statement
+            ),
+        )
+        panel = build_research_panel(
+            session,
+            ResearchPanelQuery(
+                tickers=["TEST"],
+                as_of=datetime(2026, 6, 1, tzinfo=UTC),
+                features=["filing_timing"],
+            ),
+        )
+
+    assert len(statements) == 2
+    assert panel.rows
+    assert all(set(row.feature_lineage) == {"filing_timing"} for row in panel.rows)
+
+
 def test_panel_snapshot_includes_filtered_comparable_source() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

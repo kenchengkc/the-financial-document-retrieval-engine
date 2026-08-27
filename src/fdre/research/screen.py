@@ -155,6 +155,10 @@ def execute_research_screen(
     screen invokes the supplied search function at most once, and returned evidence is
     restricted to the exact latest filing selected for each issuer.
     """
+    panel_features: list[PanelFeature] = sorted(_required_screen_features(plan))
+    if not panel_features:
+        # Semantic-only screens need filing identity/timestamps, not text/XBRL features.
+        panel_features = ["filing_timing"]
     panel = build_research_panel(
         session,
         ResearchPanelQuery(
@@ -162,6 +166,7 @@ def execute_research_screen(
             as_of=plan.as_of,
             form_types=plan.form_types,
             sections=plan.sections,
+            features=panel_features,
             include_amendments=False,
             limit=10_000,
         ),
