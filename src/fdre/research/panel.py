@@ -211,6 +211,7 @@ def build_research_panel(
     query: ResearchPanelQuery,
     *,
     timings_ms: dict[str, int] | None = None,
+    latest_with_priors_only: bool = False,
 ) -> ResearchPanel:
     document_select_started = perf_counter()
     statement = (
@@ -283,16 +284,38 @@ def build_research_panel(
     snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))
     _record_timing(timings_ms, "panel_snapshot", snapshot_started)
     selected_features = set(query.features or DEFAULT_PANEL_FEATURES)
+
+    row_documents = documents
+    element_source_ids = source_document_ids
+    fact_source_ids = source_document_ids
+    if latest_with_priors_only:
+        row_documents = _latest_documents_with_priors(documents, prior_by_document)
+        row_document_ids = {document.id for document in row_documents}
+        element_source_ids = set(row_document_ids)
+        fact_source_ids = set(row_document_ids)
+        if selected_features & (_COMPARISON_FEATURES & _SECTION_PARAMETER_FEATURES):
+            element_source_ids.update(
+                prior.id
+                for document in row_documents
+                if (prior := prior_by_document[document.id]) is not None
+            )
+        if "xbrl_growth" in selected_features:
+            fact_source_ids.update(
+                prior.id
+                for document in row_documents
+                if (prior := prior_by_document[document.id]) is not None
+            )
+
     element_load_started = perf_counter()
     elements_by_document = (
-        _load_panel_elements(session, source_document_ids)
+        _load_panel_elements(session, element_source_ids)
         if selected_features & _SECTION_PARAMETER_FEATURES
         else {}
     )
     _record_timing(timings_ms, "panel_element_load", element_load_started)
     fact_load_started = perf_counter()
     facts_by_document = (
-        _load_panel_facts(session, source_document_ids)
+        _load_panel_facts(session, fact_source_ids)
         if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)
         else {}
     )
@@ -307,7 +330,7 @@ def build_research_panel(
             elements_by_document=elements_by_document,
             facts_by_document=facts_by_document,
         )
-        for document in documents
+        for document in row_documents
     ]
     validate_point_in_time_rows(rows)
     _record_timing(timings_ms, "panel_row_build", row_build_started)
@@ -316,6 +339,44 @@ def build_research_panel(
         feature_version=FEATURE_VERSION,
         corpus_snapshot_id=snapshot_id,
         rows=rows,
+    )
+
+
+def _latest_documents_with_priors(
+    documents: list[Document],
+    prior_by_document: dict[int, Document | None],
+) -> list[Document]:
+    """Materialize only each issuer's latest PIT filing and its selected prior.
+
+    The full eligible document set is still used for corpus snapshot identity and
+    prior selection. This only prunes expensive feature loading and row construction.
+    """
+    latest_by_ticker: dict[str, Document] = {}
+    for document in documents:
+        ticker = document.company.ticker
+        incumbent = latest_by_ticker.get(ticker)
+        if (
+            incumbent is None
+            or _document_filing_sort_key(document)
+            > _document_filing_sort_key(incumbent)
+        ):
+            latest_by_ticker[ticker] = document
+
+    selected_document_ids = {document.id for document in documents}
+    materialized_ids: set[int] = set()
+    for document in latest_by_ticker.values():
+        materialized_ids.add(document.id)
+        prior = prior_by_document[document.id]
+        if prior is not None and prior.id in selected_document_ids:
+            materialized_ids.add(prior.id)
+    return [document for document in documents if document.id in materialized_ids]
+
+
+def _document_filing_sort_key(document: Document) -> tuple[date, datetime, str]:
+    return (
+        document.period_end_date or date.min,
+        _required_datetime(document.available_at),
+        document.accession_number,
     )
 
 
