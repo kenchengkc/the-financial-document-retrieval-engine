@@ -1,0 +1,270 @@
+name: Build PR30 panel materialization pruning
+
+on:
+  push:
+    branches:
+      - perf-prune-screen-panel-materialization
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: perf-prune-screen-panel-materialization
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Prune screen panel materialization
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise RuntimeError(f"expected block not found in {path}: {old[:120]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace(
+              "src/fdre/research/panel.py",
+              '''def build_research_panel(
+              session: Session,
+              query: ResearchPanelQuery,
+              *,
+              timings_ms: dict[str, int] | None = None,
+          ) -> ResearchPanel:
+          ''',
+              '''def build_research_panel(
+              session: Session,
+              query: ResearchPanelQuery,
+              *,
+              timings_ms: dict[str, int] | None = None,
+              latest_with_priors_only: bool = False,
+          ) -> ResearchPanel:
+          ''',
+          )
+
+          old_block = '''    snapshot_started = perf_counter()
+              source_document_ids = set(source_documents_by_id)
+              snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))
+              _record_timing(timings_ms, "panel_snapshot", snapshot_started)
+              selected_features = set(query.features or DEFAULT_PANEL_FEATURES)
+              element_load_started = perf_counter()
+              elements_by_document = (
+                  _load_panel_elements(session, source_document_ids)
+                  if selected_features & _SECTION_PARAMETER_FEATURES
+                  else {}
+              )
+              _record_timing(timings_ms, "panel_element_load", element_load_started)
+              fact_load_started = perf_counter()
+              facts_by_document = (
+                  _load_panel_facts(session, source_document_ids)
+                  if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)
+                  else {}
+              )
+              _record_timing(timings_ms, "panel_fact_load", fact_load_started)
+              row_build_started = perf_counter()
+              rows = [
+                  _build_row(
+                      document,
+                      query=query,
+                      snapshot_id=snapshot_id,
+                      prior=prior_by_document[document.id],
+                      elements_by_document=elements_by_document,
+                      facts_by_document=facts_by_document,
+                  )
+                  for document in documents
+              ]
+          '''
+          new_block = '''    snapshot_started = perf_counter()
+              source_document_ids = set(source_documents_by_id)
+              snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))
+              _record_timing(timings_ms, "panel_snapshot", snapshot_started)
+              selected_features = set(query.features or DEFAULT_PANEL_FEATURES)
+
+              row_documents = documents
+              element_source_ids = source_document_ids
+              fact_source_ids = source_document_ids
+              if latest_with_priors_only:
+                  row_documents = _latest_documents_with_priors(documents, prior_by_document)
+                  row_document_ids = {document.id for document in row_documents}
+                  element_source_ids = set(row_document_ids)
+                  fact_source_ids = set(row_document_ids)
+                  if selected_features & (_COMPARISON_FEATURES & _SECTION_PARAMETER_FEATURES):
+                      element_source_ids.update(
+                          prior.id
+                          for document in row_documents
+                          if (prior := prior_by_document[document.id]) is not None
+                      )
+                  if "xbrl_growth" in selected_features:
+                      fact_source_ids.update(
+                          prior.id
+                          for document in row_documents
+                          if (prior := prior_by_document[document.id]) is not None
+                      )
+
+              element_load_started = perf_counter()
+              elements_by_document = (
+                  _load_panel_elements(session, element_source_ids)
+                  if selected_features & _SECTION_PARAMETER_FEATURES
+                  else {}
+              )
+              _record_timing(timings_ms, "panel_element_load", element_load_started)
+              fact_load_started = perf_counter()
+              facts_by_document = (
+                  _load_panel_facts(session, fact_source_ids)
+                  if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)
+                  else {}
+              )
+              _record_timing(timings_ms, "panel_fact_load", fact_load_started)
+              row_build_started = perf_counter()
+              rows = [
+                  _build_row(
+                      document,
+                      query=query,
+                      snapshot_id=snapshot_id,
+                      prior=prior_by_document[document.id],
+                      elements_by_document=elements_by_document,
+                      facts_by_document=facts_by_document,
+                  )
+                  for document in row_documents
+              ]
+          '''
+          replace("src/fdre/research/panel.py", old_block, new_block)
+
+          marker = '''\n\ndef _record_timing(
+              timings_ms: dict[str, int] | None,
+              name: str,
+              started: float,
+          ) -> None:
+          '''
+          helper = '''\n\ndef _latest_documents_with_priors(
+              documents: list[Document],
+              prior_by_document: dict[int, Document | None],
+          ) -> list[Document]:
+              """Materialize only each issuer's latest PIT filing and its selected prior.
+
+              The full eligible document set is still used for corpus snapshot identity and
+              prior selection. This only prunes expensive feature loading and row construction.
+              """
+              latest_by_ticker: dict[str, Document] = {}
+              for document in documents:
+                  ticker = document.company.ticker
+                  incumbent = latest_by_ticker.get(ticker)
+                  if incumbent is None or _document_filing_sort_key(document) > _document_filing_sort_key(incumbent):
+                      latest_by_ticker[ticker] = document
+
+              selected_document_ids = {document.id for document in documents}
+              materialized_ids: set[int] = set()
+              for document in latest_by_ticker.values():
+                  materialized_ids.add(document.id)
+                  prior = prior_by_document[document.id]
+                  if prior is not None and prior.id in selected_document_ids:
+                      materialized_ids.add(prior.id)
+              return [document for document in documents if document.id in materialized_ids]
+
+
+          def _document_filing_sort_key(document: Document) -> tuple[date, datetime, str]:
+              return (
+                  document.period_end_date or date.min,
+                  _required_datetime(document.available_at),
+                  document.accession_number,
+              )
+          '''
+          panel = Path("src/fdre/research/panel.py")
+          text = panel.read_text()
+          if marker not in text:
+              raise RuntimeError("panel helper insertion marker not found")
+          panel.write_text(text.replace(marker, helper + marker, 1))
+
+          replace(
+              "src/fdre/research/screen.py",
+              '''        timings_ms=timings_ms,
+              )
+              _record_screen_timing(timings_ms, "panel_build", panel_started)
+          ''',
+              '''        timings_ms=timings_ms,
+                  latest_with_priors_only=True,
+              )
+              _record_screen_timing(timings_ms, "panel_build", panel_started)
+          ''',
+          )
+
+          tests = Path("tests/fdre/test_research_panel.py")
+          tests.write_text(
+              tests.read_text()
+              + '''\n\ndef test_latest_with_priors_only_preserves_materialized_row_semantics() -> None:
+              engine = create_engine("sqlite+pysqlite:///:memory:")
+              Base.metadata.create_all(engine)
+              company = Company(ticker="TEST", cik="0000000001", name="Test Company")
+              for year, revenue, operating_income, passage in (
+                  (2023, "80", "12", "Legacy risk."),
+                  (2024, "100", "20", "Prior risk."),
+                  (2025, "120", "30", "Current risk."),
+              ):
+                  _add_document(
+                      company,
+                      accession=f"annual-{year}",
+                      period_end=date(year, 12, 31),
+                      available_at=datetime(year + 1, 2, 1, tzinfo=UTC),
+                      revenue=Decimal(revenue),
+                      operating_income=Decimal(operating_income),
+                      passages=[passage],
+                  )
+
+              query = ResearchPanelQuery(
+                  tickers=["TEST"],
+                  as_of=datetime(2026, 6, 1, tzinfo=UTC),
+                  features=["risk_changes", "xbrl_growth", "xbrl_margins"],
+              )
+              with Session(engine) as session:
+                  session.add(company)
+                  session.commit()
+                  full = build_research_panel(session, query)
+                  pruned = build_research_panel(
+                      session,
+                      query,
+                      latest_with_priors_only=True,
+                  )
+
+              assert [row.accession_number for row in full.rows] == [
+                  "annual-2023",
+                  "annual-2024",
+                  "annual-2025",
+              ]
+              assert [row.accession_number for row in pruned.rows] == [
+                  "annual-2024",
+                  "annual-2025",
+              ]
+              assert pruned.corpus_snapshot_id == full.corpus_snapshot_id
+              full_by_accession = {row.accession_number: row for row in full.rows}
+              for row in pruned.rows:
+                  assert row.model_dump(mode="json") == full_by_accession[
+                      row.accession_number
+                  ].model_dump(mode="json")
+              '''
+          )
+          PY
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+      - name: Validate PR30
+        run: |
+          ruff check src/fdre/research/panel.py src/fdre/research/screen.py tests/fdre/test_research_panel.py tests/fdre/test_research_screen.py
+          mypy src apps
+          pytest -q tests/fdre/test_research_panel.py tests/fdre/test_research_screen.py
+      - name: Commit implementation and remove temporary workflow
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-build-pr30.yml
+          git add src/fdre/research/panel.py src/fdre/research/screen.py tests/fdre/test_research_panel.py
+          git commit -m "perf: prune historical screen panel materialization"
+          git push origin HEAD:perf-prune-screen-panel-materialization
