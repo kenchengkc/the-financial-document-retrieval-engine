@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -40,6 +41,17 @@ class Document(Base):
             "form_type",
             "period_end_date",
             "available_at",
+        ),
+        Index(
+            "ix_documents_pit_screen_select",
+            "company_id",
+            "form_type",
+            "available_at",
+            "id",
+            postgresql_where=text(
+                "available_at IS NOT NULL AND period_end_date IS NOT NULL "
+                "AND is_amendment IS false"
+            ),
         ),
     )
 

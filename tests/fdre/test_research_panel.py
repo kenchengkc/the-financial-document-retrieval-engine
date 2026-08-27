@@ -134,10 +134,13 @@ def test_research_panel_builds_reproducible_point_in_time_features(
             tickers=["TEST"],
             as_of=datetime(2026, 6, 1, tzinfo=UTC),
         )
-        panel = build_research_panel(session, query)
+        timings_ms: dict[str, int] = {}
+        panel = build_research_panel(session, query, timings_ms=timings_ms)
         repeated_panel = build_research_panel(session, query)
 
     assert len(statements) == 8
+    assert "panel_db_checkout" in timings_ms
+    assert statements[0].lower().count(" join companies") == 1
     row = next(row for row in panel.rows if row.accession_number == current.accession_number)
     repeated_row = next(
         row
