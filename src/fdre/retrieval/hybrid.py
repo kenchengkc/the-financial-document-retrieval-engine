@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
+from time import perf_counter
 from typing import Literal
 
 from sqlalchemy.orm import Session
@@ -71,6 +72,7 @@ class HybridRetriever:
         filters: SearchFilters,
         limit: int,
         queries: Sequence[str] | None = None,
+        timings_ms: dict[str, int] | None = None,
     ) -> list[RetrievalCandidate]:
         # De-duplicate the primary query with any expansion variants; each variant
         # contributes its own dense and sparse ranking to the fusion.
@@ -83,21 +85,32 @@ class HybridRetriever:
         candidate_limit = max(limit * 5, 20) if not unfiltered else max(limit, 20)
         store: dict[int, RetrievalCandidate] = {}
         rankings: list[tuple[float, list[int]]] = []
+
+        embedding_started = perf_counter()
         query_vectors = self.dense.provider.embed_texts(
             list(variants), input_type="query"
         )
+        embedding_ms = round((perf_counter() - embedding_started) * 1000)
+
+        dense_ms = 0
+        sparse_ms = 0
         for variant, query_vector in zip(variants, query_vectors, strict=True):
+            dense_started = perf_counter()
             dense_candidates = self.dense.search_with_vector(
                 session,
                 query_vector,
                 filters=filters,
                 limit=candidate_limit,
             )
+            dense_ms += round((perf_counter() - dense_started) * 1000)
+
             sparse_candidates: list[RetrievalCandidate] = []
             if not unfiltered:
+                sparse_started = perf_counter()
                 sparse_candidates = self.sparse.search(
                     session, variant, filters=filters, limit=candidate_limit
                 )
+                sparse_ms += round((perf_counter() - sparse_started) * 1000)
             for candidate in (*dense_candidates, *sparse_candidates):
                 _merge_into_store(store, candidate)
             rankings.append((self.dense_weight, [c.chunk_id for c in dense_candidates]))
@@ -106,6 +119,7 @@ class HybridRetriever:
                     (self.sparse_weight, [c.chunk_id for c in sparse_candidates])
                 )
 
+        fusion_started = perf_counter()
         if self.fusion == "weighted":
             self._score_weighted(store, rankings)
         else:
@@ -118,6 +132,17 @@ class HybridRetriever:
         )[:limit]
         for rank, candidate in enumerate(ranked, start=1):
             candidate.rank = rank
+        fusion_ms = round((perf_counter() - fusion_started) * 1000)
+
+        if timings_ms is not None:
+            timings_ms.update(
+                {
+                    "embedding": embedding_ms,
+                    "dense": dense_ms,
+                    "sparse": sparse_ms,
+                    "fusion": fusion_ms,
+                }
+            )
         return ranked
 
     def _score_weighted(
