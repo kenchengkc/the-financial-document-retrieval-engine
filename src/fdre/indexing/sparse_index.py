@@ -78,9 +78,13 @@ class PostgresFullTextIndexer:
             select(Chunk, score)
             .join(Document, Document.id == Chunk.document_id)
             .join(Company, Company.id == Document.company_id)
-            .join(DocumentElement, DocumentElement.id == Chunk.element_id)
             .where(Chunk.search_vector.op("@@")(parsed_query))
         )
+        if filters.element_types:
+            statement = statement.join(
+                DocumentElement,
+                DocumentElement.id == Chunk.element_id,
+            )
         if filters.tickers:
             statement = statement.where(Company.ticker.in_(filters.tickers))
         if filters.ciks:
@@ -104,7 +108,9 @@ class PostgresFullTextIndexer:
         if filters.sections:
             statement = statement.where(Chunk.section.in_(filters.sections))
         if filters.element_types:
-            statement = statement.where(DocumentElement.element_type.in_(filters.element_types))
+            statement = statement.where(
+                DocumentElement.element_type.in_(filters.element_types)
+            )
         if filters.chunk_types:
             statement = statement.where(Chunk.chunk_type.in_(filters.chunk_types))
 
