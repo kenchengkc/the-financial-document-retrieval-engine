@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from typing import Protocol, SupportsFloat, SupportsIndex, runtime_checkable
 
 from pgvector.sqlalchemy import HALFVEC
-from sqlalchemy import cast, select, text
+from sqlalchemy import cast, func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement, Select
 
@@ -102,16 +102,37 @@ class DenseRetriever:
             and self.provider.dimensions == 512
         )
         if use_halfvec:
-            distance = cast(Embedding.vector, HALFVEC(512)).cosine_distance(
+            base_distance = cast(Embedding.vector, HALFVEC(512)).cosine_distance(
                 query_vector
-            ).label("distance")
+            )
         else:
-            distance = Embedding.vector.cosine_distance(query_vector).label("distance")
+            base_distance = Embedding.vector.cosine_distance(query_vector)
 
-        ef_search = (
-            FILTERED_HNSW_EF_SEARCH if filters.tickers else UNFILTERED_HNSW_EF_SEARCH
+        # A bounded cross-sectional screen supplies both a small ticker universe and
+        # an explicit accepted-at window. In that shape, global HNSW search followed
+        # by relational filtering has high tail variance: a query can scan many global
+        # neighbors before enough happen to belong to the requested issuers. Force an
+        # exact distance sort over the already narrow relational subset instead. ABS
+        # is identity for cosine distance (>= 0) while intentionally preventing the
+        # HNSW ORDER BY operator match. Broad/unbounded searches keep the ANN path.
+        exact_filtered_window = bool(
+            filters.tickers
+            and filters.accepted_at_from is not None
+            and filters.accepted_at_to is not None
         )
-        session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))
+        distance: ColumnElement[float] = (
+            func.abs(base_distance).label("distance")
+            if exact_filtered_window
+            else base_distance.label("distance")
+        )
+
+        if not exact_filtered_window:
+            ef_search = (
+                FILTERED_HNSW_EF_SEARCH
+                if filters.tickers
+                else UNFILTERED_HNSW_EF_SEARCH
+            )
+            session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))
 
         # Unfiltered thematic scans: ANN-first on embeddings, then join metadata.
         # Keeps the HNSW ORDER BY free of multi-table joins.
@@ -125,13 +146,17 @@ class DenseRetriever:
             .join(Embedding, Embedding.chunk_id == Chunk.id)
             .join(Document, Document.id == Chunk.document_id)
             .join(Company, Company.id == Document.company_id)
-            .join(DocumentElement, DocumentElement.id == Chunk.element_id)
             .where(
                 Embedding.provider == self.provider.name,
                 Embedding.model == self.provider.model,
                 Embedding.dimensions == self.provider.dimensions,
             )
         )
+        if filters.element_types:
+            statement = statement.join(
+                DocumentElement,
+                DocumentElement.id == Chunk.element_id,
+            )
         statement = _apply_filters(statement, filters)
         rows = session.execute(statement.order_by(distance, Chunk.id).limit(limit)).all()
         return [
@@ -173,7 +198,6 @@ class DenseRetriever:
             .join(Embedding, Embedding.chunk_id == Chunk.id)
             .join(Document, Document.id == Chunk.document_id)
             .join(Company, Company.id == Document.company_id)
-            .join(DocumentElement, DocumentElement.id == Chunk.element_id)
             .where(
                 Embedding.provider == self.provider.name,
                 Embedding.model == self.provider.model,
@@ -181,6 +205,11 @@ class DenseRetriever:
                 Chunk.id.in_(neighbor_ids),
             )
         )
+        if filters.element_types:
+            statement = statement.join(
+                DocumentElement,
+                DocumentElement.id == Chunk.element_id,
+            )
         statement = _apply_filters(statement, filters)
         rows = session.execute(statement.order_by(distance, Chunk.id).limit(limit)).all()
         return [
