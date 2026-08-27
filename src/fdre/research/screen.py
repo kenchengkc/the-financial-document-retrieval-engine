@@ -174,6 +174,7 @@ def execute_research_screen(
             limit=10_000,
         ),
         timings_ms=timings_ms,
+        latest_with_priors_only=True,
     )
     _record_screen_timing(timings_ms, "panel_build", panel_started)
     latest_selection_started = perf_counter()

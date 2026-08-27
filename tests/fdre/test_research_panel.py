@@ -358,3 +358,55 @@ def test_panel_leakage_validator_rejects_future_feature_source() -> None:
 
     with pytest.raises(ValueError, match="Point-in-time feature leakage"):
         validate_point_in_time_rows([row])
+
+
+def test_latest_with_priors_only_preserves_materialized_row_semantics() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    company = Company(ticker="TEST", cik="0000000001", name="Test Company")
+    for year, revenue, operating_income, passage in (
+        (2023, "80", "12", "Legacy risk."),
+        (2024, "100", "20", "Prior risk."),
+        (2025, "120", "30", "Current risk."),
+    ):
+        _add_document(
+            company,
+            accession=f"annual-{year}",
+            period_end=date(year, 12, 31),
+            available_at=datetime(year + 1, 2, 1, tzinfo=UTC),
+            revenue=Decimal(revenue),
+            operating_income=Decimal(operating_income),
+            passages=[passage],
+        )
+
+    query = ResearchPanelQuery(
+        tickers=["TEST"],
+        as_of=datetime(2026, 6, 1, tzinfo=UTC),
+        features=["risk_changes", "xbrl_growth", "xbrl_margins"],
+    )
+    with Session(engine) as session:
+        session.add(company)
+        session.commit()
+        full = build_research_panel(session, query)
+        pruned = build_research_panel(
+            session,
+            query,
+            latest_with_priors_only=True,
+        )
+
+    assert [row.accession_number for row in full.rows] == [
+        "annual-2023",
+        "annual-2024",
+        "annual-2025",
+    ]
+    assert [row.accession_number for row in pruned.rows] == [
+        "annual-2024",
+        "annual-2025",
+    ]
+    assert pruned.corpus_snapshot_id == full.corpus_snapshot_id
+    full_by_accession = {row.accession_number: row for row in full.rows}
+    for row in pruned.rows:
+        assert row.model_dump(mode="json") == full_by_accession[
+            row.accession_number
+        ].model_dump(mode="json")
+    
