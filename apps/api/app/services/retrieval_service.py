@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 
 from sqlalchemy.orm import Session
@@ -28,7 +28,7 @@ class SearchServiceResult:
     preprocessed: PreprocessedQuery
     candidates: list[RetrievalCandidate]
     latency_ms: int
-    stage_timings_ms: dict[str, int]
+    stage_timings_ms: dict[str, int] = field(default_factory=dict)
 
 
 def search_documents(
