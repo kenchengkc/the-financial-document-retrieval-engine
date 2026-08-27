@@ -1,0 +1,10 @@
+name: Temporary Railway Deploy
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo placeholder
