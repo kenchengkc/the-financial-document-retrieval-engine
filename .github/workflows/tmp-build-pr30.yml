@@ -158,7 +158,11 @@ jobs:
               for document in documents:
                   ticker = document.company.ticker
                   incumbent = latest_by_ticker.get(ticker)
-                  if incumbent is None or _document_filing_sort_key(document) > _document_filing_sort_key(incumbent):
+                  if (
+                      incumbent is None
+                      or _document_filing_sort_key(document)
+                      > _document_filing_sort_key(incumbent)
+                  ):
                       latest_by_ticker[ticker] = document
 
               selected_document_ids = {document.id for document in documents}
