@@ -17,6 +17,7 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 - **2.7M chunks, one database.** 498 S&P 500 issuers × ~5 years of 10-K/10-Q annual and quarterly filings (2,762 filings, 2.71M parsed chunks, 2.71M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
 - **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF (Reciprocal Rank Fusion) and BM25 (Best Matching 25 lexical ranking) were implemented, measured, and rejected for underperforming on this corpus.
+- **Production research screens: 100% Recall@3/5, zero PIT leakage.** The frozen 28-case cross-sectional development suite run through the live HTTPS API reaches issuer Recall@1/3/5 of **0.929 / 1.000 / 1.000**, evidence Recall@1/3/5 of **0.833 / 0.944 / 0.944**, **100%** condition correctness/lineage/grounding, **0%** point-in-time leakage, and **1.86 s** end-to-end p95 latency.
 - **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` (16-bit half-precision vectors) cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN (Approximate Nearest Neighbor) results before and after.
 - **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
 - **Honest research.** Four point-in-time signal studies (disclosure similarity, risk-factor churn, filing-delay surprise, and cash-conversion earnings quality) with real information coefficients, multiple-testing adjustments, and bootstrap inference, reporting genuine null results, not manufactured alpha.
@@ -202,6 +203,43 @@ A reviewed 120-question (80/40) holdout contract is frozen in
 [`docs/eval_results.md`](docs/eval_results.md): single-name p95 **1.95 s**,
 cross-sectional p95 **1.74 s**, ANN max delta **0.00**, Hybrid holdout Recall@10
 **0.375** (aspirational 0.85 needs human paraphrases).
+
+### Production cross-sectional screen evaluation
+
+The frozen 28-case Cross-Sectional v2 development suite is also executed through the deployed
+`POST /research/screen` HTTPS route. This measures the real production path—including network,
+API, panel construction, optional hybrid semantic retrieval/reranking, evidence restriction, and
+lineage validation—rather than only an in-process executor.
+
+| Metric | Production result |
+| --- | ---: |
+| Successful requests | **28 / 28** |
+| Issuer Recall@1 / @3 / @5 | **0.929 / 1.000 / 1.000** |
+| Evidence Recall@1 / @3 / @5 | **0.833 / 0.944 / 0.944** |
+| Condition correctness | **1.000** |
+| Exact condition-lineage replay | **1.000** |
+| Strict condition grounding | **1.000** |
+| PIT leakage rate | **0.000** |
+| Mean / max semantic search calls | **0.643 / 1** |
+| API latency p50 / p95 | **1.233 s / 1.757 s** |
+| End-to-end HTTPS p50 / p95 | **1.339 s / 1.860 s** |
+| HTTPS overhead p50 / p95 | **104 ms / 110 ms** |
+
+Latency by task type:
+
+| Task | n | API p50 | API p95 | HTTPS p50 | HTTPS p95 | Issuer Recall@1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Structured | 5 | 356 ms | 660 ms | 458 ms | 764 ms | 1.000 |
+| Change | 5 | 340 ms | 972 ms | 445 ms | 1.075 s | 1.000 |
+| Temporal | 3 | 1.253 s | 1.397 s | 1.357 s | 1.500 s | 1.000 |
+| Semantic | 10 | 1.318 s | 2.048 s | 1.426 s | 2.336 s | 0.800 |
+| Semantic + structured | 5 | 1.371 s | 1.801 s | 1.475 s | 1.904 s | 1.000 |
+
+These are production measurements from **August 27, 2026** on the then-current corpus. They are
+not a fixed SLO: a separate 18-case semantic stage profile on the same deployed revision measured
+HTTPS p95 **3.137 s** and dense-retrieval p95 **1.548 s**, so the current conclusion is that the
+route clears the immediate `<3 s` semantic target on the frozen 28-case run while semantic tail
+variance remains an active optimization target.
 
 ## Key Abbreviations & Glossary
 
