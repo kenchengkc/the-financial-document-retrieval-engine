@@ -12,6 +12,7 @@ AmendmentPolicy = Literal["include", "exclude", "only"]
 class SearchFilters(BaseModel):
     tickers: list[str] = Field(default_factory=list)
     ciks: list[str] = Field(default_factory=list)
+    accession_numbers: list[str] = Field(default_factory=list)
     form_types: list[str] = Field(default_factory=list)
     filing_date_from: date | None = None
     filing_date_to: date | None = None
@@ -63,6 +64,13 @@ def chunk_matches_filters(chunk: Any, filters: SearchFilters) -> bool:
         return False
     if filters.ciks and metadata.get("cik") not in filters.ciks:
         return False
+    if filters.accession_numbers:
+        accession_number = metadata.get("accession_number")
+        if accession_number is None:
+            document = getattr(chunk, "document", None)
+            accession_number = getattr(document, "accession_number", None)
+        if accession_number not in filters.accession_numbers:
+            return False
     if filters.form_types and metadata.get("form_type") not in filters.form_types:
         return False
     if filters.sections and chunk.section not in filters.sections:

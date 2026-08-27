@@ -116,9 +116,12 @@ class DenseRetriever:
         # is identity for cosine distance (>= 0) while intentionally preventing the
         # HNSW ORDER BY operator match. Broad/unbounded searches keep the ANN path.
         exact_filtered_window = bool(
-            filters.tickers
-            and filters.accepted_at_from is not None
-            and filters.accepted_at_to is not None
+            filters.accession_numbers
+            or (
+                filters.tickers
+                and filters.accepted_at_from is not None
+                and filters.accepted_at_to is not None
+            )
         )
         distance: ColumnElement[float] = (
             func.abs(base_distance).label("distance")
@@ -231,6 +234,10 @@ def _apply_filters(
         statement = statement.where(Company.ticker.in_(filters.tickers))
     if filters.ciks:
         statement = statement.where(Company.cik.in_(filters.ciks))
+    if filters.accession_numbers:
+        statement = statement.where(
+            Document.accession_number.in_(filters.accession_numbers)
+        )
     if filters.form_types:
         statement = statement.where(Document.form_type.in_(filters.form_types))
     if filters.filing_date_from:
