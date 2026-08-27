@@ -198,6 +198,7 @@ def test_screen_filters_structured_features_before_one_semantic_search() -> None
     query, filters, top_k = calls[0]
     assert query == "AI-related capital expenditure"
     assert filters.tickers == ["AAA"]
+    assert filters.accession_numbers == ["aaa-2025-q1"]
     assert filters.as_of == datetime(2026, 6, 1, tzinfo=UTC)
     assert top_k == 50
 

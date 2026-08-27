@@ -104,6 +104,81 @@ def test_dense_sparse_hybrid_and_reranking() -> None:
         assert "Gaming" in reranked[0].text
 
 
+def test_retrieval_filters_by_exact_accession() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    provider = LocalHashEmbeddingProvider(dimensions=32)
+    with Session(engine) as session:
+        _seed_retrieval_data(session)
+        company = session.scalar(select(Company).where(Company.ticker == "NVDA"))
+        assert company is not None
+        older_document = Document(
+            company=company,
+            source_type="sec",
+            form_type="10-K",
+            accession_number="0001045810-24-000001",
+        )
+        older_element = DocumentElement(
+            document=older_document,
+            element_type="text",
+            section="Business",
+            text="AI data center revenue increased dramatically.",
+            reading_order=1,
+        )
+        older_chunk = Chunk(
+            document=older_document,
+            element=older_element,
+            chunk_text=older_element.text,
+            chunk_type="text",
+            section="Business",
+            token_count=len(older_element.text.split()),
+            metadata_json={
+                "ticker": "NVDA",
+                "cik": "0001045810",
+                "form_type": "10-K",
+                "section": "Business",
+                "element_type": "text",
+            },
+        )
+        session.add(older_document)
+        session.commit()
+        rebuild_embeddings(session, provider)
+
+        filters = SearchFilters(
+            tickers=["NVDA"],
+            accession_numbers=["0001045810-25-000023"],
+            sections=["Business"],
+        )
+        dense_results = DenseRetriever(provider).search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=10,
+        )
+        sparse_results = SparseRetriever().search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=10,
+        )
+
+        assert dense_results
+        assert sparse_results
+        assert older_chunk.id not in {result.chunk_id for result in dense_results}
+        assert older_chunk.id not in {result.chunk_id for result in sparse_results}
+        for results in (dense_results, sparse_results):
+            accessions = set(
+                session.scalars(
+                    select(Document.accession_number)
+                    .join(Chunk, Chunk.document_id == Document.id)
+                    .where(
+                        Chunk.id.in_([result.chunk_id for result in results])
+                    )
+                )
+            )
+            assert accessions == {"0001045810-25-000023"}
+
+
 def test_expand_with_neighbors_adds_adjacent_chunks() -> None:
     from fdre.retrieval.neighbors import expand_with_neighbors
 

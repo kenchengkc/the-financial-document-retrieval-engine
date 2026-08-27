@@ -201,6 +201,9 @@ def execute_research_screen(
                 if plan.conditions or plan.tickers
                 else []
             ),
+            accession_numbers=sorted(
+                {row.accession_number for row in survivor_rows}
+            ),
             form_types=[form.upper() for form in plan.form_types],
             accepted_at_from=_aware_datetime(
                 min(row.available_at for row in survivor_rows),

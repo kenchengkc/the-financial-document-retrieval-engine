@@ -89,6 +89,10 @@ class PostgresFullTextIndexer:
             statement = statement.where(Company.ticker.in_(filters.tickers))
         if filters.ciks:
             statement = statement.where(Company.cik.in_(filters.ciks))
+        if filters.accession_numbers:
+            statement = statement.where(
+                Document.accession_number.in_(filters.accession_numbers)
+            )
         if filters.form_types:
             statement = statement.where(Document.form_type.in_(filters.form_types))
         if filters.filing_date_from:
