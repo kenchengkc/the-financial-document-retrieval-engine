@@ -1,0 +1,185 @@
+name: Build detailed screen stage profiler
+
+on:
+  push:
+    branches:
+      - perf-profile-screen-panel-stages
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: perf-profile-screen-panel-stages
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Add detailed screen and panel timings
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise RuntimeError(f"expected block not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              "src/fdre/research/panel.py",
+              "from pathlib import Path\nfrom typing import Any, Literal\n",
+              "from pathlib import Path\nfrom time import perf_counter\nfrom typing import Any, Literal\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "def build_research_panel(\n    session: Session,\n    query: ResearchPanelQuery,\n) -> ResearchPanel:\n",
+              "def build_research_panel(\n    session: Session,\n    query: ResearchPanelQuery,\n    *,\n    timings_ms: dict[str, int] | None = None,\n) -> ResearchPanel:\n    document_select_started = perf_counter()\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "    documents = list(session.scalars(statement.limit(query.limit)).unique())\n    if not documents:\n",
+              "    documents = list(session.scalars(statement.limit(query.limit)).unique())\n    _record_timing(timings_ms, \"panel_document_select\", document_select_started)\n    if not documents:\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "    company_ids = {document.company_id for document in documents}\n    document_pool = list(\n",
+              "    history_pool_started = perf_counter()\n    company_ids = {document.company_id for document in documents}\n    document_pool = list(\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "    for document in document_pool:\n        documents_by_company[document.company_id].append(document)\n\n    prior_by_document: dict[int, Document | None] = {}\n",
+              "    for document in document_pool:\n        documents_by_company[document.company_id].append(document)\n    _record_timing(timings_ms, \"panel_history_pool\", history_pool_started)\n\n    prior_resolution_started = perf_counter()\n    prior_by_document: dict[int, Document | None] = {}\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "        if prior is not None:\n            source_documents_by_id[prior.id] = prior\n\n    source_document_ids = set(source_documents_by_id)\n    snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))\n    selected_features = set(query.features or DEFAULT_PANEL_FEATURES)\n    elements_by_document = (\n",
+              "        if prior is not None:\n            source_documents_by_id[prior.id] = prior\n    _record_timing(timings_ms, \"panel_prior_resolution\", prior_resolution_started)\n\n    snapshot_started = perf_counter()\n    source_document_ids = set(source_documents_by_id)\n    snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))\n    _record_timing(timings_ms, \"panel_snapshot\", snapshot_started)\n    selected_features = set(query.features or DEFAULT_PANEL_FEATURES)\n    element_load_started = perf_counter()\n    elements_by_document = (\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "        if selected_features & _SECTION_PARAMETER_FEATURES\n        else {}\n    )\n    facts_by_document = (\n",
+              "        if selected_features & _SECTION_PARAMETER_FEATURES\n        else {}\n    )\n    _record_timing(timings_ms, \"panel_element_load\", element_load_started)\n    fact_load_started = perf_counter()\n    facts_by_document = (\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "        if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)\n        else {}\n    )\n    rows = [\n",
+              "        if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)\n        else {}\n    )\n    _record_timing(timings_ms, \"panel_fact_load\", fact_load_started)\n    row_build_started = perf_counter()\n    rows = [\n",
+          )
+          replace(
+              "src/fdre/research/panel.py",
+              "    ]\n    validate_point_in_time_rows(rows)\n    return ResearchPanel(\n",
+              "    ]\n    validate_point_in_time_rows(rows)\n    _record_timing(timings_ms, \"panel_row_build\", row_build_started)\n    return ResearchPanel(\n",
+          )
+          marker = "\n\ndef write_research_panel(\n"
+          panel_path = Path("src/fdre/research/panel.py")
+          panel_text = panel_path.read_text()
+          helper = '''\n\ndef _record_timing(\n    timings_ms: dict[str, int] | None,\n    name: str,\n    started: float,\n) -> None:\n    if timings_ms is not None:\n        timings_ms[name] = round((perf_counter() - started) * 1000)\n'''
+          if marker not in panel_text:
+              raise RuntimeError("panel timing helper marker not found")
+          panel_path.write_text(panel_text.replace(marker, helper + marker, 1))
+
+          replace(
+              "src/fdre/research/screen.py",
+              "from datetime import date, datetime\nfrom typing import Literal\n",
+              "from datetime import date, datetime\nfrom time import perf_counter\nfrom typing import Literal\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "    *,\n    semantic_search: SemanticSearch | None = None,\n) -> ResearchScreenResponse:\n",
+              "    *,\n    semantic_search: SemanticSearch | None = None,\n    timings_ms: dict[str, int] | None = None,\n) -> ResearchScreenResponse:\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "    panel_features: list[PanelFeature] = sorted(_required_screen_features(plan))\n",
+              "    panel_started = perf_counter()\n    panel_features: list[PanelFeature] = sorted(_required_screen_features(plan))\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "            limit=10_000,\n        ),\n    )\n    latest_rows = _latest_rows_by_ticker(panel.rows)\n    rows_by_accession = {row.accession_number: row for row in panel.rows}\n\n    structured_matches: list[tuple[ResearchPanelRow, list[ScreenConditionResult]]] = []\n",
+              "            limit=10_000,\n        ),\n        timings_ms=timings_ms,\n    )\n    _record_screen_timing(timings_ms, \"panel_build\", panel_started)\n    latest_selection_started = perf_counter()\n    latest_rows = _latest_rows_by_ticker(panel.rows)\n    rows_by_accession = {row.accession_number: row for row in panel.rows}\n    _record_screen_timing(timings_ms, \"latest_selection\", latest_selection_started)\n\n    condition_eval_started = perf_counter()\n    structured_matches: list[tuple[ResearchPanelRow, list[ScreenConditionResult]]] = []\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "        if all(result.passed for result in condition_results):\n            structured_matches.append((row, condition_results))\n\n    evidence_by_ticker: dict[str, list[RetrievalCandidate]] = {}\n",
+              "        if all(result.passed for result in condition_results):\n            structured_matches.append((row, condition_results))\n    _record_screen_timing(timings_ms, \"condition_eval\", condition_eval_started)\n\n    evidence_by_ticker: dict[str, list[RetrievalCandidate]] = {}\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "        semantic_search_calls = 1\n        semantic_candidate_count = len(candidates)\n        evidence_by_ticker = _latest_filing_evidence(\n",
+              "        semantic_search_calls = 1\n        semantic_candidate_count = len(candidates)\n        evidence_hydration_started = perf_counter()\n        evidence_by_ticker = _latest_filing_evidence(\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "            evidence_per_issuer=plan.evidence_per_issuer,\n        )\n\n    rows: list[ResearchScreenRow] = []\n",
+              "            evidence_per_issuer=plan.evidence_per_issuer,\n        )\n        _record_screen_timing(\n            timings_ms, \"evidence_hydration\", evidence_hydration_started\n        )\n    elif timings_ms is not None:\n        timings_ms[\"evidence_hydration\"] = 0\n\n    row_materialization_started = perf_counter()\n    rows: list[ResearchScreenRow] = []\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "    rows.sort(key=lambda item: _rank_key(item, descending=plan.descending))\n    rows = rows[: plan.limit]\n    validate_screen_lineage(plan, rows)\n\n    max_information_timestamp = max(\n",
+              "    rows.sort(key=lambda item: _rank_key(item, descending=plan.descending))\n    rows = rows[: plan.limit]\n    _record_screen_timing(timings_ms, \"row_materialization\", row_materialization_started)\n    lineage_validation_started = perf_counter()\n    validate_screen_lineage(plan, rows)\n    _record_screen_timing(timings_ms, \"lineage_validation\", lineage_validation_started)\n\n    manifest_started = perf_counter()\n    max_information_timestamp = max(\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "    plan_hash = _plan_hash(plan)\n    return ResearchScreenResponse(\n",
+              "    plan_hash = _plan_hash(plan)\n    response = ResearchScreenResponse(\n",
+          )
+          replace(
+              "src/fdre/research/screen.py",
+              "        rows=rows,\n    )\n\n\ndef validate_screen_lineage(\n",
+              "        rows=rows,\n    )\n    _record_screen_timing(timings_ms, \"manifest_build\", manifest_started)\n    return response\n\n\ndef _record_screen_timing(\n    timings_ms: dict[str, int] | None,\n    name: str,\n    started: float,\n) -> None:\n    if timings_ms is not None:\n        timings_ms[name] = round((perf_counter() - started) * 1000)\n\n\ndef validate_screen_lineage(\n",
+          )
+
+          replace(
+              "apps/api/app/routes/research_profiled.py",
+              "    search_wall_ms = 0\n    search_stages: dict[str, int] = {}\n",
+              "    search_wall_ms = 0\n    search_stages: dict[str, int] = {}\n    screen_stages: dict[str, int] = {}\n",
+          )
+          replace(
+              "apps/api/app/routes/research_profiled.py",
+              "            semantic_search=semantic_search,\n        )\n",
+              "            semantic_search=semantic_search,\n            timings_ms=screen_stages,\n        )\n",
+          )
+          replace(
+              "apps/api/app/routes/research_profiled.py",
+              "                f\"semantic_search;dur={search_wall_ms}\",\n                f\"nonsearch;dur={nonsearch_ms}\",\n                f\"screen;dur={total_ms}\",\n",
+              "                f\"semantic_search;dur={search_wall_ms}\",\n                f\"panel_document_select;dur={screen_stages.get('panel_document_select', 0)}\",\n                f\"panel_history_pool;dur={screen_stages.get('panel_history_pool', 0)}\",\n                f\"panel_prior_resolution;dur={screen_stages.get('panel_prior_resolution', 0)}\",\n                f\"panel_snapshot;dur={screen_stages.get('panel_snapshot', 0)}\",\n                f\"panel_element_load;dur={screen_stages.get('panel_element_load', 0)}\",\n                f\"panel_fact_load;dur={screen_stages.get('panel_fact_load', 0)}\",\n                f\"panel_row_build;dur={screen_stages.get('panel_row_build', 0)}\",\n                f\"panel_build;dur={screen_stages.get('panel_build', 0)}\",\n                f\"latest_selection;dur={screen_stages.get('latest_selection', 0)}\",\n                f\"condition_eval;dur={screen_stages.get('condition_eval', 0)}\",\n                f\"evidence_hydration;dur={screen_stages.get('evidence_hydration', 0)}\",\n                f\"row_materialization;dur={screen_stages.get('row_materialization', 0)}\",\n                f\"lineage_validation;dur={screen_stages.get('lineage_validation', 0)}\",\n                f\"manifest_build;dur={screen_stages.get('manifest_build', 0)}\",\n                f\"nonsearch;dur={nonsearch_ms}\",\n                f\"screen;dur={total_ms}\",\n",
+          )
+
+          test_path = Path("tests/fdre/test_research_screen.py")
+          test_text = test_path.read_text()
+          test_text = test_text.replace(
+              "        result = execute_research_screen(\n            session,\n            ResearchScreenPlan(\n",
+              "        timings_ms: dict[str, int] = {}\n        result = execute_research_screen(\n            session,\n            ResearchScreenPlan(\n",
+              1,
+          )
+          test_text = test_text.replace(
+              "            semantic_search=semantic_search,\n        )\n\n    assert len(calls) == 1\n",
+              "            semantic_search=semantic_search,\n            timings_ms=timings_ms,\n        )\n\n    assert len(calls) == 1\n    assert {\n        \"panel_document_select\",\n        \"panel_history_pool\",\n        \"panel_prior_resolution\",\n        \"panel_snapshot\",\n        \"panel_element_load\",\n        \"panel_fact_load\",\n        \"panel_row_build\",\n        \"panel_build\",\n        \"latest_selection\",\n        \"condition_eval\",\n        \"evidence_hydration\",\n        \"row_materialization\",\n        \"lineage_validation\",\n        \"manifest_build\",\n    } <= timings_ms.keys()\n",
+              1,
+          )
+          test_path.write_text(test_text)
+          PY
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+      - name: Validate profiler instrumentation
+        run: |
+          ruff check src/fdre/research/panel.py src/fdre/research/screen.py apps/api/app/routes/research_profiled.py tests/fdre/test_research_screen.py
+          mypy src/fdre/research/panel.py src/fdre/research/screen.py apps/api/app/routes/research_profiled.py
+          pytest -q tests/fdre/test_research_screen.py
+      - name: Commit implementation and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-build-screen-stage-profiler.yml
+          git add src/fdre/research/panel.py src/fdre/research/screen.py apps/api/app/routes/research_profiled.py tests/fdre/test_research_screen.py
+          git commit -m "perf: expose detailed research-screen stage timings"
+          git push origin HEAD:perf-profile-screen-panel-stages
