@@ -42,6 +42,7 @@ def profiled_research_screen(
     started = perf_counter()
     search_wall_ms = 0
     search_stages: dict[str, int] = {}
+    screen_stages: dict[str, int] = {}
 
     def semantic_search(
         query: str,
@@ -66,6 +67,7 @@ def profiled_research_screen(
             session,
             request,
             semantic_search=semantic_search,
+            timings_ms=screen_stages,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -88,6 +90,20 @@ def profiled_research_screen(
                 f"rerank;dur={search_stages.get('rerank', 0)}",
                 f"audit_persist;dur={search_stages.get('audit_persist', 0)}",
                 f"semantic_search;dur={search_wall_ms}",
+                f"panel_document_select;dur={screen_stages.get('panel_document_select', 0)}",
+                f"panel_history_pool;dur={screen_stages.get('panel_history_pool', 0)}",
+                f"panel_prior_resolution;dur={screen_stages.get('panel_prior_resolution', 0)}",
+                f"panel_snapshot;dur={screen_stages.get('panel_snapshot', 0)}",
+                f"panel_element_load;dur={screen_stages.get('panel_element_load', 0)}",
+                f"panel_fact_load;dur={screen_stages.get('panel_fact_load', 0)}",
+                f"panel_row_build;dur={screen_stages.get('panel_row_build', 0)}",
+                f"panel_build;dur={screen_stages.get('panel_build', 0)}",
+                f"latest_selection;dur={screen_stages.get('latest_selection', 0)}",
+                f"condition_eval;dur={screen_stages.get('condition_eval', 0)}",
+                f"evidence_hydration;dur={screen_stages.get('evidence_hydration', 0)}",
+                f"row_materialization;dur={screen_stages.get('row_materialization', 0)}",
+                f"lineage_validation;dur={screen_stages.get('lineage_validation', 0)}",
+                f"manifest_build;dur={screen_stages.get('manifest_build', 0)}",
                 f"nonsearch;dur={nonsearch_ms}",
                 f"screen;dur={total_ms}",
             ]
