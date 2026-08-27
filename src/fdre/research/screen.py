@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import date, datetime
+from time import perf_counter
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -148,6 +149,7 @@ def execute_research_screen(
     plan: ResearchScreenPlan,
     *,
     semantic_search: SemanticSearch | None = None,
+    timings_ms: dict[str, int] | None = None,
 ) -> ResearchScreenResponse:
     """Execute a bounded point-in-time cross-sectional research screen.
 
@@ -155,6 +157,7 @@ def execute_research_screen(
     screen invokes the supplied search function at most once, and returned evidence is
     restricted to the exact latest filing selected for each issuer.
     """
+    panel_started = perf_counter()
     panel_features: list[PanelFeature] = sorted(_required_screen_features(plan))
     if not panel_features:
         # Semantic-only screens need filing identity/timestamps, not text/XBRL features.
@@ -170,10 +173,15 @@ def execute_research_screen(
             include_amendments=False,
             limit=10_000,
         ),
+        timings_ms=timings_ms,
     )
+    _record_screen_timing(timings_ms, "panel_build", panel_started)
+    latest_selection_started = perf_counter()
     latest_rows = _latest_rows_by_ticker(panel.rows)
     rows_by_accession = {row.accession_number: row for row in panel.rows}
+    _record_screen_timing(timings_ms, "latest_selection", latest_selection_started)
 
+    condition_eval_started = perf_counter()
     structured_matches: list[tuple[ResearchPanelRow, list[ScreenConditionResult]]] = []
     for row in latest_rows.values():
         condition_results = [
@@ -187,6 +195,7 @@ def execute_research_screen(
         ]
         if all(result.passed for result in condition_results):
             structured_matches.append((row, condition_results))
+    _record_screen_timing(timings_ms, "condition_eval", condition_eval_started)
 
     evidence_by_ticker: dict[str, list[RetrievalCandidate]] = {}
     semantic_candidate_count = 0
@@ -221,13 +230,20 @@ def execute_research_screen(
         )
         semantic_search_calls = 1
         semantic_candidate_count = len(candidates)
+        evidence_hydration_started = perf_counter()
         evidence_by_ticker = _latest_filing_evidence(
             session,
             candidates,
             latest_rows={row.ticker: row for row in survivor_rows},
             evidence_per_issuer=plan.evidence_per_issuer,
         )
+        _record_screen_timing(
+            timings_ms, "evidence_hydration", evidence_hydration_started
+        )
+    elif timings_ms is not None:
+        timings_ms["evidence_hydration"] = 0
 
+    row_materialization_started = perf_counter()
     rows: list[ResearchScreenRow] = []
     for row, condition_results in structured_matches:
         evidence = evidence_by_ticker.get(row.ticker, [])
@@ -272,8 +288,12 @@ def execute_research_screen(
 
     rows.sort(key=lambda item: _rank_key(item, descending=plan.descending))
     rows = rows[: plan.limit]
+    _record_screen_timing(timings_ms, "row_materialization", row_materialization_started)
+    lineage_validation_started = perf_counter()
     validate_screen_lineage(plan, rows)
+    _record_screen_timing(timings_ms, "lineage_validation", lineage_validation_started)
 
+    manifest_started = perf_counter()
     max_information_timestamp = max(
         (
             _aware_datetime(row.max_source_available_at, reference=plan.as_of)
@@ -285,7 +305,7 @@ def execute_research_screen(
         raise ValueError("point-in-time screen included information after as_of")
 
     plan_hash = _plan_hash(plan)
-    return ResearchScreenResponse(
+    response = ResearchScreenResponse(
         plan=plan,
         manifest=ResearchScreenManifest(
             plan_hash=plan_hash,
@@ -307,6 +327,17 @@ def execute_research_screen(
         ),
         rows=rows,
     )
+    _record_screen_timing(timings_ms, "manifest_build", manifest_started)
+    return response
+
+
+def _record_screen_timing(
+    timings_ms: dict[str, int] | None,
+    name: str,
+    started: float,
+) -> None:
+    if timings_ms is not None:
+        timings_ms[name] = round((perf_counter() - started) * 1000)
 
 
 def validate_screen_lineage(

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -208,7 +209,10 @@ class ResearchPanel(BaseModel):
 def build_research_panel(
     session: Session,
     query: ResearchPanelQuery,
+    *,
+    timings_ms: dict[str, int] | None = None,
 ) -> ResearchPanel:
+    document_select_started = perf_counter()
     statement = (
         select(Document)
         .options(joinedload(Document.company))
@@ -236,6 +240,7 @@ def build_research_panel(
     if not query.include_amendments:
         statement = statement.where(Document.is_amendment.is_(False))
     documents = list(session.scalars(statement.limit(query.limit)).unique())
+    _record_timing(timings_ms, "panel_document_select", document_select_started)
     if not documents:
         snapshot_id = _corpus_snapshot_id([])
         return ResearchPanel(
@@ -245,6 +250,7 @@ def build_research_panel(
             rows=[],
         )
 
+    history_pool_started = perf_counter()
     company_ids = {document.company_id for document in documents}
     document_pool = list(
         session.scalars(
@@ -256,7 +262,9 @@ def build_research_panel(
     documents_by_company: dict[int, list[Document]] = defaultdict(list)
     for document in document_pool:
         documents_by_company[document.company_id].append(document)
+    _record_timing(timings_ms, "panel_history_pool", history_pool_started)
 
+    prior_resolution_started = perf_counter()
     prior_by_document: dict[int, Document | None] = {}
     source_documents_by_id = {document.id: document for document in documents}
     for document in documents:
@@ -268,20 +276,28 @@ def build_research_panel(
         prior_by_document[document.id] = prior
         if prior is not None:
             source_documents_by_id[prior.id] = prior
+    _record_timing(timings_ms, "panel_prior_resolution", prior_resolution_started)
 
+    snapshot_started = perf_counter()
     source_document_ids = set(source_documents_by_id)
     snapshot_id = _corpus_snapshot_id(list(source_documents_by_id.values()))
+    _record_timing(timings_ms, "panel_snapshot", snapshot_started)
     selected_features = set(query.features or DEFAULT_PANEL_FEATURES)
+    element_load_started = perf_counter()
     elements_by_document = (
         _load_panel_elements(session, source_document_ids)
         if selected_features & _SECTION_PARAMETER_FEATURES
         else {}
     )
+    _record_timing(timings_ms, "panel_element_load", element_load_started)
+    fact_load_started = perf_counter()
     facts_by_document = (
         _load_panel_facts(session, source_document_ids)
         if any(feature in _FEATURE_FACT_METRICS for feature in selected_features)
         else {}
     )
+    _record_timing(timings_ms, "panel_fact_load", fact_load_started)
+    row_build_started = perf_counter()
     rows = [
         _build_row(
             document,
@@ -294,12 +310,22 @@ def build_research_panel(
         for document in documents
     ]
     validate_point_in_time_rows(rows)
+    _record_timing(timings_ms, "panel_row_build", row_build_started)
     return ResearchPanel(
         query=query,
         feature_version=FEATURE_VERSION,
         corpus_snapshot_id=snapshot_id,
         rows=rows,
     )
+
+
+def _record_timing(
+    timings_ms: dict[str, int] | None,
+    name: str,
+    started: float,
+) -> None:
+    if timings_ms is not None:
+        timings_ms[name] = round((perf_counter() - started) * 1000)
 
 
 def write_research_panel(

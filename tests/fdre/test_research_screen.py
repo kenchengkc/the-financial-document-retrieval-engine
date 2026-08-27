@@ -175,6 +175,7 @@ def test_screen_filters_structured_features_before_one_semantic_search() -> None
                 ),
             ]
 
+        timings_ms: dict[str, int] = {}
         result = execute_research_screen(
             session,
             ResearchScreenPlan(
@@ -192,9 +193,26 @@ def test_screen_filters_structured_features_before_one_semantic_search() -> None
                 evidence_per_issuer=2,
             ),
             semantic_search=semantic_search,
+            timings_ms=timings_ms,
         )
 
     assert len(calls) == 1
+    assert {
+        "panel_document_select",
+        "panel_history_pool",
+        "panel_prior_resolution",
+        "panel_snapshot",
+        "panel_element_load",
+        "panel_fact_load",
+        "panel_row_build",
+        "panel_build",
+        "latest_selection",
+        "condition_eval",
+        "evidence_hydration",
+        "row_materialization",
+        "lineage_validation",
+        "manifest_build",
+    } <= timings_ms.keys()
     query, filters, top_k = calls[0]
     assert query == "AI-related capital expenditure"
     assert filters.tickers == ["AAA"]
