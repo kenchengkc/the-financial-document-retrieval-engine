@@ -39,8 +39,7 @@ def get_coverage(session: Session) -> CoverageResponse:
 
     payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
     response = CoverageResponse.model_validate(payload) if payload is not None else None
-    snapshot_current = response is not None and _coverage_snapshot_is_current(response)
-    if not snapshot_current:
+    if response is None or not _coverage_snapshot_is_current(response):
         response = _build_coverage(session)
         write_metric_snapshot(
             session,
