@@ -302,7 +302,10 @@ def _decision(
             or evidence.quantile_monotonicity_mean < config.min_quantile_monotonicity
         ):
             failures.append("OOS quantile monotonicity below predeclared minimum")
-        if evidence.long_short_mean is None or evidence.long_short_mean <= config.min_long_short_mean:
+        if (
+            evidence.long_short_mean is None
+            or evidence.long_short_mean <= config.min_long_short_mean
+        ):
             failures.append("mean OOS long-short spread is not positive enough")
         if (
             evidence.positive_long_short_share is None
