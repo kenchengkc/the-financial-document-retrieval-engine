@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -110,7 +110,10 @@ def test_fold_quantiles_are_formed_within_each_oos_fold() -> None:
     report = build_oos_diagnostics(_source(observations))
 
     assert [len(fold.quantiles) for fold in report.folds] == [5, 5, 5]
-    assert all([item.sample_size for item in fold.quantiles] == [2, 2, 2, 2, 2] for fold in report.folds)
+    assert all(
+        [item.sample_size for item in fold.quantiles] == [2, 2, 2, 2, 2]
+        for fold in report.folds
+    )
 
 
 def test_suppresses_narrow_fold_metrics_without_dropping_oos_count() -> None:
