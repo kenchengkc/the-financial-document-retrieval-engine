@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from apps.api.app.schemas.companies import CoverageResponse
 from apps.api.app.services import companies_service
 
@@ -19,7 +21,7 @@ def _coverage(*, catalog_count: int, sp500_catalog_count: int) -> CoverageRespon
 
 
 def test_static_catalog_change_invalidates_persisted_coverage(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(companies_service, "catalog_company_count", lambda: 5_794)
     monkeypatch.setattr(
@@ -36,7 +38,9 @@ def test_static_catalog_change_invalidates_persisted_coverage(
     )
 
 
-def test_get_coverage_rebuilds_stale_snapshot(monkeypatch) -> None:
+def test_get_coverage_rebuilds_stale_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     stale = _coverage(catalog_count=5_794, sp500_catalog_count=4)
     rebuilt = _coverage(catalog_count=5_794, sp500_catalog_count=499)
     session = MagicMock()
