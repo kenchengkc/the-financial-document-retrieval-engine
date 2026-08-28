@@ -57,10 +57,21 @@ def get_coverage(session: Session) -> CoverageResponse:
 
 
 def _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
-    """Invalidate persisted metrics when checked-in company universes change."""
+    """Invalidate persisted metrics when universe inputs or derived counts disagree."""
+    sp500_catalog = {ticker.upper() for ticker in sp500_primary_tickers()}
+    indexed_tickers = [
+        ticker.upper()
+        for ticker in response.indexed_tickers
+        if ticker.upper() not in _DEMO_TICKERS
+    ]
+    expected_sp500_indexed_count = sum(
+        ticker in sp500_catalog for ticker in indexed_tickers
+    )
     return (
         response.catalog_count == catalog_company_count()
-        and response.sp500_catalog_count == len(sp500_primary_tickers())
+        and response.sp500_catalog_count == len(sp500_catalog)
+        and response.indexed_count == len(indexed_tickers)
+        and response.sp500_indexed_count == expected_sp500_indexed_count
     )
 
 
