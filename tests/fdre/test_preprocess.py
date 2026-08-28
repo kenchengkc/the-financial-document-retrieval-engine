@@ -112,6 +112,7 @@ def test_preprocess_preserves_caller_date_bounds() -> None:
     assert result.filters.filing_date_from == filters.filing_date_from
     assert result.filters.filing_date_to == filters.filing_date_to
 
+
 def test_preprocess_does_not_treat_sec_form_suffix_as_ticker() -> None:
     companies = [
         *COMPANIES,
@@ -141,4 +142,3 @@ def test_preprocess_still_detects_explicit_single_letter_ticker() -> None:
     assert result.filters.tickers == ["Q"]
     assert result.filters.form_types == ["10-Q"]
     assert result.filters.sections == ["Risk Factors"]
-
