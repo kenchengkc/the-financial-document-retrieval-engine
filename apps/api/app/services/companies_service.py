@@ -38,12 +38,10 @@ def get_coverage(session: Session) -> CoverageResponse:
             return cached[1].model_copy(deep=True)
 
     payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
-    response = (
-        CoverageResponse.model_validate(payload)
-        if payload is not None
-        else _build_coverage(session)
-    )
-    if payload is None:
+    response = CoverageResponse.model_validate(payload) if payload is not None else None
+    snapshot_current = response is not None and _coverage_snapshot_is_current(response)
+    if not snapshot_current:
+        response = _build_coverage(session)
         write_metric_snapshot(
             session,
             metric_key=_COVERAGE_SNAPSHOT_KEY,
@@ -57,6 +55,19 @@ def get_coverage(session: Session) -> CoverageResponse:
             response.model_copy(deep=True),
         )
     return response
+
+
+def _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
+    """Invalidate static-universe coverage when checked-in catalogs change.
+
+    Metric snapshots persist across deploys. Without this guard, a snapshot created
+    against the old sample S&P list can survive after the full 499-primary-ticker
+    universe is checked in and continue reporting a tiny S&P coverage count.
+    """
+    return (
+        response.catalog_count == catalog_company_count()
+        and response.sp500_catalog_count == len(sp500_primary_tickers())
+    )
 
 
 def _build_coverage(session: Session) -> CoverageResponse:
