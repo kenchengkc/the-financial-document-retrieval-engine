@@ -39,7 +39,7 @@ const INITIAL_SOURCE_STATUSES: SourceStatuses = {
   operations: "loading",
 };
 
-const FOUNDATION_CACHE_KEY = "fdre.foundation.v1";
+const FOUNDATION_CACHE_KEY = "fdre.foundation.v2";
 const FOUNDATION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type FoundationCache = {
@@ -346,23 +346,23 @@ export function DataFoundation({
             <div className="foundation-split">
               <span>
                 <strong>
+                  {coverageLoading
+                    ? "Loading"
+                    : (data.coverage?.sp500_indexed_count ?? "Unavailable")}
+                </strong>{" "}
+                S&amp;P 500 universe
+              </span>
+              <span>
+                <strong>
                   {companiesLoading ? "Loading" : data.companies.length ? nyse : "Unavailable"}
                 </strong>{" "}
-                NYSE
+                NYSE-listed
               </span>
               <span>
                 <strong>
                   {companiesLoading ? "Loading" : data.companies.length ? nasdaq : "Unavailable"}
                 </strong>{" "}
-                Nasdaq
-              </span>
-              <span>
-                <strong>
-                  {coverageLoading
-                    ? "Loading"
-                    : (data.coverage?.sp500_indexed_count ?? "Unavailable")}
-                </strong>{" "}
-                S&amp;P 500
+                Nasdaq-listed
               </span>
             </div>
             <div className="foundation-company-list" role="list" aria-label="Companies with the most filing passages">
