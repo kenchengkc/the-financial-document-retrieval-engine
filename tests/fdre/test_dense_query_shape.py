@@ -8,10 +8,11 @@ from fdre.retrieval.query import SearchFilters
 def _compiled_sql(filters: SearchFilters) -> str:
     candidate_chunks = _exact_accession_candidate_cte(filters)
     statement = select(candidate_chunks.c.chunk_id)
+    dialect = PGDialect()  # type: ignore[no-untyped-call]
     return " ".join(
         str(
             statement.compile(
-                dialect=PGDialect(),
+                dialect=dialect,
                 compile_kwargs={"literal_binds": True},
             )
         ).lower().split()
