@@ -1,20 +1,23 @@
 "use client";
 
 import { Check, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+
+const STORAGE_KEY = "fdre:ask-progress-estimate-ms";
+const DEFAULT_ESTIMATE_MS = 2_000;
+const MIN_ESTIMATE_MS = 900;
+const MAX_ESTIMATE_MS = 15_000;
 
 /**
- * Time-based progress for a request whose real progress we cannot observe
- * (the API returns a single response, not a stream). Instead of a smooth
- * mathematical curve because it reads as fake. The bar is a random walk:
- * irregular jumps, occasional bursts, and brief stalls, the way real work
- * ticks over. A soft ceiling that tracks elapsed time keeps the walk honest:
- * it climbs roughly linearly to ~98% at the expected duration, so there is no
- * dramatic end-of-bar braking and no long park just under the top. The parent
- * unmounts this on completion, which is the real 100%.
+ * Time-based progress for a request whose real progress cannot be observed until
+ * the API returns. The bar follows elapsed wall-clock time against a learned
+ * request-duration estimate rather than using random jumps. It reaches about
+ * 95% at the expected duration, then drifts slowly toward 100% during overruns;
+ * the parent unmounts it when the response actually arrives.
  *
- * The pipeline stages render as a checklist under the bar, driven by the same
- * fraction: done stages get a check, the current one a spinner.
+ * The pipeline checklist is intentionally approximate because the answer API is
+ * not streamed. Its purpose is to explain the work while the bar communicates
+ * elapsed progress honestly.
  */
 export function ScanProgress({
   estimateMs,
@@ -23,45 +26,35 @@ export function ScanProgress({
   estimateMs: number;
   stages: string[];
 }) {
-  const [fraction, setFraction] = useState(0.02);
-  const progressRef = useRef(0.02);
+  const [fraction, setFraction] = useState(0.04);
 
   useEffect(() => {
+    const stored = Number(window.localStorage.getItem(STORAGE_KEY));
+    const learnedEstimate =
+      Number.isFinite(stored) && stored >= MIN_ESTIMATE_MS && stored <= MAX_ESTIMATE_MS
+        ? stored
+        : Math.min(DEFAULT_ESTIMATE_MS, estimateMs);
     const start = performance.now();
-    let timer = 0;
     let cancelled = false;
 
-    const tick = () => {
+    const update = () => {
       if (cancelled) return;
-      const ratio = (performance.now() - start) / Math.max(1, estimateMs);
-      // Soft ceiling: roughly linear, ~98% at the expected duration, then a
-      // slow drift so an overrun still shows visible motion instead of parking.
-      const ceiling = Math.min(0.995, 0.08 + 0.9 * ratio);
-
-      // Scale the walk so its expected pace covers ~95% across the estimate,
-      // whether that is a 9s answer or a 30s deep scan.
-      const pace = Math.min(3, Math.max(0.5, 22_000 / Math.max(1, estimateMs)));
-      const roll = Math.random();
-      let step: number;
-      if (roll < 0.22) {
-        step = 0; // Stall while work pauses.
-      } else if (roll < 0.34) {
-        step = (0.035 + Math.random() * 0.045) * pace; // Burst when a batch lands at once.
-      } else {
-        step = (0.004 + Math.random() * 0.022) * pace; // ordinary irregular tick
-      }
-      const next = Math.min(ceiling, progressRef.current + step);
-      if (next > progressRef.current) {
-        progressRef.current = next;
-        setFraction(next);
-      }
-      timer = window.setTimeout(tick, 140 + Math.random() * 520);
+      const elapsedMs = performance.now() - start;
+      setFraction(progressForRatio(elapsedMs / Math.max(1, learnedEstimate)));
     };
 
-    timer = window.setTimeout(tick, 120);
+    update();
+    const timer = window.setInterval(update, 80);
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      window.clearInterval(timer);
+      const observedMs = performance.now() - start;
+      if (observedMs < 500) return;
+      const nextEstimate = Math.min(
+        MAX_ESTIMATE_MS,
+        Math.max(MIN_ESTIMATE_MS, Math.round(learnedEstimate * 0.3 + observedMs * 0.7)),
+      );
+      window.localStorage.setItem(STORAGE_KEY, String(nextEstimate));
     };
   }, [estimateMs]);
 
@@ -109,4 +102,12 @@ export function ScanProgress({
       </ol>
     </div>
   );
+}
+
+function progressForRatio(ratio: number) {
+  if (ratio <= 1) {
+    return Math.max(0.04, 0.04 + Math.max(0, ratio) * 0.91);
+  }
+  const overrun = ratio - 1;
+  return Math.min(0.995, 0.95 + 0.045 * (1 - Math.exp(-overrun * 1.4)));
 }
