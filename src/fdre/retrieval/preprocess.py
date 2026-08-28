@@ -40,6 +40,7 @@ FINANCIAL_RESULTS_PATTERN = re.compile(
 )
 LATEST_FILING_PATTERN = re.compile(r"\b(?:latest|most recent|last)\b", re.I)
 YEAR_PATTERN = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
+_SUPPORTED_FORM_TOKEN_PATTERN = re.compile(r"\b(?:10-K|10-Q|8-K)\b", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,9 +67,10 @@ def preprocess_query(
         raise ValueError("query must not be empty")
     company_list = list(companies)
     known_tickers = {company.ticker.upper() for company in company_list}
+    ticker_detection_text = _SUPPORTED_FORM_TOKEN_PATTERN.sub(" ", cleaned)
     detected_tickers = {
         token
-        for token in re.findall(r"\b[A-Z]{1,5}\b", cleaned)
+        for token in re.findall(r"\b[A-Z]{1,5}\b", ticker_detection_text)
         if token in known_tickers
     }
     normalized_query = _normalize_company_text(cleaned)
