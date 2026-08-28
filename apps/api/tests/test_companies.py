@@ -243,3 +243,59 @@ def test_coverage_reuses_cached_database_counts(
         second = get_coverage(session)
 
     assert first == second
+
+
+def test_coverage_rebuilds_snapshot_when_sp500_catalog_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listed_path = tmp_path / "listed_companies.json"
+    listed_path.write_text(
+        json.dumps(
+            {
+                "company_count": 1,
+                "companies": [
+                    {
+                        "cik": "0000320193",
+                        "name": "Apple Inc.",
+                        "exchange": "Nasdaq",
+                        "primary_ticker": "AAPL",
+                        "tickers": ["AAPL"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sp500_path = tmp_path / "sp500_tickers.json"
+    sp500_path.write_text(
+        json.dumps({"primary_tickers": ["AAPL"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("fdre.ingestion.ticker_map.LISTED_COMPANIES_PATH", listed_path)
+    monkeypatch.setattr("fdre.ingestion.ticker_map.SP500_TICKERS_PATH", sp500_path)
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed_indexed_company(
+            session,
+            ticker="AAPL",
+            cik="0000320193",
+            name="Apple Inc.",
+        )
+        first = get_coverage(session)
+        assert first.sp500_catalog_count == 1
+        assert first.sp500_indexed_count == 1
+
+        sp500_path.write_text(
+            json.dumps({"primary_tickers": ["AAPL", "MSFT"]}),
+            encoding="utf-8",
+        )
+        _sp500_primary_tickers.cache_clear()
+        clear_coverage_cache()
+
+        second = get_coverage(session)
+
+    assert second.sp500_catalog_count == 2
+    assert second.sp500_indexed_count == 1
