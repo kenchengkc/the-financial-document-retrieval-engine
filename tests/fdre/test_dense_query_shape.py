@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql.base import PGDialect
 
 from fdre.retrieval.dense import _exact_accession_candidate_cte
 from fdre.retrieval.query import SearchFilters
@@ -11,7 +11,7 @@ def _compiled_sql(filters: SearchFilters) -> str:
     return " ".join(
         str(
             statement.compile(
-                dialect=postgresql.dialect(),
+                dialect=PGDialect(),
                 compile_kwargs={"literal_binds": True},
             )
         ).lower().split()
