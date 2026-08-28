@@ -1,0 +1,52 @@
+name: Temporary SEC form ticker fix
+
+on:
+  push:
+    branches: [fix-sec-form-ticker-detection]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-sec-form-ticker-detection
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch parser and regression tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          preprocess = Path('src/fdre/retrieval/preprocess.py')
+          text = preprocess.read_text()
+          old_constant = 'YEAR_PATTERN = re.compile(r"(?<!\\d)(?:19|20)\\d{2}(?!\\d)")\n'
+          new_constant = old_constant + '_SUPPORTED_FORM_TOKEN_PATTERN = re.compile(r"\\b(?:10-K|10-Q|8-K)\\b", re.I)\n'
+          assert old_constant in text
+          assert '_SUPPORTED_FORM_TOKEN_PATTERN' not in text
+          text = text.replace(old_constant, new_constant, 1)
+
+          old_detection = '''    detected_tickers = {\n        token\n        for token in re.findall(r"\\b[A-Z]{1,5}\\b", cleaned)\n        if token in known_tickers\n    }\n'''
+          new_detection = '''    ticker_detection_text = _SUPPORTED_FORM_TOKEN_PATTERN.sub(" ", cleaned)\n    detected_tickers = {\n        token\n        for token in re.findall(r"\\b[A-Z]{1,5}\\b", ticker_detection_text)\n        if token in known_tickers\n    }\n'''
+          assert old_detection in text
+          text = text.replace(old_detection, new_detection, 1)
+          preprocess.write_text(text)
+
+          tests = Path('tests/fdre/test_preprocess.py')
+          test_text = tests.read_text()
+          addition = '''\n\ndef test_preprocess_does_not_treat_sec_form_suffix_as_ticker() -> None:\n    companies = [\n        *COMPANIES,\n        CompanyReference(ticker="Q", name="Qnity Electronics, Inc."),\n    ]\n    result = preprocess_query(\n        "Does acceleration in 10-K/10-Q Risk Factors language churn contain "\n        "information about subsequent equity returns?",\n        companies=companies,\n    )\n\n    assert result.filters.tickers == []\n    assert result.filters.form_types == ["10-K", "10-Q"]\n    assert result.filters.sections == ["Risk Factors"]\n\n\ndef test_preprocess_still_detects_explicit_single_letter_ticker() -> None:\n    companies = [\n        *COMPANIES,\n        CompanyReference(ticker="Q", name="Qnity Electronics, Inc."),\n    ]\n    result = preprocess_query(\n        "What changed in Q risk factors in its latest 10-Q?",\n        companies=companies,\n    )\n\n    assert result.filters.tickers == ["Q"]\n    assert result.filters.form_types == ["10-Q"]\n    assert result.filters.sections == ["Risk Factors"]\n'''
+          assert 'test_preprocess_does_not_treat_sec_form_suffix_as_ticker' not in test_text
+          tests.write_text(test_text.rstrip() + addition + '\n')
+          PY
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/tmp-fix-sec-form-ticker.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/fdre/retrieval/preprocess.py tests/fdre/test_preprocess.py .github/workflows/tmp-fix-sec-form-ticker.yml
+          git commit -m "fix: avoid treating SEC form suffixes as tickers"
+          git push origin HEAD:fix-sec-form-ticker-detection
