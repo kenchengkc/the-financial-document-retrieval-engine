@@ -114,6 +114,7 @@ def test_preprocess_preserves_caller_date_bounds() -> None:
 
 
 def test_preprocess_does_not_treat_sec_form_suffix_as_ticker() -> None:
+    # SEC form names must not leak their letter suffixes into ticker detection.
     companies = [
         *COMPANIES,
         CompanyReference(ticker="Q", name="Qnity Electronics, Inc."),
