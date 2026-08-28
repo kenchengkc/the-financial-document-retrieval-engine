@@ -82,19 +82,19 @@ export function LandingHero({
         </nav>
 
         <section className="ld-hero">
-          <p className="ld-eyebrow">SEC filing research as of a selected date</p>
+          <p className="ld-eyebrow">Point-in-time · citation-verified · reproducible</p>
           <h1>
-            SEC filing research,
+            Research SEC filings
             <br />
-            with sources <em>included.</em>
+            without <em>look-ahead bias.</em>
           </h1>
           <p className="ld-lede">
-            Search SEC filings, review the passages that support an answer, and open the original
-            source document.
+            Move from filing evidence to cross-sectional signals and out-of-sample validation,
+            with every result traceable to the information available at the time.
           </p>
           <div className="ld-cta">
             <button type="button" className="ld-btn ld-btn-primary" onClick={onExplore}>
-              Search SEC filings
+              Explore research tools
               <svg
                 className="ld-arr"
                 width="18"
