@@ -111,3 +111,34 @@ def test_preprocess_preserves_caller_date_bounds() -> None:
 
     assert result.filters.filing_date_from == filters.filing_date_from
     assert result.filters.filing_date_to == filters.filing_date_to
+
+def test_preprocess_does_not_treat_sec_form_suffix_as_ticker() -> None:
+    companies = [
+        *COMPANIES,
+        CompanyReference(ticker="Q", name="Qnity Electronics, Inc."),
+    ]
+    result = preprocess_query(
+        "Does acceleration in 10-K/10-Q Risk Factors language churn contain "
+        "information about subsequent equity returns?",
+        companies=companies,
+    )
+
+    assert result.filters.tickers == []
+    assert result.filters.form_types == ["10-K", "10-Q"]
+    assert result.filters.sections == ["Risk Factors"]
+
+
+def test_preprocess_still_detects_explicit_single_letter_ticker() -> None:
+    companies = [
+        *COMPANIES,
+        CompanyReference(ticker="Q", name="Qnity Electronics, Inc."),
+    ]
+    result = preprocess_query(
+        "What changed in Q risk factors in its latest 10-Q?",
+        companies=companies,
+    )
+
+    assert result.filters.tickers == ["Q"]
+    assert result.filters.form_types == ["10-Q"]
+    assert result.filters.sections == ["Risk Factors"]
+
