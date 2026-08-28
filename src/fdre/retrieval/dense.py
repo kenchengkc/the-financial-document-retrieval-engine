@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Protocol, SupportsFloat, SupportsIndex, runtime_checkable
+from typing import Protocol, SupportsFloat, SupportsIndex, runtime_checkable
 
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import cast, func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement, Select
-from sqlalchemy.sql.selectable import CTE
 
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
 from fdre.indexing.embeddings import EmbeddingProvider, cosine_similarity
@@ -109,14 +108,13 @@ class DenseRetriever:
         else:
             base_distance = Embedding.vector.cosine_distance(query_vector)
 
-        # A bounded cross-sectional screen supplies either exact filing accessions or
-        # a small ticker universe with an explicit accepted-at window. In that shape,
-        # global HNSW search followed by relational filtering has high tail variance:
-        # a query can scan many global neighbors before enough happen to belong to the
-        # requested filings. Force an exact distance sort over the bounded relational
-        # subset instead. ABS is identity for cosine distance (>= 0) while
-        # intentionally preventing the HNSW ORDER BY operator match. Broad/unbounded
-        # searches keep the ANN path.
+        # A bounded cross-sectional screen supplies both a small ticker universe and
+        # an explicit accepted-at window. In that shape, global HNSW search followed
+        # by relational filtering has high tail variance: a query can scan many global
+        # neighbors before enough happen to belong to the requested issuers. Force an
+        # exact distance sort over the already narrow relational subset instead. ABS
+        # is identity for cosine distance (>= 0) while intentionally preventing the
+        # HNSW ORDER BY operator match. Broad/unbounded searches keep the ANN path.
         exact_filtered_window = bool(
             filters.accession_numbers
             or (
@@ -138,20 +136,6 @@ class DenseRetriever:
                 else UNFILTERED_HNSW_EF_SEARCH
             )
             session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))
-
-        # Research screens already resolve the exact point-in-time filing accessions
-        # before semantic search. Materialize the corresponding chunk ids first so the
-        # PostgreSQL planner cannot start from the full provider/model embedding slice
-        # and only apply filing predicates after vector work. Ranking remains exact:
-        # every vector in the same relationally-filtered candidate set is scored, then
-        # sorted by the unchanged cosine distance.
-        if filters.accession_numbers:
-            return self._search_postgres_exact_accessions(
-                session,
-                distance=distance,
-                filters=filters,
-                limit=limit,
-            )
 
         # Unfiltered thematic scans: ANN-first on embeddings, then join metadata.
         # Keeps the HNSW ORDER BY free of multi-table joins.
@@ -178,38 +162,6 @@ class DenseRetriever:
             )
         statement = _apply_filters(statement, filters)
         rows = session.execute(statement.order_by(distance, Chunk.id).limit(limit)).all()
-        return [
-            RetrievalCandidate(
-                chunk_id=chunk.id,
-                text=chunk.chunk_text,
-                metadata=chunk.metadata_json or {},
-                dense_score=max(-1.0, min(1.0, 1.0 - float(row_distance))),
-            )
-            for chunk, row_distance in rows
-        ]
-
-    def _search_postgres_exact_accessions(
-        self,
-        session: Session,
-        *,
-        distance: ColumnElement[float],
-        filters: SearchFilters,
-        limit: int,
-    ) -> list[RetrievalCandidate]:
-        candidate_chunks = _exact_accession_candidate_cte(filters)
-        statement = (
-            select(Chunk, distance)
-            .join(candidate_chunks, candidate_chunks.c.chunk_id == Chunk.id)
-            .join(Embedding, Embedding.chunk_id == Chunk.id)
-            .where(
-                Embedding.provider == self.provider.name,
-                Embedding.model == self.provider.model,
-                Embedding.dimensions == self.provider.dimensions,
-            )
-            .order_by(distance, Chunk.id)
-            .limit(limit)
-        )
-        rows = session.execute(statement).all()
         return [
             RetrievalCandidate(
                 chunk_id=chunk.id,
@@ -274,26 +226,10 @@ class DenseRetriever:
         ]
 
 
-def _exact_accession_candidate_cte(filters: SearchFilters) -> CTE:
-    statement = select(Chunk.id.label("chunk_id")).join(
-        Document,
-        Document.id == Chunk.document_id,
-    )
-    if filters.tickers or filters.ciks:
-        statement = statement.join(Company, Company.id == Document.company_id)
-    if filters.element_types:
-        statement = statement.join(
-            DocumentElement,
-            DocumentElement.id == Chunk.element_id,
-        )
-    statement = _apply_filters(statement, filters)
-    return statement.cte("exact_accession_chunks").prefix_with("MATERIALIZED")
-
-
 def _apply_filters(
-    statement: Select[Any],
+    statement: Select[tuple[Chunk, float]],
     filters: SearchFilters,
-) -> Select[Any]:
+) -> Select[tuple[Chunk, float]]:
     if filters.tickers:
         statement = statement.where(Company.ticker.in_(filters.tickers))
     if filters.ciks:
