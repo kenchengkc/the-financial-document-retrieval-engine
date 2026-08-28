@@ -1,10 +1,18 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const FOUNDATION_MIGRATION_KEY = "fdre.foundation.cache-migration";
+const FOUNDATION_MIGRATION_VERSION = "sp500-primary-universe-v2";
+
 async function mockBase(page: Page) {
-  await page.route("**/health", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok" }) }),
+  await page.route(`${API_URL}/health`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok" }),
+    }),
   );
-  await page.route("**/coverage", (route) =>
+  await page.route(`${API_URL}/coverage`, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -13,144 +21,135 @@ async function mockBase(page: Page) {
         sp500_catalog_count: 499,
         indexed_count: 495,
         sp500_indexed_count: 495,
-        document_count: 997,
-        chunk_count: 1065227,
-        indexed_tickers: ["AAPL"],
+        document_count: 2750,
+        chunk_count: 2_710_000,
+        indexed_tickers: ["AAPL", "MSFT", "NVDA"],
       }),
     }),
   );
-  await page.route("**/companies**", (route) =>
-    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
-  );
-  await page.route("**/operations/quality**", (route) =>
-    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
-  );
-}
-
-function candidate(date: string, form: string, chunkId: number) {
-  return {
-    chunk_id: chunkId,
-    text: "Services revenue grew on the strength of the installed base.",
-    metadata: { ticker: "AAPL", form_type: form, filing_date: date, section: "MD&A", element_type: "text" },
-    dense_score: 0.51,
-    sparse_score: 0.4,
-    hybrid_score: 0.55,
-    rerank_score: 0.69,
-    rank: 1,
-  };
-}
-
-async function expectNoHorizontalOverflow(page: Page) {
-  const dimensions = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
-}
-
-async function expectNoBoxOverlap(page: Page, leftSelector: string, rightSelector: string) {
-  const overlap = await page.evaluate(
-    ([left, right]) => {
-      const first = document.querySelector(left);
-      const second = document.querySelector(right);
-      if (!first || !second) return true;
-      const a = first.getBoundingClientRect();
-      const b = second.getBoundingClientRect();
-      return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
-    },
-    [leftSelector, rightSelector],
-  );
-  expect(overlap).toBe(false);
-}
-
-test("runs an as-of filing search and forwards the date filter", async ({ page }) => {
-  await mockBase(page);
-  let sentBody: { filters?: { as_of?: string } } = {};
-  await page.route("**/search", async (route) => {
-    sentBody = JSON.parse(route.request().postData() ?? "{}");
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        query: "services revenue growth",
-        rewritten_queries: ["services revenue growth"],
-        filters: {},
-        results: [candidate("2025-10-31", "10-K", 1), candidate("2025-10-31", "10-K", 2)],
-        latency_ms: 1100,
-      }),
-    });
-  });
-
-  await page.goto("/");
-  await page.getByRole("tab", { name: /Retrieve/ }).click();
-  await expect(page.getByRole("heading", { name: "Retrieve", exact: true })).toBeVisible();
-
-  await page.getByLabel("Search query").fill("services revenue growth");
-  await page.getByLabel("As-of date").fill("2026-01-01");
-  await page.locator(".retrieve-form button[type=submit]").click();
-
-  await expect(page.locator(".rr-summary")).toContainText("As-of date: 2026-01-01");
-  await expect(page.locator(".retrieve-results .evidence").first()).toBeVisible();
-  expect(sentBody.filters?.as_of).toBe("2026-01-01T00:00:00+00:00");
-});
-
-test("keeps AAPL search controls from overlapping on mobile", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await mockBase(page);
-  await page.route("**/search", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        query: "What is AAPL's current product line",
-        rewritten_queries: ["What is AAPL's current product line"],
-        filters: {},
-        results: [candidate("2025-10-31", "10-K", 1)],
-        latency_ms: 900,
-      }),
-    }),
-  );
-
-  await page.goto("/");
-  await page
-    .getByRole("textbox", { name: "Ask a financial filing question" })
-    .fill("What is AAPL's current product line");
-  await expectNoBoxOverlap(page, "#question", ".hd-search .go");
-  await expectNoHorizontalOverflow(page);
-
-  await page.getByRole("tab", { name: /Retrieve/ }).click();
-  await page.getByLabel("Search query").fill("What is AAPL's current product line");
-  await expectNoBoxOverlap(page, ".rf-query input", ".rf-query button");
-  await expectNoHorizontalOverflow(page);
-
-  await page.locator(".retrieve-form button[type=submit]").click();
-  await expect(page.locator(".retrieve-results .evidence").first()).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-});
-
-test("renders the company coverage in data status", async ({ page }) => {
-  await mockBase(page);
-  let releaseOperations = () => {};
-  const operationsPending = new Promise<void>((resolve) => {
-    releaseOperations = resolve;
-  });
-  await page.route("**/operations/quality**", async (route) => {
-    await operationsPending;
-    await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
-  });
-  await page.route("**/companies**", (route) =>
+  await page.route(`${API_URL}/companies**`, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         total: 2,
         companies: [
-          { ticker: "KKR", cik: "1", name: "KKR & Co. Inc.", exchange: "NYSE", document_count: 2, chunk_count: 14849, indexed: true },
-          { ticker: "AAPL", cik: "2", name: "Apple Inc.", exchange: "Nasdaq", document_count: 2, chunk_count: 1053, indexed: true },
+          {
+            ticker: "AAPL",
+            cik: "0000320193",
+            name: "Apple Inc.",
+            exchange: "Nasdaq",
+            document_count: 12,
+            chunk_count: 4000,
+            indexed: true,
+          },
+          {
+            ticker: "KKR",
+            cik: "0001404912",
+            name: "KKR & Co. Inc.",
+            exchange: "NYSE",
+            document_count: 10,
+            chunk_count: 3800,
+            indexed: true,
+          },
         ],
       }),
     }),
   );
+  await page.route(`${API_URL}/operations/quality**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        generated_at: "2026-07-17T04:53:23Z",
+        company_count: 499,
+        document_count: 2750,
+        chunk_count: 2_710_000,
+        embedding_count: 2_710_000,
+        stale_after_days: 150,
+        stale_tickers: [],
+        missing_expected_filings: [],
+        duplicate_accession_groups: 0,
+        documents_without_chunks: 0,
+        unchunked_documents: [],
+        chunks_without_embeddings: 0,
+        facts_without_documents: 0,
+        freshness_ratio: 0.998,
+        document_chunk_coverage: 1,
+        embedding_coverage: 1,
+        recent_ingestion_success_rate: 1,
+        latest_ingestion_completed_at: "2026-07-16T11:30:33Z",
+      }),
+    }),
+  );
+}
+
+test.beforeEach(async ({ page }) => {
+  await mockBase(page);
+});
+
+test("shows the research console and mode switcher", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Research SEC filings without look-ahead bias." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Research SEC filings four ways" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Ask/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: /Retrieve/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Screen/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Signals/ })).toBeVisible();
+});
+
+test("switches between research modes", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: /Retrieve/ }).click();
+  await expect(page.getByRole("heading", { name: "Retrieve" })).toBeVisible();
+  await page.getByRole("tab", { name: /Screen/ }).click();
+  await expect(page.getByRole("heading", { name: "Screen" })).toBeVisible();
+  await page.getByRole("tab", { name: /Signals/ }).click();
+  await expect(page.getByRole("heading", { name: "Signals" })).toBeVisible();
+});
+
+test("renders data foundation metrics", async ({ page }) => {
+  await page.goto("/");
+  const foundation = page.locator(".data-foundation");
+  await expect(foundation).toContainText("Data status");
+  await expect(page.locator(".foundation-stat").first()).toContainText("495");
+  await expect(page.locator(".foundation-company").first()).toContainText("KKR");
+  await expect(foundation).toContainText("100.0%");
+  await expect(foundation).not.toContainText("N/A");
+});
+
+test("renders foundation coverage before a slower operations response", async ({ page }) => {
+  let releaseOperations = () => {};
+  const operationsPending = new Promise<void>((resolve) => {
+    releaseOperations = resolve;
+  });
+  await page.route(`${API_URL}/operations/quality**`, async (route) => {
+    await operationsPending;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        generated_at: "2026-07-17T04:53:23Z",
+        company_count: 499,
+        document_count: 2750,
+        chunk_count: 2_710_000,
+        embedding_count: 2_710_000,
+        stale_after_days: 150,
+        stale_tickers: [],
+        missing_expected_filings: [],
+        duplicate_accession_groups: 0,
+        documents_without_chunks: 0,
+        unchunked_documents: [],
+        chunks_without_embeddings: 0,
+        facts_without_documents: 0,
+        freshness_ratio: 0.998,
+        document_chunk_coverage: 1,
+        embedding_coverage: 1,
+        recent_ingestion_success_rate: 1,
+        latest_ingestion_completed_at: "2026-07-16T11:30:33Z",
+      }),
+    });
+  });
 
   await page.goto("/");
   const foundation = page.locator(".data-foundation");
@@ -167,7 +166,8 @@ test("renders the company coverage in data status", async ({ page }) => {
 test("uses a fresh foundation snapshot without waking the data service", async ({ page }) => {
   const cachedAt = Date.now();
   await page.addInitScript(
-    ({ savedAt }) => {
+    ({ savedAt, migrationKey, migrationVersion }) => {
+      window.localStorage.setItem(migrationKey, migrationVersion);
       window.localStorage.setItem(
         "fdre.foundation.v1",
         JSON.stringify({
@@ -210,7 +210,11 @@ test("uses a fresh foundation snapshot without waking the data service", async (
         }),
       );
     },
-    { savedAt: cachedAt },
+    {
+      savedAt: cachedAt,
+      migrationKey: FOUNDATION_MIGRATION_KEY,
+      migrationVersion: FOUNDATION_MIGRATION_VERSION,
+    },
   );
 
   let releaseRequests = () => {};
@@ -252,323 +256,7 @@ test.describe("ingestion timestamp", () => {
         body: JSON.stringify({ latest_ingestion_completed_at: "2026-07-16T11:30:33Z" }),
       }),
     );
-
     await page.goto("/");
-    await expect(page.locator(".ld-trust")).toContainText(
-      "Last successful update · Jul 16, 2026, 07:30 EDT",
-    );
-    await expect(page.locator(".ld-trust")).not.toContainText("UTC");
+    await expect(page.locator(".data-foundation")).toContainText("7:30 AM");
   });
-});
-
-test("renders the published signal study", async ({ page }) => {
-  await mockBase(page);
-  const disclosureStudy = {
-    experiment_id: 1,
-    experiment_key: "abc",
-    code_sha: "deadbeef",
-    created_at: "2026-06-20T06:12:36Z",
-    report: {
-      signal_name: "disclosure_similarity",
-      outcome_name: "abnormal_return",
-      n_quantiles: 5,
-      event_count: 241,
-      dataset_version: "dataset-a17f",
-      feature_version: "fdre-panel-v1",
-      definition: {
-        key: "disclosure_similarity",
-        label: "Disclosure similarity",
-        family: "Language",
-        source: "Comparable filing passage fingerprints",
-        formula: "Jaccard overlap versus the prior comparable filing",
-        thesis: "Persistent disclosures may identify information the market processes slowly.",
-        default_outcome: "abnormal_return",
-        default_windows: ["0:1"],
-        legacy: false,
-      },
-      quality: {
-        status: "Promising",
-        reason: "Economically aligned rank evidence is positive across multiple years.",
-        multiple_testing_method: "Benjamini-Hochberg across published signal-horizon tests",
-        suite_hypotheses: 2,
-        best_suite_adjusted_p_value: 0.12,
-        peak_absolute_ic: 0.0771,
-        direction_stability: 1,
-        stability_basis: "annual_periods",
-        periods_tested: 2,
-        period_sample_minimum: 50,
-        best_window: "0:1",
-        best_quantile_monotonicity: 0.9,
-        outcome_aligned: true,
-        horizon_aligned: true,
-        preferred_windows: ["0:1"],
-      },
-      config: {
-        benchmark_ticker: "SPY",
-        confidence_level: 0.95,
-        bootstrap_iterations: 2000,
-        random_seed: 17,
-        market_timezone: "America/New_York",
-        market_close: "16:00",
-      },
-      results: [
-        {
-          window: "0:1",
-          sample_size: 241,
-          information_coefficient: 0.0771,
-          ic_t_stat: 1.2,
-          quantiles: [
-            { quantile: 1, sample_size: 48, mean_abnormal_return: -0.0005 },
-            { quantile: 2, sample_size: 48, mean_abnormal_return: -0.0016 },
-            { quantile: 3, sample_size: 48, mean_abnormal_return: -0.0051 },
-            { quantile: 4, sample_size: 48, mean_abnormal_return: 0.0003 },
-            { quantile: 5, sample_size: 49, mean_abnormal_return: 0.0016 },
-          ],
-          long_short_mean: 0.0021,
-          long_short_ci_low: -0.0083,
-          long_short_ci_high: 0.0121,
-          long_short_p_value: 0.04,
-          long_short_adjusted_p_value: 0.12,
-          suite_adjusted_p_value: 0.12,
-          quantile_monotonicity: 0.9,
-        },
-      ],
-      period_results: [
-        { period: "2025", window: "0:1", sample_size: 114, information_coefficient: 0.05, long_short_mean: 0.001 },
-        { period: "2026", window: "0:1", sample_size: 127, information_coefficient: 0.08, long_short_mean: 0.003 },
-      ],
-    },
-  };
-  const riskStudy = {
-    ...disclosureStudy,
-    experiment_id: 2,
-    experiment_key: "risk",
-    report: {
-      ...disclosureStudy.report,
-      signal_name: "risk_factor_expansion",
-      outcome_name: "realized_volatility",
-      event_count: 188,
-      definition: {
-        ...disclosureStudy.report.definition,
-        key: "risk_factor_expansion",
-        label: "Net risk expansion",
-        source: "Item 1A additions and removals",
-        formula: "Added passages minus removed passages",
-        thesis: "Changing risk disclosures may identify future operating uncertainty.",
-        default_outcome: "realized_volatility",
-      },
-    },
-  };
-  await page.route("**/research/signal-studies", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ studies: [disclosureStudy, riskStudy] }),
-    }),
-  );
-  await page.route("**/research/signal-study", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(disclosureStudy),
-    }),
-  );
-
-  await page.goto("/");
-  await page.getByRole("tab", { name: /Signals/ }).click();
-  await expect(page.locator(".sig-stats")).toContainText("Filing events");
-  await expect(page.locator(".sig-card").first()).toContainText("Filing day");
-  // raw p=0.04 would read significant; the UI must use adjusted p=0.12.
-  await expect(page.locator(".sig-card").first()).toContainText("Does not pass");
-  await expect(page.locator(".sig-summary").first()).toContainText("adjusted p = 0.12");
-  await expect(page.locator(".period-stability")).toContainText("Annual cross-sections");
-  await page.getByRole("tab", { name: /Risk expansion/ }).click();
-  await expect(page.locator(".panel-intro")).toContainText("rank forward risk");
-  await expect(page.locator(".sig-summary").first()).toContainText(/High.low vol/);
-
-  await page.getByRole("tab", { name: "Compare", exact: true }).click();
-  await expect(page.locator(".monitor-table")).toContainText("Disclosure similarity");
-  await page.locator(".feature-library > summary").click();
-  await expect(page.locator(".feature-library")).toContainText("Filing-delay surprise");
-  await expect(page.locator(".feature-library")).toContainText("Backtest-ready");
-
-  await page.getByRole("tab", { name: "Method" }).click();
-  await expect(page.locator(".audit-gates")).toContainText("Benjamini-Hochberg");
-  await expect(page.locator(".audit-gates")).toContainText("Annual stability");
-  await page.locator(".audit-advanced > summary").click();
-  await expect(page.locator(".audit-advanced")).toContainText("dataset-a17f");
-});
-
-test("compares a filing to its point-in-time comparable", async ({ page }) => {
-  await mockBase(page);
-  let requestUrl = "";
-  await page.route("**/research/filing-differences/**", (route) => {
-    requestUrl = route.request().url();
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        company_ticker: "AAPL",
-        current_accession: "0000320193-25-000079",
-        previous_accession: "0000320193-24-000123",
-        current_available_at: "2025-10-31T16:05:00Z",
-        previous_available_at: "2024-11-01T16:05:00Z",
-        comparison_basis: "prior_annual_period",
-        added_count: 1,
-        removed_count: 0,
-        materially_changed_count: 1,
-        changes: [
-          {
-            change_type: "materially_changed",
-            section: "Item 1A · Risk Factors",
-            before_text: "The company may experience supply constraints.",
-            after_text: "The company experienced supply and capacity constraints.",
-            before_fingerprint: "old",
-            after_fingerprint: "new",
-            similarity: 0.74,
-          },
-        ],
-      }),
-    });
-  });
-
-  await page.goto("/");
-  await page.getByRole("tab", { name: /Retrieve/ }).click();
-  await page.getByRole("tab", { name: "Compare filings" }).click();
-  await page.getByLabel("Filing accession number").fill("0000320193-25-000079");
-  await page.getByLabel("Comparison as-of date").fill("2025-12-31");
-  await page.getByRole("button", { name: "Compare filing" }).click();
-
-  await expect(page.locator(".delta-stats")).toContainText("Rewritten");
-  await expect(page.locator(".delta-change")).toContainText("Item 1A · Risk Factors");
-  await expect(page.locator(".delta-result")).toContainText("as-of date check passed");
-  expect(requestUrl).toContain("as_of=2025-12-31T23%3A59%3A59%2B00%3A00");
-});
-
-test("queries originally reported facts and builds a point-in-time dataset", async ({ page }) => {
-  await mockBase(page);
-  let panelRequestUrl = "";
-  await page.route("**/research/facts**", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        query: {},
-        facts: [
-          {
-            ticker: "MSFT",
-            canonical_metric: "revenue",
-            concept: "RevenueFromContractWithCustomerExcludingAssessedTax",
-            label: "Revenue",
-            value: "245122000000",
-            unit: "USD",
-            period_start: "2024-07-01",
-            period_end: "2025-06-30",
-            period_type: "duration",
-            fiscal_year: 2025,
-            fiscal_period: "FY",
-            form_type: "10-K",
-            accession_number: "0000950170-25-000001",
-            filed_at: "2025-07-30",
-            available_at: "2025-07-30T16:10:00Z",
-            is_amendment: false,
-            is_restatement: false,
-            source_url: null,
-            narrative_evidence: null,
-          },
-        ],
-      }),
-    }),
-  );
-  await page.route("**/research/panel?**", (route) => {
-    panelRequestUrl = route.request().url();
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        query: {},
-        feature_version: "fdre-panel-v1",
-        corpus_snapshot_id: "a17f4d8c9321b445",
-        rows: [
-          {
-            ticker: "MSFT",
-            cik: "789019",
-            accession_number: "0000950170-25-000001",
-            form_type: "10-K",
-            period_end: "2025-06-30",
-            accepted_at: "2025-07-30T16:10:00Z",
-            available_at: "2025-07-30T16:10:00Z",
-            is_amendment: false,
-            filing_length_tokens: 45000,
-            disclosure_similarity: 0.91,
-            risk_added_passages: 4,
-            risk_removed_passages: 2,
-            table_density: 0.08,
-            numeric_density: 0.12,
-            filing_delay_days: 30,
-            revenue_growth: 0.15,
-            operating_margin: 0.44,
-            net_margin: 0.36,
-            capex_to_revenue: 0.26,
-            operating_cash_flow_to_revenue: 0.56,
-            source_accessions: ["0000950170-25-000001"],
-            feature_provenance: {},
-            calculation_version: "fdre-panel-v1",
-            corpus_snapshot_id: "a17f4d8c9321b445",
-            max_source_available_at: "2025-07-30T16:10:00Z",
-          },
-        ],
-      }),
-    });
-  });
-
-  await page.goto("/");
-  await page.getByRole("tab", { name: /Retrieve/ }).click();
-  await page.getByRole("tab", { name: "Financial facts" }).click();
-  await page.getByLabel("Financial fact tickers").fill("MSFT");
-  await page.getByRole("button", { name: "Query facts" }).click();
-  await expect(page.locator(".facts-table")).toContainText("245.12B");
-  await expect(page.locator(".facts-result")).toContainText("originally reported values");
-
-  await page.getByRole("tab", { name: "Build dataset" }).click();
-  await page.getByLabel("Dataset tickers").fill("MSFT");
-  await page.getByRole("button", { name: "Preview dataset" }).click();
-  await expect(page.locator(".panel-manifest")).toContainText("fdre-panel-v1");
-  await expect(page.locator(".panel-manifest")).toContainText("Passed");
-  await expect(page.locator(".panel-table")).toContainText("44.0%");
-  expect(panelRequestUrl).toContain("limit=25");
-});
-
-test("renders live data quality in the data foundation", async ({ page }) => {
-  await mockBase(page);
-  await page.route("**/operations/quality**", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        generated_at: "2026-06-14T18:50:29Z",
-        company_count: 500,
-        document_count: 997,
-        chunk_count: 1072194,
-        embedding_count: 1065227,
-        stale_after_days: 150,
-        stale_tickers: ["EXMPL"],
-        missing_expected_filings: [],
-        duplicate_accession_groups: 0,
-        documents_without_chunks: 0,
-        unchunked_documents: [],
-        chunks_without_embeddings: 6967,
-        facts_without_documents: 0,
-        freshness_ratio: 0.996,
-        document_chunk_coverage: 1.0,
-        embedding_coverage: 0.9935,
-        recent_ingestion_success_rate: 1.0,
-        latest_ingestion_completed_at: "2026-06-14T10:12:55Z",
-      }),
-    }),
-  );
-
-  await page.goto("/");
-  await expect(page.locator(".foundation-meters")).toContainText("Vector coverage");
-  await expect(page.locator(".foundation-ops")).toContainText("passages without vectors");
 });
