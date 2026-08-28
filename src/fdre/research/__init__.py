@@ -26,6 +26,16 @@ from fdre.research.financial_facts import (
     FinancialFactsResponse,
     query_financial_facts,
 )
+from fdre.research.oos_diagnostics import (
+    OOSDiagnosticsConfig,
+    OOSDiagnosticsReport,
+    OOSFoldWindowDiagnostic,
+    OOSQuantileResult,
+    OOSWindowDiagnostic,
+    build_oos_diagnostics,
+    persist_oos_diagnostics,
+    write_oos_diagnostics_report,
+)
 from fdre.research.panel import (
     ResearchPanel,
     ResearchPanelQuery,
@@ -82,6 +92,11 @@ __all__ = [
     "FinancialFactRecord",
     "FinancialFactsResponse",
     "MarketBar",
+    "OOSDiagnosticsConfig",
+    "OOSDiagnosticsReport",
+    "OOSFoldWindowDiagnostic",
+    "OOSQuantileResult",
+    "OOSWindowDiagnostic",
     "PassageChange",
     "ResearchPanel",
     "ResearchPanelQuery",
@@ -101,6 +116,7 @@ __all__ = [
     "WalkForwardOOSObservation",
     "WalkForwardObservation",
     "WalkForwardStudyReport",
+    "build_oos_diagnostics",
     "build_research_panel",
     "build_walk_forward_folds",
     "compare_filing_to_prior",
@@ -112,6 +128,7 @@ __all__ = [
     "load_market_bars",
     "market_data_version",
     "persist_event_study",
+    "persist_oos_diagnostics",
     "persist_walk_forward_study",
     "query_financial_facts",
     "run_event_study",
@@ -126,6 +143,7 @@ __all__ = [
     "verify_research_screen_lineage",
     "verify_signal_study_lineage",
     "write_event_study_report",
+    "write_oos_diagnostics_report",
     "write_research_panel",
     "write_walk_forward_report",
 ]
