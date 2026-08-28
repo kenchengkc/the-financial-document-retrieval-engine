@@ -36,6 +36,14 @@ from fdre.research.oos_diagnostics import (
     persist_oos_diagnostics,
     write_oos_diagnostics_report,
 )
+from fdre.research.oos_selection import (
+    OOSHypothesisDecision,
+    OOSSelectionConfig,
+    OOSSelectionSuiteReport,
+    evaluate_oos_selection_suite,
+    persist_oos_selection_suite,
+    write_oos_selection_report,
+)
 from fdre.research.panel import (
     ResearchPanel,
     ResearchPanelQuery,
@@ -95,7 +103,10 @@ __all__ = [
     "OOSDiagnosticsConfig",
     "OOSDiagnosticsReport",
     "OOSFoldWindowDiagnostic",
+    "OOSHypothesisDecision",
     "OOSQuantileResult",
+    "OOSSelectionConfig",
+    "OOSSelectionSuiteReport",
     "OOSWindowDiagnostic",
     "PassageChange",
     "ResearchPanel",
@@ -122,6 +133,7 @@ __all__ = [
     "compare_filing_to_prior",
     "diff_documents",
     "diversify_candidates_by_issuer",
+    "evaluate_oos_selection_suite",
     "execute_research_screen",
     "generate_walk_forward_schedule",
     "load_filing_events",
@@ -129,6 +141,7 @@ __all__ = [
     "market_data_version",
     "persist_event_study",
     "persist_oos_diagnostics",
+    "persist_oos_selection_suite",
     "persist_walk_forward_study",
     "query_financial_facts",
     "run_event_study",
@@ -144,6 +157,7 @@ __all__ = [
     "verify_signal_study_lineage",
     "write_event_study_report",
     "write_oos_diagnostics_report",
+    "write_oos_selection_report",
     "write_research_panel",
     "write_walk_forward_report",
 ]
