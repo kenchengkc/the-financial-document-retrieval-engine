@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Libre_Franklin, Newsreader } from "next/font/google";
+import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "./research-console.css";
@@ -31,6 +32,17 @@ export const metadata: Metadata = {
   },
 };
 
+const FOUNDATION_CACHE_MIGRATION = `
+try {
+  const migrationKey = "fdre.foundation.cache-migration";
+  const migrationVersion = "sp500-primary-universe-v2";
+  if (window.localStorage.getItem(migrationKey) !== migrationVersion) {
+    window.localStorage.removeItem("fdre.foundation.v1");
+    window.localStorage.setItem(migrationKey, migrationVersion);
+  }
+} catch {}
+`;
+
 export default function RootLayout({
   children,
 }: {
@@ -42,6 +54,9 @@ export default function RootLayout({
       className={`${newsreader.variable} ${libreFranklin.variable}`}
     >
       <body>
+        <Script id="foundation-cache-migration" strategy="beforeInteractive">
+          {FOUNDATION_CACHE_MIGRATION}
+        </Script>
         {children}
         <Analytics />
       </body>
