@@ -22,40 +22,30 @@ jobs:
 
           service = Path('apps/api/app/services/companies_service.py')
           text = service.read_text()
-          old = '''    payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
-          if payload is None:
-              response = _build_coverage(session)
-              write_metric_snapshot(
-                  session,
-                  metric_key=_COVERAGE_SNAPSHOT_KEY,
-                  payload=response.model_dump(mode="json"),
-              )
-              session.commit()
-          else:
-              response = CoverageResponse.model_validate(payload)
-          '''.replace('          ', '')
-          new = '''    payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
-          response = CoverageResponse.model_validate(payload) if payload is not None else None
-          if response is None or not _coverage_snapshot_is_current(response):
-              response = _build_coverage(session)
-              write_metric_snapshot(
-                  session,
-                  metric_key=_COVERAGE_SNAPSHOT_KEY,
-                  payload=response.model_dump(mode="json"),
-              )
-              session.commit()
-          '''.replace('          ', '')
-          assert old in text
-          text = text.replace(old, new, 1)
+          start = text.index('    payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)')
+          end = text.index('\n\n    with _coverage_cache_lock:', start)
+          replacement = '''    payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
+    response = CoverageResponse.model_validate(payload) if payload is not None else None
+    if response is None or not _coverage_snapshot_is_current(response):
+        response = _build_coverage(session)
+        write_metric_snapshot(
+            session,
+            metric_key=_COVERAGE_SNAPSHOT_KEY,
+            payload=response.model_dump(mode="json"),
+        )
+        session.commit()
+'''
+          text = text[:start] + replacement + text[end:]
+          marker = '\n\ndef _build_coverage(session: Session) -> CoverageResponse:\n'
+          helper = '''
 
-          marker = '''\n\ndef _build_coverage(session: Session) -> CoverageResponse:\n'''
-          helper = '''\n\ndef _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
-              """Invalidate persisted metrics when checked-in company universes change."""
-              return (
-                  response.catalog_count == catalog_company_count()
-                  and response.sp500_catalog_count == len(sp500_primary_tickers())
-              )
-          '''.replace('          ', '')
+def _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
+    """Invalidate persisted metrics when checked-in company universes change."""
+    return (
+        response.catalog_count == catalog_company_count()
+        and response.sp500_catalog_count == len(sp500_primary_tickers())
+    )
+'''
           assert marker in text
           text = text.replace(marker, helper + marker, 1)
           service.write_text(text)
@@ -74,58 +64,59 @@ jobs:
           ttext = test_file.read_text()
           test = r'''
 
-          def test_coverage_rebuilds_snapshot_when_sp500_catalog_changes(
-              tmp_path: Path,
-              monkeypatch: pytest.MonkeyPatch,
-          ) -> None:
-              listed_path = tmp_path / "listed_companies.json"
-              listed_path.write_text(
-                  json.dumps(
-                      {
-                          "company_count": 1,
-                          "companies": [
-                              {
-                                  "cik": "0000320193",
-                                  "name": "Apple Inc.",
-                                  "exchange": "Nasdaq",
-                                  "primary_ticker": "AAPL",
-                                  "tickers": ["AAPL"],
-                              }
-                          ],
-                      }
-                  ),
-                  encoding="utf-8",
-              )
-              sp500_path = tmp_path / "sp500_tickers.json"
-              sp500_path.write_text(
-                  json.dumps({"primary_tickers": ["AAPL"]}), encoding="utf-8"
-              )
-              monkeypatch.setattr("fdre.ingestion.ticker_map.LISTED_COMPANIES_PATH", listed_path)
-              monkeypatch.setattr("fdre.ingestion.ticker_map.SP500_TICKERS_PATH", sp500_path)
 
-              engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool)
-              Base.metadata.create_all(engine)
-              with Session(engine) as session:
-                  _seed_indexed_company(
-                      session,
-                      ticker="AAPL",
-                      cik="0000320193",
-                      name="Apple Inc.",
-                  )
-                  first = get_coverage(session)
-                  assert first.sp500_catalog_count == 1
-                  assert first.sp500_indexed_count == 1
+def test_coverage_rebuilds_snapshot_when_sp500_catalog_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listed_path = tmp_path / "listed_companies.json"
+    listed_path.write_text(
+        json.dumps(
+            {
+                "company_count": 1,
+                "companies": [
+                    {
+                        "cik": "0000320193",
+                        "name": "Apple Inc.",
+                        "exchange": "Nasdaq",
+                        "primary_ticker": "AAPL",
+                        "tickers": ["AAPL"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sp500_path = tmp_path / "sp500_tickers.json"
+    sp500_path.write_text(
+        json.dumps({"primary_tickers": ["AAPL"]}), encoding="utf-8"
+    )
+    monkeypatch.setattr("fdre.ingestion.ticker_map.LISTED_COMPANIES_PATH", listed_path)
+    monkeypatch.setattr("fdre.ingestion.ticker_map.SP500_TICKERS_PATH", sp500_path)
 
-                  sp500_path.write_text(
-                      json.dumps({"primary_tickers": ["AAPL", "MSFT"]}), encoding="utf-8"
-                  )
-                  _sp500_primary_tickers.cache_clear()
-                  clear_coverage_cache()
-                  second = get_coverage(session)
+    engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed_indexed_company(
+            session,
+            ticker="AAPL",
+            cik="0000320193",
+            name="Apple Inc.",
+        )
+        first = get_coverage(session)
+        assert first.sp500_catalog_count == 1
+        assert first.sp500_indexed_count == 1
 
-              assert second.sp500_catalog_count == 2
-              assert second.sp500_indexed_count == 1
-          '''.replace('          ', '')
+        sp500_path.write_text(
+            json.dumps({"primary_tickers": ["AAPL", "MSFT"]}), encoding="utf-8"
+        )
+        _sp500_primary_tickers.cache_clear()
+        clear_coverage_cache()
+        second = get_coverage(session)
+
+    assert second.sp500_catalog_count == 2
+    assert second.sp500_indexed_count == 1
+'''
           if 'def test_coverage_rebuilds_snapshot_when_sp500_catalog_changes' not in ttext:
               test_file.write_text(ttext.rstrip() + test + '\n')
           PY
