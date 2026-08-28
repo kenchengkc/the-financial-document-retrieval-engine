@@ -1,0 +1,217 @@
+name: Patch Ask UI
+
+on:
+  push:
+    branches:
+      - fix-ask-loading-and-citation-spacing
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix-ask-loading-and-citation-spacing
+      - name: Patch Ask UI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          page = Path('apps/web/app/page.tsx')
+          text = page.read_text()
+          old = '''const STACK_STEPS = [
+            { title: "Identify", detail: "Company and date filters" },
+            { title: "Search", detail: "Keyword and semantic search" },
+            { title: "Rank", detail: "Rank the most relevant passages" },
+            { title: "Validate", detail: "Check citations before answering" },
+            { title: "Analyze", detail: "Historical datasets and studies" },
+          ];'''.replace('          ', '')
+          new = old + '''
+
+const ASK_DURATION_STORAGE_KEY = "fdre:ask-duration-ms";
+const DEFAULT_ASK_DURATION_MS = 2_000;
+const MIN_ASK_DURATION_MS = 900;
+const MAX_ASK_DURATION_MS = 15_000;'''
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = '  const [answerMs, setAnswerMs] = useState(9_000);'
+          new = '  const [answerMs, setAnswerMs] = useState(DEFAULT_ASK_DURATION_MS);'
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = '''  useEffect(() => {
+    void (async () => {
+      setApiOnline(await checkHealth());
+    })();
+  }, []);'''
+          new = old + '''
+
+  useEffect(() => {
+    const savedEstimate = Number(window.localStorage.getItem(ASK_DURATION_STORAGE_KEY));
+    if (
+      Number.isFinite(savedEstimate) &&
+      savedEstimate >= MIN_ASK_DURATION_MS &&
+      savedEstimate <= MAX_ASK_DURATION_MS
+    ) {
+      setAnswerMs(savedEstimate);
+    }
+  }, []);'''
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = '''      const observed = performance.now() - startedAt;
+      setAnswerMs((prev) =>
+        Math.min(45_000, Math.max(2_500, Math.round(prev * 0.4 + observed * 0.6))),
+      );'''
+          new = '''      const observed = performance.now() - startedAt;
+      const nextEstimate = Math.min(
+        MAX_ASK_DURATION_MS,
+        Math.max(MIN_ASK_DURATION_MS, Math.round(answerMs * 0.3 + observed * 0.7)),
+      );
+      setAnswerMs(nextEstimate);
+      window.localStorage.setItem(ASK_DURATION_STORAGE_KEY, String(nextEstimate));'''
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = '''                      <span>{Math.round(citation.confidence * 100)}% text overlap</span>
+                      <FilingSourceLink metadata={citation.metadata} />'''
+          new = '''                      <div className="citation-footer">
+                        <span>{Math.round(citation.confidence * 100)}% text overlap</span>
+                        <FilingSourceLink metadata={citation.metadata} />
+                      </div>'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          page.write_text(text)
+
+          progress = Path('apps/web/components/scan-progress.tsx')
+          progress.write_text('''"use client";
+
+import { Check, LoaderCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+
+/**
+ * Time-based progress for a request whose real progress cannot be observed until
+ * the API returns. The bar follows elapsed wall-clock time against a learned
+ * request-duration estimate rather than using random jumps. It reaches about
+ * 95% at the expected duration, then drifts slowly toward 100% during overruns;
+ * the parent unmounts it when the response actually arrives.
+ *
+ * The pipeline checklist is intentionally approximate because the answer API is
+ * not streamed. Its purpose is to explain the work while the bar communicates
+ * elapsed progress honestly.
+ */
+export function ScanProgress({
+  estimateMs,
+  stages,
+}: {
+  estimateMs: number;
+  stages: string[];
+}) {
+  const [fraction, setFraction] = useState(0.04);
+
+  useEffect(() => {
+    const start = performance.now();
+    let cancelled = false;
+
+    const update = () => {
+      if (cancelled) return;
+      const elapsedMs = performance.now() - start;
+      const ratio = elapsedMs / Math.max(1, estimateMs);
+      const next = progressForRatio(ratio);
+      setFraction(next);
+    };
+
+    update();
+    const timer = window.setInterval(update, 80);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [estimateMs]);
+
+  const pct = Math.round(fraction * 100);
+  const activeStage = Math.min(stages.length - 1, Math.floor(fraction * stages.length));
+
+  return (
+    <div className="scan-progress">
+      <div className="scan-progress-head">
+        <span className="scan-progress-pct">{pct}%</span>
+      </div>
+      <div
+        className="scan-progress-track"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Scan progress"
+      >
+        <div className="scan-progress-fill" style={{ width: `${fraction * 100}%` }} />
+      </div>
+      <ol className="scan-stages" aria-label="Pipeline stages">
+        {stages.map((label, index) => {
+          const state =
+            index < activeStage ? "complete" : index === activeStage ? "active" : "pending";
+          return (
+            <li
+              key={label}
+              className={state}
+              aria-current={state === "active" ? "step" : undefined}
+            >
+              <span className="scan-stage-icon" aria-hidden="true">
+                {state === "complete" ? (
+                  <Check size={13} strokeWidth={3} />
+                ) : state === "active" ? (
+                  <LoaderCircle className="spin" size={13} />
+                ) : (
+                  <span className="scan-stage-dot" />
+                )}
+              </span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function progressForRatio(ratio: number) {
+  if (ratio <= 1) {
+    return Math.max(0.04, 0.04 + Math.max(0, ratio) * 0.91);
+  }
+  const overrun = ratio - 1;
+  return Math.min(0.995, 0.95 + 0.045 * (1 - Math.exp(-overrun * 1.4)));
+}
+''')
+
+          css = Path('apps/web/app/globals.css')
+          css_text = css.read_text()
+          old = '''.citations strong,
+.citations span {
+  color: var(--green);
+  font: 10px var(--mono);
+}
+'''
+          new = old + '''
+.citation-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+'''
+          assert old in css_text
+          css.write_text(css_text.replace(old, new, 1))
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/web/app/page.tsx apps/web/components/scan-progress.tsx apps/web/app/globals.css
+          git commit -m 'ui: calibrate Ask progress and citation spacing'
+          git push origin HEAD:fix-ask-loading-and-citation-spacing
