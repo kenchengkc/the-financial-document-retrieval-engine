@@ -311,7 +311,7 @@ test("keeps the evidence-led landing hero and About navigation", async ({ page }
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { name: "SEC filing research, with sources included." }),
+    page.getByRole("heading", { name: "Research SEC filings without look-ahead bias." }),
   ).toBeVisible();
   const aboutLink = page.getByRole("link", { name: "About", exact: true });
   await expect(aboutLink).toHaveAttribute("href", "/about");
