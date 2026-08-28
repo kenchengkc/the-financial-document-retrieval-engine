@@ -38,12 +38,9 @@ def get_coverage(session: Session) -> CoverageResponse:
             return cached[1].model_copy(deep=True)
 
     payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
-    response = (
-        CoverageResponse.model_validate(payload)
-        if payload is not None
-        else _build_coverage(session)
-    )
-    if payload is None:
+    response = CoverageResponse.model_validate(payload) if payload is not None else None
+    if response is None or not _coverage_snapshot_is_current(response):
+        response = _build_coverage(session)
         write_metric_snapshot(
             session,
             metric_key=_COVERAGE_SNAPSHOT_KEY,
@@ -57,6 +54,14 @@ def get_coverage(session: Session) -> CoverageResponse:
             response.model_copy(deep=True),
         )
     return response
+
+
+def _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
+    """Invalidate persisted metrics when checked-in company universes change."""
+    return (
+        response.catalog_count == catalog_company_count()
+        and response.sp500_catalog_count == len(sp500_primary_tickers())
+    )
 
 
 def _build_coverage(session: Session) -> CoverageResponse:
