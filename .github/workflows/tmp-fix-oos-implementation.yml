@@ -1,0 +1,36 @@
+name: Temporary OOS implementation fix
+
+on:
+  push:
+    branches:
+      - research-oos-implementation-reality
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: research-oos-implementation-reality
+      - name: Wrap turnover expression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/fdre/research/oos_implementation.py')
+          text = path.read_text()
+          old = '    return 0.5 * sum(abs(current.get(ticker, 0.0) - previous.get(ticker, 0.0)) for ticker in tickers)\n'
+          new = '''    return 0.5 * sum(\n        abs(current.get(ticker, 0.0) - previous.get(ticker, 0.0))\n        for ticker in tickers\n    )\n'''
+          assert old in text
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Commit patch without helper workflow
+        run: |
+          git rm .github/workflows/tmp-fix-oos-implementation.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/fdre/research/oos_implementation.py
+          git commit -m "style: wrap OOS turnover expression"
+          git push origin HEAD:research-oos-implementation-reality
