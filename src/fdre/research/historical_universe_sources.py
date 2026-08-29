@@ -9,8 +9,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup, Tag
 
 from fdre.research.historical_universe_evidence import (
-    MembershipEvidence,
     MembershipEventType,
+    MembershipEvidence,
     canonical_source_record_hash,
 )
 
@@ -95,7 +95,7 @@ class WikipediaHistoricalComponentsAdapter:
             }
             record_hash = canonical_source_record_hash(row_payload)
             row_id = hashlib.sha256(
-                f"{effective_raw}|{add_symbol}|{remove_symbol}|{reason}".encode("utf-8")
+                f"{effective_raw}|{add_symbol}|{remove_symbol}|{reason}".encode()
             ).hexdigest()
 
             pairs: tuple[tuple[MembershipEventType, str, str], ...] = (
