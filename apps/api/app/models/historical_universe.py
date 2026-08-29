@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Date,
     DateTime,
@@ -204,3 +205,61 @@ class UniverseMembership(Base):
     )
 
     security: Mapped[Security] = relationship(back_populates="universe_memberships")
+
+
+class UniverseMembershipEvidence(Base):
+    """Immutable normalized source observation used to reconstruct membership history."""
+
+    __tablename__ = "universe_membership_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('addition', 'removal')",
+            name="ck_universe_membership_evidence_event_type",
+        ),
+        CheckConstraint(
+            "effective_session IN ('before_open', 'after_close', 'unspecified')",
+            name="ck_universe_membership_evidence_effective_session",
+        ),
+        Index(
+            "ix_universe_membership_evidence_universe_effective",
+            "universe_code",
+            "effective_at",
+        ),
+        Index(
+            "ix_universe_membership_evidence_symbol_effective",
+            "raw_symbol",
+            "effective_at",
+        ),
+        Index(
+            "ix_universe_membership_evidence_source_observed",
+            "source",
+            "source_observed_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    evidence_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    universe_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    effective_at: Mapped[date] = mapped_column(Date, nullable=False)
+    announced_at: Mapped[date | None] = mapped_column(Date)
+    effective_session: Mapped[str] = mapped_column(
+        String(16),
+        default="unspecified",
+        server_default="unspecified",
+        nullable=False,
+    )
+    raw_symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_name: Mapped[str | None] = mapped_column(Text)
+    raw_cik: Mapped[str | None] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    source_record_id: Mapped[str | None] = mapped_column(String(256))
+    source_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
