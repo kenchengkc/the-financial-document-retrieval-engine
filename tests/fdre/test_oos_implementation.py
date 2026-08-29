@@ -8,7 +8,11 @@ from fdre.research.oos_implementation import (
     OOSImplementationConfig,
     evaluate_oos_implementation,
 )
-from fdre.research.oos_selection import OOSHypothesisDecision, OOSSelectionSuiteReport
+from fdre.research.oos_selection import (
+    OOSHypothesisDecision,
+    OOSSelectionStatus,
+    OOSSelectionSuiteReport,
+)
 from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 
@@ -59,7 +63,9 @@ def _source() -> WalkForwardStudyReport:
     )
 
 
-def _decision(status: str = "passes_statistical_gate") -> OOSHypothesisDecision:
+def _decision(
+    status: OOSSelectionStatus = "passes_statistical_gate",
+) -> OOSHypothesisDecision:
     return OOSHypothesisDecision(
         hypothesis_id="hypothesis-1",
         source_diagnostics_key="diagnostics-1",
@@ -82,7 +88,9 @@ def _decision(status: str = "passes_statistical_gate") -> OOSHypothesisDecision:
     )
 
 
-def _selection(status: str = "passes_statistical_gate") -> OOSSelectionSuiteReport:
+def _selection(
+    status: OOSSelectionStatus = "passes_statistical_gate",
+) -> OOSSelectionSuiteReport:
     return OOSSelectionSuiteReport.model_construct(
         selection_key="selection-1",
         decisions=[_decision(status)],
