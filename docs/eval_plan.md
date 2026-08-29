@@ -1,16 +1,34 @@
-# Retrieval Benchmark
+# Evaluation Methodology and Benchmark Contracts
 
-The reviewed 120-question dataset is committed at `data/evals/retrieval_benchmark.jsonl`.
-Measured results and gate status live in [`docs/eval_results.md`](eval_results.md).
+This document defines **how FDRE evaluations are constructed, frozen, executed, and interpreted**. Current measured results live in [`eval_results.md`](eval_results.md). Historical one-off diagnostics live under `docs/archive/`.
 
-## Dataset Contract
+## Evaluation principles
 
-- 120 human-reviewed questions: 80 development and 40 untouched holdout.
-- Narrative, table, legal, guidance, temporal, cross-sectional, filter, and abstention categories.
-- Reviewer identity and explicit abstention labels on every question.
-- Stable evidence labels based on accession, section, normalized quotation, and content fingerprint.
+FDRE evaluation follows five rules:
 
-Run a reviewed dataset with:
+1. **Point-in-time correctness is mandatory.** Future filings, facts, universe membership, or market outcomes invalidate a result regardless of retrieval quality.
+2. **Reviewed benchmark inputs are immutable after reveal.** A bad result is diagnosed, not relabeled away.
+3. **Development and holdout claims are separated.** Generated/development cases are never reported as untouched holdout performance.
+4. **Structured correctness and semantic retrieval are scored separately.** A correct issuer ranking does not hide wrong values, wrong lineage, or unsupported evidence.
+5. **Infrastructure success is not research success.** Signal workflows may complete successfully while the statistical result remains `REJECT` or `INSUFFICIENT`.
+
+## Retrieval benchmark
+
+The canonical reviewed retrieval dataset is:
+
+```text
+data/evals/retrieval_benchmark.jsonl
+```
+
+Contract:
+
+- 120 human-reviewed questions;
+- 80 development / 40 holdout;
+- narrative, table, legal, guidance, temporal, cross-sectional, filter, and abstention categories;
+- reviewer identity and explicit abstention labels;
+- stable evidence labels based on accession, section, normalized quotation, and content fingerprint.
+
+Example holdout execution:
 
 ```bash
 FDRE_ALLOW_PROD=1 python3 -m scripts.retrieval_pipeline eval \
@@ -18,142 +36,158 @@ FDRE_ALLOW_PROD=1 python3 -m scripts.retrieval_pipeline eval \
   --require-reviewed --split holdout --k 10
 ```
 
-## Cross-Sectional v2 Evidence Protocol
+### Retrieval metrics
 
-`data/evals/cross_sectional_benchmark.v1.jsonl` remains the immutable Part-5 issuer-ranking
-baseline. Its evidence labels were inherited from older retrieval questions and therefore do not
-represent the exact latest 10-Q selected by the screen in most cases. Do not rewrite v1 to repair
-that historical baseline.
+Primary metrics:
 
-Part 7 starts a new development seed at
-`data/evals/cross_sectional_benchmark.v2.dev.jsonl`. A v2 evidence label is eligible only when:
+- Recall@K;
+- MRR;
+- nDCG@K where applicable;
+- table-specific Recall@K;
+- abstention quality;
+- entity-resolution accuracy;
+- latency;
+- exact-vs-ANN ranking agreement.
 
-1. the gold issuer is resolved inside the case's frozen five-issuer universe;
-2. the exact filing is selected point-in-time using the screen's `as_of`, form, and amendment
-   policy;
-3. `metadata.selected_accession` records that exact filing;
-4. every reviewed evidence quote is a substring of a chunk from that accession and carries the
-   gold ticker;
-5. the benchmark case stores direct evidence instead of hydrating evidence from its historical
-   source question.
+The aspirational retrieval Recall@10 gate remains **0.85**. Current status is recorded only in `eval_results.md` so the metric does not drift across documents.
 
-The provider-free review helper prioritizes passages from the selected filing without mutating the
-benchmark:
+## Cross-Sectional v2 benchmark
 
-```bash
-FDRE_ALLOW_PROD=1 python3 -m scripts.build_cross_sectional_evidence_review \
-  data/evals/cross_sectional_benchmark.v1.jsonl \
-  --split development
+The immutable v1 benchmark remains historical provenance. Cross-Sectional v2 is the canonical current research-screen evaluation contract.
+
+### Development freeze
+
+Canonical file:
+
+```text
+data/evals/cross_sectional_benchmark.v2.development.jsonl
 ```
 
-Candidate ranking in that helper is only reviewer triage; it is not a gold-label generator.
-Cases whose original disclosure is absent from the selected filing must be replaced or rewritten
-as new reviewed cases rather than force-labeled.
-
-### Frozen v2 development benchmark
-
-Parts 7.1 and 7.2 are frozen together at
-`data/evals/cross_sectional_benchmark.v2.development.jsonl`. This is the canonical development
-input for subsequent Cross-Sectional v2 evaluation work. The two reviewed component files remain
-committed as provenance, but should not be independently edited after this freeze:
-
-- `cross_sectional_benchmark.v2.dev.jsonl`: 13 evidence-grounded semantic/temporal cases;
-- `cross_sectional_benchmark.v2.conditions.dev.jsonl`: 15 structured, change, and mixed cases.
-
-The canonical development set contains 28 questions with the following locked task distribution:
+It contains 28 reviewed cases across:
 
 | Task type | Count |
 | --- | ---: |
-| `semantic_screen` | 10 |
-| `temporal_screen` | 3 |
-| `structured_screen` | 5 |
-| `change_screen` | 5 |
-| `semantic_structured_screen` | 5 |
+| semantic screen | 10 |
+| temporal screen | 3 |
+| structured screen | 5 |
+| change screen | 5 |
+| semantic + structured | 5 |
 
-Its canonical dataset SHA-256 is
-`b3d0b17bd2da7ccaaf6cb655dff7de6e91c9506d5a61e15a19f0d049f8644571`.
-The machine-readable freeze manifest at
-`data/evals/cross_sectional_benchmark.v2.development.manifest.json` also pins the raw file hash,
-component hashes, counts, task distribution, and holdout status. CI recomputes these values and
-fails if the materialized development benchmark drifts from either reviewed component.
+The freeze manifest pins file hashes, component hashes, case counts, task distribution, and holdout status. CI fails if the materialized development benchmark drifts from reviewed components.
 
-The six v1 cross-sectional holdout cases were accessed during the Part-7.1 evidence-alignment
-diagnostic. They are therefore **diagnostic only** for future work and must not be presented as an
-untouched OOS set. The frozen v2 development manifest deliberately records `holdout_status` as
-`not_created`. Part 7.4 must create a new holdout only after this development task mix is locked;
-that new holdout must remain sealed until the final v2 evaluation stage.
+### Evidence-label eligibility
 
-## Release Gates
+A v2 evidence label is valid only when:
 
-| Metric | Target | Status (2026-07-09) |
-| --- | ---: | --- |
-| Recall@10 | >= 0.85 | Open — Hybrid holdout **0.375** (needs human paraphrases) |
-| Table Recall@10 | >= 0.80 | Open — Hybrid **0.500** |
-| Citation validity | 1.00 | Not claimed from this freeze |
-| Abstention macro-F1 | >= 0.85 | Open on this freeze |
-| Entity-resolution accuracy | >= 0.99 | Below gate on holdout |
-| Single-company search p95 | < 2.5 s | **Pass** (1.95 s) |
-| Cross-sectional search p95 | < 5 s | **Pass** (1.74 s) |
-| ANN Recall@10 delta from exact | <= 0.02 | **Pass** (max delta 0.00) |
+1. the gold issuer is resolved inside the frozen case universe;
+2. the exact filing is selected PIT using the case `as_of`, form, and amendment policy;
+3. `metadata.selected_accession` identifies that exact filing;
+4. reviewed evidence is a substring of a stored chunk from that accession and gold issuer;
+5. the case stores direct evidence rather than hydrating an older retrieval-question label.
 
-Generated questions and development results must not be reported as holdout performance.
-The 33-query content-grounded ablation in the README remains the primary retrieval-quality
-signal until holdout labels are human-paraphrased.
+Candidate-ranking tools may help reviewer triage but never generate gold labels automatically.
 
-## Cross-Sectional v2 sealed holdout (Part 7.4)
+### Sealed holdout
 
-The v2 holdout is frozen at `data/evals/cross_sectional_benchmark.v2.holdout.jsonl`.
-It contains 14 newly reviewed holdout questions with no question-ID or gold-issuer overlap
-with the 28-case development benchmark. The locked task mix is 5 semantic, 1 temporal,
-3 structured, 2 change, and 3 semantic+structured screens.
+Canonical file:
 
-Holdout construction used only the PIT research panel and direct chunks from the exact
-selected filing. It did **not** execute `execute_research_screen`, `/research/screen`,
-`/search`, hybrid retrieval, embeddings, or reranking. The holdout was sealed with canonical
-dataset SHA-256
-`9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc`
-and remained unevaluated until Part 7.5. Any label/content change after the first run requires a
-new benchmark version rather than editing v2 in place.
+```text
+data/evals/cross_sectional_benchmark.v2.holdout.jsonl
+```
 
-## Cross-Sectional v2 first holdout reveal (Part 7.5)
+The 14-case holdout was constructed using PIT panel/source data without executing the screen or semantic retrieval. Its first permitted execution is frozen under:
 
-The first permitted holdout execution completed on **2026-08-26** and is frozen under
-`data/evals/results/cross-sectional-v2-holdout-first-run/`. The run used the production corpus,
-Voyage `voyage-4-large` 512-D embeddings, PostgreSQL sparse retrieval, and no reranker
-(`hybrid+none`). The evaluated corpus contained 3,204 filings and 3,039,403 chunks/embeddings.
-The first-run git SHA is `ee80bae16d5f4d605db7ed15770c5158e79324bc`; corpus snapshot ID is
-`388fe80d07d5bd6e`.
+```text
+data/evals/results/cross-sectional-v2-holdout-first-run/
+```
 
-| Metric | First holdout result |
-| --- | ---: |
-| Issuer Recall@1 | **1.000 (14/14)** |
-| Issuer Recall@3 / @5 | **1.000 / 1.000** |
-| Exact evidence Recall@1 / @3 / @5 | **0.778 / 0.778 / 0.778** |
-| Strict condition grounding | **0.0% (0/8)** |
-| PIT leakage | **0.0%** |
-| p50 / p95 latency | **3.15 s / 6.15 s** |
-| Max semantic-search calls | **1** |
+The first-run artifact is immutable. Future reruns may diagnose changes but may not overwrite or retroactively alter the revealed result.
 
-The ranking result is strong: every held-out gold issuer ranked first. Evidence support is
-incomplete rather than uniformly weak: seven of nine evidence-bearing cases reproduced the exact
-reviewed passage, while `holdout-xs-005` (PFE) and `holdout-xs-012` (CRM) did not. Increasing K
-does not recover either miss because the failure is inside the gold issuer's bounded evidence set,
-not issuer ranking.
+### Cross-sectional metrics
 
-The **0/8 strict condition-grounding result is a real failure and must not be hidden by the perfect
-issuer ranking**. All eight structured/change/mixed cases selected the correct issuer at rank 1,
-but the exact reviewed condition contract (values, prior values where applicable, lineage IDs,
-and source-accession chain) did not replay byte-for-byte against the evaluated production panel.
-Part 7.5 freezes that observation; it does not relabel the holdout after seeing the result. The next
-research task should isolate provenance drift versus a screen/lineage replay defect using explicit
-field-level diagnostics while keeping v2 labels immutable.
+Reports distinguish:
 
-The 6.15 s overall p95 also exceeds the earlier 5 s cross-sectional latency target. Structured-only
-screens remain near 2.08 s p95; semantic screens are the bottleneck at roughly 7.33 s p95. Optimize
-only after profiling this measured path rather than adding new infrastructure.
+- issuer Recall@1 / @3 / @5;
+- exact evidence Recall@1 / @3 / @5;
+- condition correctness/source grounding;
+- exact snapshot-scoped lineage replay;
+- strict condition grounding = correctness + exact lineage replay;
+- PIT leakage;
+- semantic-call count;
+- executor/API/end-to-end latency as explicitly labeled.
 
-The holdout remains `status: sealed` after the first reveal. Its manifest now records
-`evaluation_status: first_run_frozen`, the workflow/artifact identity, corpus snapshot, evaluation
-git SHA, and hashes of the committed JSON, Markdown, and per-query results. Future evaluations
-still require the explicit `--allow-sealed-holdout` flag and may not overwrite the first-run
-artifact.
+This separation exists because the frozen first holdout revealed a lineage-context mismatch despite correct structured values/accessions. The historical diagnosis is preserved in `docs/archive/cross_sectional_condition_replay.md`; the durable scoring contract is encoded here and in `feature_lineage.md`.
+
+## Production screen evaluation
+
+Development cases may also be replayed through the deployed `POST /research/screen` route to measure the real production path. These runs must record enough context to distinguish:
+
+- panel construction / PIT filing selection;
+- embedding provider time;
+- sparse/dense retrieval;
+- fusion/reranking;
+- evidence hydration;
+- response construction;
+- HTTP/proxy overhead.
+
+Quality gates must be rechecked after any latency optimization that changes retrieval behavior.
+
+## Signal-study evaluation contract
+
+FDRE signal research should behave like a falsifiable experiment, not a chart generator.
+
+Minimum contract for promotable studies:
+
+- exact PIT event timestamp and selected feature lineage;
+- predeclared primary/secondary horizons;
+- train / validation / sealed OOS walk-forward splits;
+- purging of unrealized development outcomes;
+- cross-sectional Spearman IC and stability diagnostics;
+- quantile/long-short summaries;
+- clustered/bootstrap inference where supported;
+- multiple-testing-aware promotion rules;
+- turnover and explicit transaction-cost assumptions;
+- sector/temporal robustness;
+- immutable experiment/config/data/code identity;
+- valid outcomes of `PROMOTE`, `REJECT`, or `INSUFFICIENT`.
+
+### Flagship risk-churn acceleration
+
+The flagship methodology is precommitted. It uses:
+
+- risk-churn acceleration as the feature;
+- primary horizon `1:63`;
+- secondary horizons `1:21` and `1:126`;
+- expanding 24-month train / 6-month validation / 6-month test windows with 6-month step;
+- purged unrealized outcomes;
+- sealed-OOS multiple-testing gates;
+- monthly long/short implementation diagnostics at 5/10/25/50 bp;
+- sector robustness, concentration, and decay checks;
+- immutable artifact verification.
+
+Do not alter the methodology after observing results simply to manufacture promotion.
+
+## Historical Universe evaluation
+
+Historical Universe introduces a new correctness dimension: **universe eligibility itself**.
+
+HU tests must include:
+
+- future constituent additions cannot appear before `effective_from`;
+- removals disappear at the half-open boundary;
+- historical ticker changes resolve to the correct stable security;
+- simultaneous share classes remain distinct;
+- provisional/rejected evidence behaves fail-closed in strict mode;
+- snapshot hashes change when provenance changes;
+- source disagreements are surfaced in audit output;
+- current constituent snapshots are never treated as proof of past membership.
+
+HU-2 must produce coverage/audit metrics before HU-derived historical universes are used in flagship research.
+
+## Reporting rules
+
+- Put **current measurements** in `eval_results.md`.
+- Put **methodology/contracts** here.
+- Put **structural invariants** in `architecture.md` / `feature_lineage.md` / `historical_universe_v1.md`.
+- Put **one-off forensic investigations** in `docs/archive/`.
+- Never duplicate a dated metric across several active docs unless it is a deliberate README headline.
