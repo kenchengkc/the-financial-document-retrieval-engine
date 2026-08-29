@@ -1,0 +1,134 @@
+name: Temporary S&P coverage root fix
+
+on:
+  push:
+    branches:
+      - fix-sp500-root-and-stale-v2-cache
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix-sp500-root-and-stale-v2-cache
+      - name: Apply source and regression fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          ticker = Path('src/fdre/ingestion/ticker_map.py')
+          text = ticker.read_text()
+          old = 'Path(__file__).resolve().parents[4]'
+          assert text.count(old) == 2, text.count(old)
+          ticker.write_text(text.replace(old, 'Path(__file__).resolve().parents[3]'))
+
+          test_path = Path('tests/fdre/test_ticker_map_paths.py')
+          test_path.write_text('''from __future__ import annotations\n\nimport json\n\nfrom fdre.ingestion import ticker_map\n\n\ndef test_default_catalog_paths_resolve_checked_in_repository_data() -> None:\n    assert ticker_map.LISTED_COMPANIES_PATH.is_file()\n    assert ticker_map.SP500_TICKERS_PATH.is_file()\n\n    payload = json.loads(ticker_map.SP500_TICKERS_PATH.read_text(encoding="utf-8"))\n    primary_tickers = set(ticker_map.sp500_primary_tickers())\n\n    assert len(primary_tickers) == payload["primary_ticker_count"]\n    assert len(primary_tickers) > 400\n    assert {"ARE", "MET", "AEP", "BX", "SO"}.issubset(primary_tickers)\n    assert ticker_map.catalog_company_count() > 5_000\n''')
+
+          foundation = Path('apps/web/components/data-foundation.tsx')
+          text = foundation.read_text()
+          text = text.replace(
+              'function legacyFoundationCacheIsCurrent(cached: FoundationCache) {',
+              'function foundationCacheIsCurrent(cached: FoundationCache) {',
+          )
+          old_current = '      if (current) return current;\n      window.localStorage.removeItem(FOUNDATION_CACHE_KEY);'
+          new_current = '      if (current && foundationCacheIsCurrent(current)) return current;\n      window.localStorage.removeItem(FOUNDATION_CACHE_KEY);'
+          assert old_current in text
+          text = text.replace(old_current, new_current)
+          text = text.replace('legacyFoundationCacheIsCurrent(legacy)', 'foundationCacheIsCurrent(legacy)')
+          foundation.write_text(text)
+
+          spec = Path('apps/web/e2e/console.spec.ts')
+          text = spec.read_text()
+          marker = 'test.describe("ingestion timestamp", () => {'
+          assert marker in text
+          regression = r'''test("rejects stale v2 S&P coverage cache and refetches live coverage", async ({ page }) => {
+            const cachedAt = Date.now();
+            await page.addInitScript(
+              ({ savedAt }) => {
+                window.localStorage.setItem(
+                  "fdre.foundation.v2",
+                  JSON.stringify({
+                    savedAt,
+                    data: {
+                      coverage: {
+                        catalog_count: 5794,
+                        sp500_catalog_count: 499,
+                        indexed_count: 499,
+                        sp500_indexed_count: 4,
+                        document_count: 2766,
+                        chunk_count: 2715610,
+                        indexed_tickers: ["ARE", "MET", "AEP", "BX", "SO"],
+                      },
+                      companies: [
+                        { ticker: "ARE", cik: "1", name: "Alexandria", exchange: "NYSE", document_count: 13, chunk_count: 45698, indexed: true },
+                        { ticker: "AAPL", cik: "2", name: "Apple", exchange: "Nasdaq", document_count: 13, chunk_count: 6056, indexed: true },
+                      ],
+                      operations: null,
+                    },
+                  }),
+                );
+              },
+              { savedAt: cachedAt },
+            );
+
+            let coverageRequests = 0;
+            await page.route("**/health", (route) =>
+              route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok" }) }),
+            );
+            await page.route("**/coverage", (route) => {
+              coverageRequests += 1;
+              return route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  catalog_count: 5794,
+                  sp500_catalog_count: 499,
+                  indexed_count: 499,
+                  sp500_indexed_count: 499,
+                  document_count: 2766,
+                  chunk_count: 2715610,
+                  indexed_tickers: ["ARE", "MET", "AEP", "BX", "SO"],
+                }),
+              });
+            });
+            await page.route("**/companies**", (route) =>
+              route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  total: 2,
+                  companies: [
+                    { ticker: "ARE", cik: "1", name: "Alexandria", exchange: "NYSE", document_count: 13, chunk_count: 45698, indexed: true },
+                    { ticker: "AAPL", cik: "2", name: "Apple", exchange: "Nasdaq", document_count: 13, chunk_count: 6056, indexed: true },
+                  ],
+                }),
+              }),
+            );
+            await page.route("**/operations/quality**", (route) =>
+              route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+            );
+
+            await page.goto("/");
+            const sp500 = page.locator(".foundation-split span").first();
+            await expect(sp500).toContainText("499");
+            await expect(sp500).toContainText("S&P 500 universe");
+            await expect(sp500).not.toContainText("4 S&P 500 universe");
+            expect(coverageRequests).toBeGreaterThan(0);
+          });
+
+          '''
+          spec.write_text(text.replace(marker, regression + marker))
+          PY
+      - name: Remove temporary workflow and commit patch
+        run: |
+          git rm .github/workflows/tmp-fix-sp500-root.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/fdre/ingestion/ticker_map.py tests/fdre/test_ticker_map_paths.py apps/web/components/data-foundation.tsx apps/web/e2e/console.spec.ts
+          git commit -m "fix: load S&P catalog from repository root"
+          git push origin HEAD:fix-sp500-root-and-stale-v2-cache
