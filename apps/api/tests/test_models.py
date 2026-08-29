@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Engine, create_engine, inspect, select
@@ -223,7 +223,7 @@ def test_historical_universe_evidence_persists_raw_source_observation() -> None:
         source="fixture",
         source_url="https://example.test/source",
         source_record_id="row-1",
-        source_observed_at=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        source_observed_at=datetime(2026, 8, 29, tzinfo=UTC),
         source_record_hash="b" * 64,
         metadata_json={"note": "raw source detail"},
     )
