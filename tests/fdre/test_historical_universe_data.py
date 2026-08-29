@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fdre.research.historical_universe_evidence import (
+    MembershipEventType,
     MembershipEvidence,
     canonical_source_record_hash,
 )
@@ -23,14 +24,14 @@ OBSERVED_AT = datetime(2026, 8, 29, 20, 0, tzinfo=UTC)
 def _membership_evidence(
     *,
     source: str,
-    event_type: str,
+    event_type: MembershipEventType,
     effective_at: date,
     symbol: str = "ALP",
     name: str = "Alpha Corp",
 ) -> MembershipEvidence:
     return MembershipEvidence(
         universe_code="sp500",
-        event_type=event_type,  # type: ignore[arg-type]
+        event_type=event_type,
         effective_at=effective_at,
         raw_symbol=symbol,
         raw_name=name,
@@ -62,8 +63,14 @@ def test_sec_cik_lookup_parses_colon_in_company_name() -> None:
 
 
 def test_sec_name_resolution_fails_closed_on_multiple_ciks() -> None:
-    first = SecCikLookupAdapter.parse_line("ALPHA CORP:0000000001:\n", observed_at=OBSERVED_AT)
-    second = SecCikLookupAdapter.parse_line("ALPHA CORP:0000000002:\n", observed_at=OBSERVED_AT)
+    first = SecCikLookupAdapter.parse_line(
+        "ALPHA CORP:0000000001:\n",
+        observed_at=OBSERVED_AT,
+    )
+    second = SecCikLookupAdapter.parse_line(
+        "ALPHA CORP:0000000002:\n",
+        observed_at=OBSERVED_AT,
+    )
     assert first is not None and second is not None
     index = SecCikNameIndex((first, second))
 
@@ -89,7 +96,10 @@ def test_sec_name_resolution_does_not_fuzzy_match_legal_name() -> None:
 
 
 def test_sec_issuer_fallback_requires_unique_stable_security() -> None:
-    record = SecCikLookupAdapter.parse_line("ALPHA CORP:0000000001:\n", observed_at=OBSERVED_AT)
+    record = SecCikLookupAdapter.parse_line(
+        "ALPHA CORP:0000000001:\n",
+        observed_at=OBSERVED_AT,
+    )
     assert record is not None
     index = SecCikNameIndex((record,))
     evidence = _membership_evidence(
@@ -145,17 +155,33 @@ def test_sec_lookup_can_filter_large_file_to_observed_names(tmp_path: Path) -> N
 def test_wikipedia_adapter_parses_membership_rows_and_skips_ticker_changes(
     tmp_path: Path,
 ) -> None:
-    html = """
-    <html><body>
-      <table class="wikitable">
-        <tr><th>Effective Date</th><th colspan="2">Added</th><th colspan="2">Removed</th><th>Reason</th><th>Refs</th></tr>
-        <tr><th></th><th>Ticker</th><th>Security</th><th>Ticker</th><th>Security</th><th></th><th></th></tr>
-        <tr><td>March 20, 2020</td><td>ALP</td><td>Alpha Corp</td><td>BET</td><td>Beta Corp</td><td>Market capitalization changes.</td><td>[1]</td></tr>
-        <tr><td>February 1, 2024</td><td>DAY</td><td>Dayforce</td><td>CDAY</td><td>Ceridian</td><td>Ceridian changed its ticker symbol from CDAY to DAY.</td><td>[2]</td></tr>
-        <tr><td>June 30, 2026</td><td></td><td></td><td>CAG</td><td>Conagra Brands</td><td>Market capitalization changes.</td><td>[3]</td></tr>
-      </table>
-    </body></html>
-    """
+    html = (
+        '<html><body><table class="wikitable">'
+        "<tr>"
+        "<th>Effective Date</th><th colspan=\"2\">Added</th>"
+        "<th colspan=\"2\">Removed</th><th>Reason</th><th>Refs</th>"
+        "</tr>"
+        "<tr>"
+        "<th></th><th>Ticker</th><th>Security</th>"
+        "<th>Ticker</th><th>Security</th><th></th><th></th>"
+        "</tr>"
+        "<tr>"
+        "<td>March 20, 2020</td><td>ALP</td><td>Alpha Corp</td>"
+        "<td>BET</td><td>Beta Corp</td>"
+        "<td>Market capitalization changes.</td><td>[1]</td>"
+        "</tr>"
+        "<tr>"
+        "<td>February 1, 2024</td><td>DAY</td><td>Dayforce</td>"
+        "<td>CDAY</td><td>Ceridian</td>"
+        "<td>Ceridian changed its ticker symbol from CDAY to DAY.</td><td>[2]</td>"
+        "</tr>"
+        "<tr>"
+        "<td>June 30, 2026</td><td></td><td></td>"
+        "<td>CAG</td><td>Conagra Brands</td>"
+        "<td>Market capitalization changes.</td><td>[3]</td>"
+        "</tr>"
+        "</table></body></html>"
+    )
     path = tmp_path / "historical.html"
     path.write_text(html, encoding="utf-8")
 
