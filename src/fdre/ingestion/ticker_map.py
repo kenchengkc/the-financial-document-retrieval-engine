@@ -8,10 +8,10 @@ from pathlib import Path
 from fdre.ingestion.sec_client import normalize_cik
 
 LISTED_COMPANIES_PATH = (
-    Path(__file__).resolve().parents[4] / "data" / "sample" / "listed_companies.json"
+    Path(__file__).resolve().parents[3] / "data" / "sample" / "listed_companies.json"
 )
 SP500_TICKERS_PATH = (
-    Path(__file__).resolve().parents[4] / "data" / "sample" / "sp500_tickers.json"
+    Path(__file__).resolve().parents[3] / "data" / "sample" / "sp500_tickers.json"
 )
 
 

@@ -61,7 +61,7 @@ function parseFoundationCache(raw: string): FoundationCache | null {
   return cached;
 }
 
-function legacyFoundationCacheIsCurrent(cached: FoundationCache) {
+function foundationCacheIsCurrent(cached: FoundationCache) {
   const coverage = cached.data.coverage;
   if (!coverage) return false;
   return (
@@ -75,14 +75,14 @@ function readFoundationCache(): FoundationCache | null {
     const currentRaw = window.localStorage.getItem(FOUNDATION_CACHE_KEY);
     if (currentRaw) {
       const current = parseFoundationCache(currentRaw);
-      if (current) return current;
+      if (current && foundationCacheIsCurrent(current)) return current;
       window.localStorage.removeItem(FOUNDATION_CACHE_KEY);
     }
 
     const legacyRaw = window.localStorage.getItem(LEGACY_FOUNDATION_CACHE_KEY);
     if (!legacyRaw) return null;
     const legacy = parseFoundationCache(legacyRaw);
-    if (!legacy || !legacyFoundationCacheIsCurrent(legacy)) {
+    if (!legacy || !foundationCacheIsCurrent(legacy)) {
       window.localStorage.removeItem(LEGACY_FOUNDATION_CACHE_KEY);
       return null;
     }

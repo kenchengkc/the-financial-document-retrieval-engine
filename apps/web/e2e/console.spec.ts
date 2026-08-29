@@ -240,6 +240,81 @@ test("uses a fresh foundation snapshot without waking the data service", async (
   releaseRequests();
 });
 
+test("rejects stale v2 S&P coverage cache and refetches live coverage", async ({ page }) => {
+  const cachedAt = Date.now();
+  await page.addInitScript(
+    ({ savedAt }) => {
+      window.localStorage.setItem(
+        "fdre.foundation.v2",
+        JSON.stringify({
+          savedAt,
+          data: {
+            coverage: {
+              catalog_count: 5794,
+              sp500_catalog_count: 499,
+              indexed_count: 499,
+              sp500_indexed_count: 4,
+              document_count: 2766,
+              chunk_count: 2715610,
+              indexed_tickers: ["ARE", "MET", "AEP", "BX", "SO"],
+            },
+            companies: [
+              { ticker: "ARE", cik: "1", name: "Alexandria", exchange: "NYSE", document_count: 13, chunk_count: 45698, indexed: true },
+              { ticker: "AAPL", cik: "2", name: "Apple", exchange: "Nasdaq", document_count: 13, chunk_count: 6056, indexed: true },
+            ],
+            operations: null,
+          },
+        }),
+      );
+    },
+    { savedAt: cachedAt },
+  );
+
+  let coverageRequests = 0;
+  await page.route("**/health", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok" }) }),
+  );
+  await page.route("**/coverage", (route) => {
+    coverageRequests += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        catalog_count: 5794,
+        sp500_catalog_count: 499,
+        indexed_count: 499,
+        sp500_indexed_count: 499,
+        document_count: 2766,
+        chunk_count: 2715610,
+        indexed_tickers: ["ARE", "MET", "AEP", "BX", "SO"],
+      }),
+    });
+  });
+  await page.route("**/companies**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        total: 2,
+        companies: [
+          { ticker: "ARE", cik: "1", name: "Alexandria", exchange: "NYSE", document_count: 13, chunk_count: 45698, indexed: true },
+          { ticker: "AAPL", cik: "2", name: "Apple", exchange: "Nasdaq", document_count: 13, chunk_count: 6056, indexed: true },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/operations/quality**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+  );
+
+  await page.goto("/");
+  const sp500 = page.locator(".foundation-split span").first();
+  await expect(sp500).toContainText("499");
+  await expect(sp500).toContainText("S&P 500 universe");
+  await expect(sp500).not.toContainText("4 S&P 500 universe");
+  expect(coverageRequests).toBeGreaterThan(0);
+});
+
 test.describe("ingestion timestamp", () => {
   test.use({ timezoneId: "America/New_York" });
 
