@@ -1,4 +1,4 @@
-"""Normalize Historical Universe source evidence into deterministic local artifacts."""
+"""Normalize and audit Historical Universe evidence into deterministic local artifacts."""
 
 from __future__ import annotations
 
@@ -10,6 +10,12 @@ from datetime import datetime
 from pathlib import Path
 
 from fdre.research.historical_universe_evidence import MembershipEvidence, SnpHistoryCsvAdapter
+from fdre.research.historical_universe_identity import (
+    SecCikLookupAdapter,
+    SecCikNameIndex,
+    resolve_issuer_name,
+)
+from fdre.research.historical_universe_sources import WikipediaHistoricalComponentsAdapter
 
 
 def _parse_observed_at(value: str) -> datetime:
@@ -63,17 +69,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Normalize a local historical-universe source file without promoting it to verified "
-            "membership. No network access is performed."
+            "membership. Optionally audit exact issuer-name matches against a local SEC cumulative "
+            "CIK lookup. No network access is performed."
         )
     )
     parser.add_argument(
         "input",
         type=Path,
-        help="Local source file. The upstream dataset is not bundled by FDRE.",
+        help="Local source file. Upstream datasets are not bundled by FDRE.",
     )
     parser.add_argument(
         "--adapter",
-        choices=("snp-history-csv",),
+        choices=("snp-history-csv", "wikipedia-historical-components-html"),
         default="snp-history-csv",
     )
     parser.add_argument(
@@ -84,21 +91,70 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--universe", default="sp500")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--sec-cik-lookup",
+        type=Path,
+        help=(
+            "Optional local SEC cik-lookup-data.txt. Only names present in the membership batch "
+            "are retained in memory; exact normalized matches are audited but do not mutate raw "
+            "source evidence."
+        ),
+    )
     return parser
+
+
+def _load_membership_evidence(args: argparse.Namespace) -> tuple[MembershipEvidence, ...]:
+    if args.adapter == "snp-history-csv":
+        adapter = SnpHistoryCsvAdapter(universe_code=args.universe)
+        return adapter.load(args.input, observed_at=args.observed_at)
+    if args.adapter == "wikipedia-historical-components-html":
+        adapter = WikipediaHistoricalComponentsAdapter(universe_code=args.universe)
+        return adapter.load(args.input, observed_at=args.observed_at)
+    raise ValueError(f"unsupported adapter: {args.adapter}")
+
+
+def _issuer_audit(
+    records: tuple[MembershipEvidence, ...],
+    *,
+    sec_cik_lookup: Path,
+    observed_at: datetime,
+) -> dict[str, object]:
+    names = tuple(record.raw_name for record in records if record.raw_name)
+    sec_records = SecCikLookupAdapter().load(
+        sec_cik_lookup,
+        observed_at=observed_at,
+        restrict_to_names=names,
+    )
+    index = SecCikNameIndex(sec_records)
+    resolutions = [resolve_issuer_name(record.raw_name, index) for record in records]
+    status_counts = Counter(resolution.status for resolution in resolutions)
+    ambiguous_ciks = sorted(
+        {
+            cik
+            for resolution in resolutions
+            if resolution.status == "ambiguous"
+            for cik in resolution.candidate_ciks
+        }
+    )
+    return {
+        "sec_cik_lookup_match_record_count": len(sec_records),
+        "sec_cik_lookup_matched_name_count": index.name_count,
+        "issuer_name_resolved_count": status_counts["resolved"],
+        "issuer_name_ambiguous_count": status_counts["ambiguous"],
+        "issuer_name_unresolved_count": status_counts["unresolved"],
+        "issuer_ambiguous_candidate_ciks": ambiguous_ciks,
+    }
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.adapter != "snp-history-csv":
-        raise ValueError(f"unsupported adapter: {args.adapter}")
-
-    adapter = SnpHistoryCsvAdapter(universe_code=args.universe)
-    records = adapter.load(args.input, observed_at=args.observed_at)
+    records = _load_membership_evidence(args)
     counts = Counter(record.event_type for record in records)
     dates = sorted(record.effective_at for record in records)
-    summary = {
+    source_names = sorted({record.source for record in records})
+    summary: dict[str, object] = {
         "adapter": args.adapter,
-        "source": adapter.source_name,
+        "sources": source_names,
         "universe_code": args.universe.strip().lower(),
         "evidence_count": len(records),
         "addition_count": counts["addition"],
@@ -108,6 +164,15 @@ def main() -> int:
         "batch_hash": _batch_hash(records),
         "promoted_membership_count": 0,
     }
+
+    if args.sec_cik_lookup:
+        summary.update(
+            _issuer_audit(
+                records,
+                sec_cik_lookup=args.sec_cik_lookup,
+                observed_at=args.observed_at,
+            )
+        )
 
     if args.output:
         _write_jsonl(args.output, records)
