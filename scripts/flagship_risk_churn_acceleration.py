@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
 from apps.api.app.models import Company, Document
-from fdre.research.composite_study import CompositeEvent, SignalComponent, period_label, standardize_by_period
+from fdre.research.composite_study import (
+    CompositeEvent,
+    SignalComponent,
+    period_label,
+    standardize_by_period,
+)
 from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent
 from fdre.research.experiment_registry import (
     build_research_experiment_manifest,
@@ -101,10 +106,7 @@ def _select_universe(
         .limit(max_tickers)
     ).all()
     tickers = [str(row.ticker).upper() for row in rows]
-    sectors = {
-        str(row.ticker).upper(): str(row.sector or "Unknown")
-        for row in rows
-    }
+    sectors = {str(row.ticker).upper(): str(row.sector or "Unknown") for row in rows}
     return tickers, sectors
 
 
@@ -209,8 +211,12 @@ def _write_note(path: Path, summary: dict[str, object]) -> None:
         for item in diagnostics:
             if not isinstance(item, dict):
                 continue
+            row_template = (
+                "| {window} | {ic_mean} | {icir} | {positive_ic_share} | "
+                "{long_short_mean} |"
+            )
             lines.append(
-                "| {window} | {ic_mean} | {icir} | {positive_ic_share} | {long_short_mean} |".format(
+                row_template.format(
                     window=item.get("window"),
                     ic_mean=item.get("ic_mean"),
                     icir=item.get("icir"),
