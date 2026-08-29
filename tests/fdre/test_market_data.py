@@ -5,7 +5,9 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+import requests
 
+from fdre.research.event_study import MarketBar
 from fdre.research.market_data import (
     _covering_tiingo_path,
     fetch_market_bars,
@@ -65,3 +67,40 @@ def test_fetch_market_bars_cache_only_reuses_covering_caches(
     )
     assert missing == []
     assert any(bar.ticker == "MSFT" for bar in bars)
+
+
+def test_fetch_market_bars_falls_back_to_yahoo_when_tiingo_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TIINGO_API_KEY", "test-token")
+    tiingo_calls: list[str] = []
+    yahoo_calls: list[str] = []
+
+    def fail_tiingo(ticker: str, *args: object, **kwargs: object) -> list[MarketBar]:
+        tiingo_calls.append(ticker)
+        raise requests.HTTPError("429 rate limited")
+
+    def fake_open_yahoo_session() -> tuple[requests.Session, None]:
+        return requests.Session(), None
+
+    def fake_yahoo(ticker: str, *args: object, **kwargs: object) -> list[MarketBar]:
+        yahoo_calls.append(ticker)
+        return [MarketBar(ticker=ticker, date=date(2023, 6, 1), adjusted_close=100.0)]
+
+    monkeypatch.setattr("fdre.research.market_data.fetch_ticker_bars_tiingo", fail_tiingo)
+    monkeypatch.setattr("fdre.research.market_data.open_yahoo_session", fake_open_yahoo_session)
+    monkeypatch.setattr("fdre.research.market_data.fetch_ticker_bars", fake_yahoo)
+
+    bars, missing = fetch_market_bars(
+        ["MSFT"],
+        date(2023, 1, 1),
+        date(2024, 1, 1),
+        benchmark="SPY",
+        cache_dir=tmp_path,
+        pause=0,
+    )
+
+    assert missing == []
+    assert {bar.ticker for bar in bars} == {"SPY", "MSFT"}
+    assert tiingo_calls == ["SPY", "MSFT"]
+    assert yahoo_calls == ["SPY", "MSFT"]
