@@ -15,17 +15,21 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models.companies import Company
 from apps.api.app.models.historical_universe import Security
+from fdre.research.historical_universe import SecurityIdentityRecord
 from fdre.research.historical_universe_evidence import (
     IdentityResolution,
     MembershipEvidence,
     resolve_membership_evidence,
 )
+
+IssuerResolutionStatus = Literal["resolved", "ambiguous", "unresolved"]
 
 _SEC_CIK_LOOKUP_SOURCE = "sec-edgar-cik-lookup"
 _SEC_CIK_LOOKUP_URL = "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"
@@ -97,7 +101,7 @@ class IssuerNameResolution:
 
     raw_name: str | None
     normalized_name: str | None
-    status: str
+    status: IssuerResolutionStatus
     cik: str | None
     candidate_ciks: tuple[str, ...]
     evidence_ids: tuple[str, ...]
@@ -174,7 +178,9 @@ class SecCikLookupAdapter:
             cik=normalize_cik(cik),
             raw_name=raw_name.strip(),
             normalized_name=normalized_name,
-            source_record_hash=hashlib.sha256(text.encode("latin-1", errors="replace")).hexdigest(),
+            source_record_hash=hashlib.sha256(
+                text.encode("latin-1", errors="replace")
+            ).hexdigest(),
             source_observed_at=observed_at,
         )
 
@@ -188,10 +194,13 @@ class SecCikLookupAdapter:
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
             raise ValueError("observed_at must be timezone-aware")
         wanted = (
-            {normalize_issuer_name(name) for name in restrict_to_names if normalize_issuer_name(name)}
+            {normalize_issuer_name(name) for name in restrict_to_names}
             if restrict_to_names is not None
             else None
         )
+        if wanted is not None:
+            wanted.discard("")
+
         records: list[IssuerNameEvidence] = []
         with path.open("r", encoding="latin-1", errors="replace") as handle:
             for line in handle:
@@ -210,6 +219,7 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
     matches = index.lookup(raw_name)
     ciks = tuple(sorted({record.cik for record in matches}))
     evidence_ids = tuple(sorted(record.evidence_id for record in matches))
+    status: IssuerResolutionStatus
     if len(ciks) == 1:
         status = "resolved"
         cik = ciks[0]
@@ -246,7 +256,7 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
 def resolve_membership_with_sec_issuer_fallback(
     evidence: MembershipEvidence,
     *,
-    identities: Sequence[object],
+    identities: Sequence[SecurityIdentityRecord],
     issuer_index: SecCikNameIndex,
     securities: Sequence[StableSecurityRecord],
 ) -> tuple[IdentityResolution, IssuerNameResolution | None]:
@@ -258,8 +268,7 @@ def resolve_membership_with_sec_issuer_fallback(
     multiple share classes fail closed as ambiguous.
     """
 
-    # Avoid a circular import solely for the annotation while retaining the existing resolver.
-    primary = resolve_membership_evidence(evidence, identities)  # type: ignore[arg-type]
+    primary = resolve_membership_evidence(evidence, identities)
     if primary.status != "unresolved":
         return primary, None
 
