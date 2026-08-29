@@ -152,7 +152,7 @@ def _persist_all_children(
     for key, kind, report in [
         (source.experiment_key, "walk_forward_signal_study", source),
         (diagnostics.diagnostics_key, "oos_signal_diagnostics", diagnostics),
-        (selection.selection_key, "oos_signal_selection", selection),
+        (selection.selection_key, "oos_signal_selection_suite", selection),
         (implementation.implementation_key, "oos_signal_implementation", implementation),
         (promotion.promotion_key, "oos_signal_promotion", promotion),
     ]:
@@ -276,7 +276,7 @@ def test_registry_rejects_child_with_wrong_artifact_type() -> None:
         children = [
             (source.experiment_key, "wrong_type", source),
             (diagnostics.diagnostics_key, "oos_signal_diagnostics", diagnostics),
-            (selection.selection_key, "oos_signal_selection", selection),
+            (selection.selection_key, "oos_signal_selection_suite", selection),
             (implementation.implementation_key, "oos_signal_implementation", implementation),
             (promotion.promotion_key, "oos_signal_promotion", promotion),
         ]
