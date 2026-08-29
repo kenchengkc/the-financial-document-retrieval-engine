@@ -1,7 +1,8 @@
 # Financial Document Retrieval Engine
 
 FDRE converts SEC filings into auditable retrieval results, structured financial facts,
-point-in-time research features, and reproducible event-study inputs.
+point-in-time research features, and reproducible event-study inputs. The live product serves
+roughly **75 monthly active users**.
 
 [Live service](https://thefdre.com) ·
 [API](https://api.thefdre.com/health) ·
@@ -15,34 +16,31 @@ is not a trading strategy, portfolio optimizer, execution simulator, or low-late
 
 ## Highlights
 
-- **2.7M chunks, one database.** 498 S&P 500 issuers × ~5 years of 10-K/10-Q annual and quarterly filings (2,762 filings, 2.71M parsed chunks, 2.71M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
-- **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF (Reciprocal Rank Fusion) and BM25 (Best Matching 25 lexical ranking) were implemented, measured, and rejected for underperforming on this corpus.
+- **~75 MAUs on the live product.** FDRE is deployed end-to-end with a Next.js frontend, FastAPI backend, PostgreSQL/pgvector retrieval, Railway API hosting, and Vercel frontend delivery.
+- **3.04M chunks across 499/499 S&P 500 issuers.** The latest documented production snapshots contain **3,204 10-K/10-Q filings** and **3,039,403 parsed chunks/embeddings**, all served from PostgreSQL without a separate search, vector, or queue service.
+- **Measured retrieval gains.** Multi-query expansion lifts Recall@5 from **0.152 → 0.212 (+40%)**, neighbor expansion reaches **0.242**, Hybrid holdout Recall@10 is **0.375**, and exact-versus-ANN Recall@10 is **1.00** with **0.00** max delta.
 - **Production research screens: 100% Recall@3/5, zero PIT leakage.** The frozen 28-case cross-sectional development suite run through the live HTTPS API reaches issuer Recall@1/3/5 of **0.929 / 1.000 / 1.000**, evidence Recall@1/3/5 of **0.833 / 0.944 / 0.944**, **100%** condition correctness/lineage/grounding, **0%** point-in-time leakage, and **1.86 s** end-to-end p95 latency.
-- **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` (16-bit half-precision vectors) cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN (Approximate Nearest Neighbor) results before and after.
+- **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` (16-bit half-precision vectors) cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN results before and after.
 - **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
-- **Honest research.** Four point-in-time signal studies (disclosure similarity, risk-factor churn, filing-delay surprise, and cash-conversion earnings quality) with real information coefficients, multiple-testing adjustments, and bootstrap inference, reporting genuine null results, not manufactured alpha.
+- **Honest, sealed research.** Four point-in-time signal studies report genuine null/weak results rather than manufactured alpha, and the flagship risk-churn acceleration study now has a precommitted expanding walk-forward runner, multiple-testing controls, 5/10/25/50 bp cost accounting, sector robustness checks, immutable manifests, and CI execution.
 
 ## Production Corpus
 
-Measured from production:
+Latest documented production snapshots from August 25–26, 2026:
 
 | Metric | Value |
 | --- | ---: |
-| S&P 500 primary tickers indexed | 498 / 499 |
-| SEC filings (10-K annual / 10-Q quarterly) | 2,762 |
-| Parsed chunks | 2,712,277 |
-| Embedded chunks | 2,712,277 |
+| S&P 500 primary tickers indexed | 499 / 499 |
+| SEC filings (10-K annual / 10-Q quarterly) | 3,204 |
+| Parsed chunks | 3,039,403 |
+| Embedded chunks | 3,039,403 |
 | Embeddings | Voyage `voyage-4-large`, 512-dim, stored as `halfvec` |
 
-The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026, via
-chained `sp500-ingest` runs), enabling multi-year point-in-time retrieval and event
-studies. The constituent list is current and therefore survivorship-biased. The one company
-without indexed data is FedEx Freight (`FDXF`), a June 2026 spin-off from FedEx whose EDGAR
-(Electronic Data Gathering, Analysis, and Retrieval) history is still only registration, `8-K` (material
-event), and insider filings, with no 10-K or 10-Q yet, so there is nothing to retrieve until its first
-quarterly report. Vectors are stored at half precision (`halfvec`); the HNSW (Hierarchical Navigable
-Small World) index already ranks on the half-precision cast, so this halves vector storage with no
-change to retrieval results.
+The corpus spans roughly five years of 10-K/10-Q history per issuer, enabling multi-year
+point-in-time retrieval and event studies. The constituent list is current and therefore
+survivorship-biased. Vectors are stored at half precision (`halfvec`); the HNSW index already ranks
+on the half-precision cast, so this cuts vector storage substantially with no observed change to
+retrieval ranking.
 
 ## What It Does
 
@@ -57,9 +55,12 @@ change to retrieval results.
 - Provider-neutral filing event studies with leakage checks and persisted experiment manifests.
 - Point-in-time disclosure and fundamental signal studies: a "Lazy Prices" disclosure-similarity
   replication, a risk-factor churn study, an issuer filing-delay surprise study, and a cash-conversion
-  earnings quality study, with quantile portfolios, information coefficients, and bootstrap inference
-  (`GET /research/signal-studies`). The honest finding: the signals are genuinely
-  uncorrelated but individually weak, so naive combination is no free lunch.
+  earnings quality study, with quantile portfolios, information coefficients, bootstrap inference,
+  and honest null-result reporting (`GET /research/signal-studies`).
+- A sealed flagship risk-churn acceleration workflow with 24-month training, 6-month validation,
+  6-month test windows, 6-month steps, purged unrealized development outcomes, multiple-testing-aware
+  selection gates, turnover/cost accounting, sector robustness checks, artifact verification, and
+  reproducible market-data caching.
 - Incremental ingestion, provider backoff, run manifests, and corpus quality audits.
 
 ## Architecture
@@ -188,7 +189,7 @@ actually helps on this corpus:
 | Variant | Recall@5 | MRR | nDCG@5 |
 | --- | ---: | ---: | ---: |
 | Baseline (single query, weighted fusion) | 0.152 | 0.086 | 0.102 |
-| **Multi-query expansion (shipped default)** | **0.212** | **0.125** | **0.146** |
+| **Multi-query expansion (shipped default)** | **0.212** | **0.134** | **0.153** |
 
 - **Recall@5**: Proportion of labeled target evidence chunks retrieved within the top 5 candidates.
 - **MRR (Mean Reciprocal Rank)**: The average reciprocal rank ($1/\text{rank}$) of the first relevant chunk found.
@@ -201,8 +202,9 @@ RRF (Reciprocal Rank Fusion) and BM25-over-pool underperformed on this corpus, s
 A reviewed 120-question (80/40) holdout contract is frozen in
 `data/evals/retrieval_benchmark.jsonl`. Latency, ANN, and holdout results are in
 [`docs/eval_results.md`](docs/eval_results.md): single-name p95 **1.95 s**,
-cross-sectional p95 **1.74 s**, ANN max delta **0.00**, Hybrid holdout Recall@10
-**0.375** (aspirational 0.85 needs human paraphrases).
+cross-sectional p95 **1.74 s**, ANN mean Recall@10 **1.00** with max delta **0.00**, and Hybrid
+holdout Recall@10 **0.375** (the aspirational 0.85 retrieval gate still requires stronger
+human-authored paraphrase coverage).
 
 ### Production cross-sectional screen evaluation
 
