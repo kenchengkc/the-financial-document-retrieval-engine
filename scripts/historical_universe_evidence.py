@@ -105,11 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _load_membership_evidence(args: argparse.Namespace) -> tuple[MembershipEvidence, ...]:
     if args.adapter == "snp-history-csv":
-        adapter = SnpHistoryCsvAdapter(universe_code=args.universe)
-        return adapter.load(args.input, observed_at=args.observed_at)
+        snp_adapter = SnpHistoryCsvAdapter(universe_code=args.universe)
+        return snp_adapter.load(args.input, observed_at=args.observed_at)
     if args.adapter == "wikipedia-historical-components-html":
-        adapter = WikipediaHistoricalComponentsAdapter(universe_code=args.universe)
-        return adapter.load(args.input, observed_at=args.observed_at)
+        wikipedia_adapter = WikipediaHistoricalComponentsAdapter(universe_code=args.universe)
+        return wikipedia_adapter.load(args.input, observed_at=args.observed_at)
     raise ValueError(f"unsupported adapter: {args.adapter}")
 
 
