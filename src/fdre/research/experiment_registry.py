@@ -29,7 +29,7 @@ _REGISTRY_VERSION = "research-experiment-registry-v1"
 _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
     "walk_forward": "walk_forward_signal_study",
     "oos_diagnostics": "oos_signal_diagnostics",
-    "oos_selection": "oos_signal_selection",
+    "oos_selection": "oos_signal_selection_suite",
     "oos_implementation": "oos_signal_implementation",
     "oos_promotion": "oos_signal_promotion",
 }
