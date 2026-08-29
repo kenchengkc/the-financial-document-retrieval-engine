@@ -26,12 +26,18 @@ def main() -> int:
     args = _parser().parse_args()
     with Session(get_engine()) as session:
         if args.action == "inspect":
-            result = inspect_research_experiment(session, args.experiment_id)
+            payload = inspect_research_experiment(
+                session, args.experiment_id
+            ).model_dump(mode="json")
         elif args.action == "verify":
-            result = verify_research_experiment(session, args.experiment_id)
+            payload = verify_research_experiment(
+                session, args.experiment_id
+            ).model_dump(mode="json")
         else:
-            result = replay_research_experiment(session, args.experiment_id)
-    print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+            payload = replay_research_experiment(
+                session, args.experiment_id
+            ).model_dump(mode="json")
+    print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 
