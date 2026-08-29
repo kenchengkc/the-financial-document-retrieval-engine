@@ -1,0 +1,25 @@
+name: Temporary promotion Ruff fix
+on:
+  push:
+    branches: [research-oos-final-promotion]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: research-oos-final-promotion
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: pip install ruff
+      - run: ruff check src/fdre/research/oos_promotion.py --fix
+      - run: |
+          git rm .github/workflows/tmp-fix-promotion-ruff.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/fdre/research/oos_promotion.py
+          git commit -m 'style: simplify promotion attribute access'
+          git push origin HEAD:research-oos-final-promotion
