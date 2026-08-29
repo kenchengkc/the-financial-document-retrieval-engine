@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import Engine, create_engine, inspect, select
@@ -19,6 +19,7 @@ from apps.api.app.models import (
     ResearchExperiment,
     RetrievalResult,
     RetrievalRun,
+    UniverseMembershipEvidence,
 )
 
 EXPECTED_TABLES = {
@@ -40,6 +41,7 @@ EXPECTED_TABLES = {
     "retrieval_runs",
     "securities",
     "security_identity_periods",
+    "universe_membership_evidence",
     "universe_memberships",
 }
 
@@ -66,6 +68,13 @@ def test_metadata_creates_expected_tables_and_indexes() -> None:
             "symbol",
             "effective_from",
             "effective_to",
+        },
+        "universe_membership_evidence": {
+            "universe_code",
+            "effective_at",
+            "raw_symbol",
+            "source",
+            "source_observed_at",
         },
         "universe_memberships": {
             "universe_code",
@@ -197,3 +206,38 @@ def test_models_persist_related_financial_document_data() -> None:
         assert stored_company.financial_facts[0].concept == "Revenues"
         assert stored_retrieval_run.results[0].rank == 1
         assert stored_answer_run.citations[0].section == "Risk Factors"
+
+
+def test_historical_universe_evidence_persists_raw_source_observation() -> None:
+    engine = create_sqlite_engine()
+    Base.metadata.create_all(engine)
+    evidence = UniverseMembershipEvidence(
+        evidence_id="a" * 64,
+        universe_code="sp500",
+        event_type="addition",
+        effective_at=date(2020, 3, 20),
+        announced_at=date(2020, 3, 15),
+        effective_session="after_close",
+        raw_symbol="ABC",
+        raw_name="ABC Corp",
+        source="fixture",
+        source_url="https://example.test/source",
+        source_record_id="row-1",
+        source_observed_at=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        source_record_hash="b" * 64,
+        metadata_json={"note": "raw source detail"},
+    )
+
+    with Session(engine) as session:
+        session.add(evidence)
+        session.commit()
+        stored = session.scalar(
+            select(UniverseMembershipEvidence).where(
+                UniverseMembershipEvidence.evidence_id == "a" * 64
+            )
+        )
+
+        assert stored is not None
+        assert stored.raw_symbol == "ABC"
+        assert stored.effective_session == "after_close"
+        assert stored.metadata_json == {"note": "raw source detail"}
