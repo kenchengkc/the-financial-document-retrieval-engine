@@ -86,11 +86,30 @@ jobs:
 
       - name: Run precommitted flagship study
         run: |
-          python -m scripts.flagship_risk_churn_acceleration \
-            --max-tickers "${MAX_TICKERS}" \
-            --min-documents "${MIN_DOCUMENTS}" \
-            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}" \
+          args=(
+            --max-tickers "${MAX_TICKERS}"
+            --min-documents "${MIN_DOCUMENTS}"
+            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}"
             --output-dir data/processed/flagship/risk-churn-acceleration
+          )
+          log_file="$(mktemp)"
+          for attempt in 1 2 3; do
+            set +e
+            python -m scripts.flagship_risk_churn_acceleration "${args[@]}" 2>&1 | tee "${log_file}"
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "${status}" -eq 0 ]; then
+              exit 0
+            fi
+            if ! grep -q "flagship market-data coverage is incomplete" "${log_file}"; then
+              exit "${status}"
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              exit "${status}"
+            fi
+            echo "::notice::Market-data coverage incomplete; retrying from the cache populated by attempt ${attempt}."
+            sleep $((attempt * 15))
+          done
 
       - name: Upload flagship research artifact
         if: always()

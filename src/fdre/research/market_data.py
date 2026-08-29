@@ -215,11 +215,11 @@ def fetch_market_bars(
 ) -> tuple[list[MarketBar], list[str]]:
     """Fetch bars for ``tickers`` plus the benchmark. Returns (bars, missing).
 
-    Uses Tiingo when a token is available (``tiingo_token`` arg or the
-    ``TIINGO_API_KEY`` env var) — reliable and reproducible — otherwise falls
-    back to the keyless Yahoo chart API (best-effort, rate-limited). When
-    ``cache_only`` is true or ``max_uncached_fetches`` is exhausted, uncached
-    symbols are returned as missing without making network calls.
+    Prefers Tiingo when a token is available (``tiingo_token`` arg or the
+    ``TIINGO_API_KEY`` env var) and falls back per symbol to the keyless Yahoo
+    chart API when Tiingo is unavailable or rate-limited. When ``cache_only``
+    is true or ``max_uncached_fetches`` is exhausted, uncached symbols are
+    returned as missing without making network calls.
     """
     token = tiingo_token or os.environ.get("TIINGO_API_KEY")
     wanted = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
@@ -235,7 +235,15 @@ def fetch_market_bars(
             if cache_dir is not None
             else None
         )
-        provider = "tiingo" if token or tiingo_cache is not None else "yahoo"
+        yahoo_cache = _market_cache_path(
+            symbol, start, end, cache_dir=cache_dir, provider="yahoo"
+        )
+        if tiingo_cache is not None:
+            provider = "tiingo"
+        elif yahoo_cache is not None and yahoo_cache.exists():
+            provider = "yahoo"
+        else:
+            provider = "tiingo" if token else "yahoo"
         cache_path = _market_cache_path(
             symbol,
             start,
@@ -278,12 +286,22 @@ def fetch_market_bars(
                 )
         except requests.RequestException:
             ticker_bars = []
+        if provider == "tiingo" and not ticker_bars and not cache_only:
+            if not yahoo_session_ready:
+                session, crumb = open_yahoo_session()
+                yahoo_session_ready = True
+            try:
+                ticker_bars = fetch_ticker_bars(
+                    symbol, start, end, session=session, crumb=crumb, cache_dir=cache_dir
+                )
+            except requests.RequestException:
+                ticker_bars = []
         if ticker_bars:
             bars.extend(ticker_bars)
         else:
             missing.append(symbol)
         if not cached:
-            time_module.sleep(0.05 if provider == "tiingo" else pause)
+            time_module.sleep(pause)
     return bars, missing
 
 
