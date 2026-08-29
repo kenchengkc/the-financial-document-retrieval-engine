@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from fdre.research.panel import FeatureLineage, ResearchPanelRow
+from fdre.research.panel import FeatureLineage, PanelFeature, ResearchPanelRow
 from fdre.research.risk_churn_acceleration import (
     RISK_CHURN_ACCELERATION_VERSION,
     build_risk_churn_acceleration_events,
@@ -39,7 +39,9 @@ def _row(
     churn: float,
     lineage: FeatureLineage | None,
 ) -> ResearchPanelRow:
-    feature_lineage = {"risk_changes": lineage} if lineage is not None else {}
+    feature_lineage: dict[PanelFeature, FeatureLineage] = (
+        {"risk_changes": lineage} if lineage is not None else {}
+    )
     return ResearchPanelRow(
         ticker="AAA",
         cik="0000000001",
