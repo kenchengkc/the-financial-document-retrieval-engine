@@ -1,9 +1,9 @@
-"""Historical Universe v1 source-evidence normalization and reconciliation.
+"""Historical Universe source-evidence normalization and reconciliation.
 
 HU-2 keeps raw constituent-change observations separate from materialized universe
-membership. Source evidence is immutable and provenance-addressed; identity resolution
-and cross-source reconciliation are derived decisions that can be rerun as the security
-master improves.
+membership. Source evidence is immutable and content-addressed; identity resolution and
+cross-source reconciliation are derived decisions that can be rerun as the security master
+improves.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -66,22 +66,24 @@ def _normalize_cik(value: str | None) -> str | None:
     if value is None or not value.strip():
         return None
     stripped = value.strip()
-    if not stripped.isdigit():
-        return stripped
-    return stripped.zfill(10)
+    return stripped.zfill(10) if stripped.isdigit() else stripped
 
 
 def _normalize_name(value: str | None) -> str | None:
     if value is None:
         return None
-    normalized = " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in value).split())
+    words = "".join(ch.lower() if ch.isalnum() else " " for ch in value).split()
+    normalized = " ".join(words)
     return normalized or None
 
 
 def canonical_source_record_hash(record: Mapping[str, object]) -> str:
     """Hash one raw source record without depending on input mapping order."""
 
-    canonical = {str(key): "" if value is None else str(value) for key, value in record.items()}
+    canonical = {
+        str(key): "" if value is None else str(value)
+        for key, value in record.items()
+    }
     return _sha256_json(canonical)
 
 
@@ -122,7 +124,11 @@ class MembershipEvidence:
 
     @property
     def evidence_id(self) -> str:
-        """Deterministic normalized evidence identity."""
+        """Stable content identity for the source claim.
+
+        Observation time and row position are provenance metadata rather than claim identity.
+        Re-observing an unchanged source row therefore does not create duplicate evidence.
+        """
 
         payload = {
             "schema_version": _EVIDENCE_SCHEMA_VERSION,
@@ -135,9 +141,6 @@ class MembershipEvidence:
             "raw_name": self.raw_name,
             "raw_cik": self.raw_cik,
             "source": self.source.strip(),
-            "source_url": self.source_url,
-            "source_record_id": self.source_record_id,
-            "source_observed_at": self.source_observed_at.isoformat(),
             "source_record_hash": self.source_record_hash,
             "metadata": list(self.metadata),
         }
@@ -149,15 +152,19 @@ class MembershipEvidenceAdapter(Protocol):
 
     source_name: str
 
-    def load(self, path: Path, *, observed_at: datetime) -> tuple[MembershipEvidence, ...]: ...
+    def load(
+        self,
+        path: Path,
+        *,
+        observed_at: datetime,
+    ) -> tuple[MembershipEvidence, ...]: ...
 
 
 class SnpHistoryCsvAdapter:
-    """Normalize the public ``shawnlinxl/snp-history`` CSV format.
+    """Normalize the public ``shawnlinxl/snp-history`` CSV shape.
 
-    The adapter intentionally accepts a local file. FDRE does not download, bundle, or
-    redistribute the upstream dataset, and it does not promote its observations to verified
-    membership merely because they parse successfully.
+    The adapter accepts a local file. FDRE does not bundle the upstream dataset and does not
+    promote parsed observations to verified membership merely because they parse successfully.
     """
 
     source_name = "shawnlinxl/snp-history"
@@ -165,7 +172,12 @@ class SnpHistoryCsvAdapter:
         "https://github.com/shawnlinxl/snp-history/blob/master/data/history.csv"
     )
 
-    def __init__(self, *, universe_code: str = "sp500", source_url: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        universe_code: str = "sp500",
+        source_url: str | None = None,
+    ) -> None:
         self.universe_code = universe_code
         self.source_url = source_url or self.default_source_url
 
@@ -187,7 +199,12 @@ class SnpHistoryCsvAdapter:
             return "before_open"
         return "unspecified"
 
-    def load(self, path: Path, *, observed_at: datetime) -> tuple[MembershipEvidence, ...]:
+    def load(
+        self,
+        path: Path,
+        *,
+        observed_at: datetime,
+    ) -> tuple[MembershipEvidence, ...]:
         if not _aware(observed_at):
             raise ValueError("observed_at must be timezone-aware")
 
@@ -202,12 +219,17 @@ class SnpHistoryCsvAdapter:
                 "Removal",
                 "Removal Ticker",
             }
-            if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
-                missing = sorted(required - set(reader.fieldnames or ()))
+            fieldnames = set(reader.fieldnames or ())
+            if not required.issubset(fieldnames):
+                missing = sorted(required - fieldnames)
                 raise ValueError(f"missing required snp-history columns: {missing}")
 
             for row_number, row in enumerate(reader, start=2):
-                implemented = self._parse_date(row["Implemented"], "Implemented", row_number)
+                implemented = self._parse_date(
+                    row["Implemented"],
+                    "Implemented",
+                    row_number,
+                )
                 announced_raw = (row.get("Announced") or "").strip()
                 announced = (
                     self._parse_date(announced_raw, "Announced", row_number)
@@ -217,14 +239,14 @@ class SnpHistoryCsvAdapter:
                 session = self._session(row.get(""))
                 record_hash = canonical_source_record_hash(row)
                 row_id = str(row_number - 1)
-
                 removal_type = (row.get("Removal Type") or "").strip()
                 removal_reason = (row.get("Reason for Removal") or "").strip()
 
-                for event_type, name_key, symbol_key in (
+                pairs = (
                     ("addition", "Addition", "Addition Ticker"),
                     ("removal", "Removal", "Removal Ticker"),
-                ):
+                )
+                for event_type_raw, name_key, symbol_key in pairs:
                     raw_symbol = (row.get(symbol_key) or "").strip()
                     raw_name = (row.get(name_key) or "").strip()
                     if not raw_symbol and not raw_name:
@@ -233,16 +255,17 @@ class SnpHistoryCsvAdapter:
                         raise ValueError(
                             f"missing {symbol_key} on row {row_number} with a named constituent"
                         )
+
                     metadata: list[tuple[str, str]] = []
-                    if event_type == "removal" and removal_type:
+                    if event_type_raw == "removal" and removal_type:
                         metadata.append(("removal_type", removal_type))
-                    if event_type == "removal" and removal_reason:
+                    if event_type_raw == "removal" and removal_reason:
                         metadata.append(("removal_reason", removal_reason))
 
                     evidence.append(
                         MembershipEvidence(
                             universe_code=self.universe_code,
-                            event_type=event_type,  # type: ignore[arg-type]
+                            event_type=cast(MembershipEventType, event_type_raw),
                             effective_at=implemented,
                             announced_at=announced,
                             effective_session=session,
@@ -262,7 +285,7 @@ class SnpHistoryCsvAdapter:
 
 @dataclass(frozen=True, slots=True)
 class IdentityResolution:
-    """Derived mapping from one evidence record to the stable security master."""
+    """Derived mapping from one evidence claim to the stable security master."""
 
     evidence_id: str
     status: ResolutionStatus
@@ -283,7 +306,9 @@ class IdentityResolution:
             raise ValueError("non-resolved identity cannot carry a resolved security")
 
 
-def _candidate_security_ids(records: Sequence[SecurityIdentityRecord]) -> tuple[int, ...]:
+def _candidate_security_ids(
+    records: Sequence[SecurityIdentityRecord],
+) -> tuple[int, ...]:
     return tuple(sorted({record.security_id for record in records}))
 
 
@@ -322,29 +347,35 @@ def resolve_membership_evidence(
 ) -> IdentityResolution:
     """Conservatively resolve historical source evidence to one stable security.
 
-    No fuzzy ticker or future-identity inference is used. CIK and symbol conflicts fail into an
-    ambiguous state rather than silently preferring one identifier.
+    No fuzzy ticker or future-identity inference is used. CIK and symbol conflicts become
+    ambiguous rather than silently preferring one identifier.
     """
 
     active = [
         identity
         for identity in identities
-        if identity.verification_status != "rejected" and _active(identity, evidence.effective_at)
+        if identity.verification_status != "rejected"
+        and _active(identity, evidence.effective_at)
     ]
     raw_symbol = _normalize_symbol(evidence.raw_symbol)
     raw_cik = _normalize_cik(evidence.raw_cik)
     symbol_matches = [
-        identity for identity in active if _normalize_symbol(identity.symbol) == raw_symbol
+        identity
+        for identity in active
+        if _normalize_symbol(identity.symbol) == raw_symbol
     ]
     cik_matches = [
-        identity for identity in active if raw_cik is not None and _normalize_cik(identity.cik) == raw_cik
+        identity
+        for identity in active
+        if raw_cik is not None and _normalize_cik(identity.cik) == raw_cik
     ]
 
     if raw_cik is not None and symbol_matches and cik_matches:
+        cik_security_ids = {candidate.security_id for candidate in cik_matches}
         intersection = [
             identity
             for identity in symbol_matches
-            if identity.security_id in {candidate.security_id for candidate in cik_matches}
+            if identity.security_id in cik_security_ids
         ]
         if intersection:
             return _resolved_identity(
@@ -353,19 +384,24 @@ def resolve_membership_evidence(
                 method="cik_symbol_exact",
                 confidence=1.0,
             )
+        conflicting_ids = set(_candidate_security_ids(symbol_matches))
+        conflicting_ids.update(_candidate_security_ids(cik_matches))
         return IdentityResolution(
             evidence_id=evidence.evidence_id,
             status="ambiguous",
             method="cik_symbol_exact",
             confidence=0.0,
-            candidate_security_ids=tuple(
-                sorted(set(_candidate_security_ids(symbol_matches) + _candidate_security_ids(cik_matches)))
-            ),
+            candidate_security_ids=tuple(sorted(conflicting_ids)),
             reason="source CIK and historical symbol resolve to different securities",
         )
 
     if raw_cik is not None and cik_matches:
-        return _resolved_identity(evidence, cik_matches, method="cik_exact", confidence=0.99)
+        return _resolved_identity(
+            evidence,
+            cik_matches,
+            method="cik_exact",
+            confidence=0.99,
+        )
 
     if symbol_matches:
         symbol_security_ids = _candidate_security_ids(symbol_matches)
@@ -487,13 +523,7 @@ def reconcile_membership_evidence(
     *,
     min_distinct_sources_for_verified: int = 2,
 ) -> ReconciliationResult:
-    """Reconcile resolved observations without manufacturing certainty.
-
-    One-source events remain provisional. Two or more distinct sources can produce a verified
-    event only when there is no direct opposite-event conflict for the same security/date.
-    Session-timing disagreement is retained as a conflict diagnostic but does not change the
-    membership effective date itself.
-    """
+    """Reconcile resolved observations without manufacturing certainty."""
 
     if min_distinct_sources_for_verified < 2:
         raise ValueError("verified reconciliation requires at least two distinct sources")
@@ -502,17 +532,27 @@ def reconcile_membership_evidence(
     if len(evidence_by_id) != len(evidence):
         raise ValueError("duplicate evidence_id in reconciliation input")
     resolution_by_id = {resolution.evidence_id: resolution for resolution in resolutions}
+    if len(resolution_by_id) != len(resolutions):
+        raise ValueError("duplicate evidence_id in resolution input")
     if set(resolution_by_id) != set(evidence_by_id):
         raise ValueError("resolutions must cover every evidence record exactly once")
 
     grouped: dict[
-        tuple[str, int, str, date], list[tuple[MembershipEvidence, IdentityResolution]]
+        tuple[str, int, MembershipEventType, date],
+        list[tuple[MembershipEvidence, IdentityResolution]],
     ] = defaultdict(list)
-    event_types_by_security_date: dict[tuple[str, int, date], set[str]] = defaultdict(set)
+    event_types_by_security_date: dict[
+        tuple[str, int, date],
+        set[MembershipEventType],
+    ] = defaultdict(set)
 
     for evidence_id, record in evidence_by_id.items():
         resolution = resolution_by_id[evidence_id]
-        if resolution.status != "resolved" or resolution.security_id is None or resolution.cik is None:
+        if (
+            resolution.status != "resolved"
+            or resolution.security_id is None
+            or resolution.cik is None
+        ):
             continue
         key = (
             record.universe_code.strip().lower(),
@@ -524,13 +564,13 @@ def reconcile_membership_evidence(
         event_types_by_security_date[(key[0], key[1], key[3])].add(record.event_type)
 
     events: list[ReconciledMembershipEvent] = []
-    for (universe_code, security_id, event_type_raw, effective_at), items in grouped.items():
-        event_type: MembershipEventType = event_type_raw  # type: ignore[assignment]
+    for (universe_code, security_id, event_type, effective_at), items in grouped.items():
         evidence_ids = tuple(sorted(record.evidence_id for record, _ in items))
         sources = {record.source.strip() for record, _ in items}
         announced_dates = [record.announced_at for record, _ in items if record.announced_at]
         sessions = {record.effective_session for record, _ in items}
         conflict_codes: list[str] = []
+
         if len(event_types_by_security_date[(universe_code, security_id, effective_at)]) > 1:
             conflict_codes.append("opposite_event_same_date")
         if len(sessions) > 1:
@@ -542,15 +582,23 @@ def reconcile_membership_evidence(
             if len(sources) >= min_distinct_sources_for_verified and not direct_conflict
             else "provisional"
         )
-        average_confidence = sum(resolution.confidence for _, resolution in items) / len(items)
-        source_factor = 1.0 if len(sources) >= min_distinct_sources_for_verified else 0.8
+        average_confidence = sum(
+            resolution.confidence for _, resolution in items
+        ) / len(items)
+        source_factor = (
+            1.0 if len(sources) >= min_distinct_sources_for_verified else 0.8
+        )
         conflict_factor = 0.5 if direct_conflict else 1.0
-        confidence = round(min(1.0, average_confidence * source_factor * conflict_factor), 6)
+        confidence = round(
+            min(1.0, average_confidence * source_factor * conflict_factor),
+            6,
+        )
         effective_session: EffectiveSession = (
             next(iter(sessions)) if len(sessions) == 1 else "unspecified"
         )
         cik = items[0][1].cik
-        assert cik is not None
+        if cik is None:
+            raise ValueError("resolved reconciliation item unexpectedly lacks CIK")
         reconciliation_hash = _event_hash(
             universe_code=universe_code,
             event_type=event_type,
@@ -585,7 +633,6 @@ def reconcile_membership_evidence(
             item.reconciliation_hash,
         )
     )
-
     audit = build_evidence_audit(evidence, resolutions, events)
     return ReconciliationResult(events=tuple(events), audit=audit)
 
@@ -623,13 +670,14 @@ def build_evidence_audit(
     dates = sorted(record.effective_at for record in evidence)
     universe_codes = {record.universe_code.strip().lower() for record in evidence}
     universe_code = next(iter(universe_codes)) if len(universe_codes) == 1 else "mixed"
+
     event_payload = [
         {
             "hash": event.reconciliation_hash,
             "status": event.verification_status,
             "conflicts": list(event.conflict_codes),
         }
-        for event in events
+        for event in sorted(events, key=lambda item: item.reconciliation_hash)
     ]
     audit_payload = {
         "schema_version": _AUDIT_SCHEMA_VERSION,
@@ -652,11 +700,15 @@ def build_evidence_audit(
         universe_code=universe_code,
         evidence_count=len(evidence),
         source_count=len(source_counts),
-        resolved_count=sum(resolution.status == "resolved" for resolution in resolutions),
+        resolved_count=sum(
+            resolution.status == "resolved" for resolution in resolutions
+        ),
         ambiguous_count=len(ambiguous_ids),
         unresolved_count=len(unresolved_ids),
         reconciled_event_count=len(events),
-        verified_event_count=sum(event.verification_status == "verified" for event in events),
+        verified_event_count=sum(
+            event.verification_status == "verified" for event in events
+        ),
         provisional_event_count=sum(
             event.verification_status == "provisional" for event in events
         ),
@@ -686,7 +738,9 @@ def audit_to_dict(audit: HistoricalUniverseEvidenceAudit) -> dict[str, object]:
         "conflict_event_count": audit.conflict_event_count,
         "additions": audit.additions,
         "removals": audit.removals,
-        "coverage_start": audit.coverage_start.isoformat() if audit.coverage_start else None,
+        "coverage_start": (
+            audit.coverage_start.isoformat() if audit.coverage_start else None
+        ),
         "coverage_end": audit.coverage_end.isoformat() if audit.coverage_end else None,
         "per_source_counts": dict(audit.per_source_counts),
         "ambiguous_evidence_ids": list(audit.ambiguous_evidence_ids),
@@ -701,15 +755,18 @@ def persist_membership_evidence(
 ) -> int:
     """Idempotently persist immutable normalized evidence; return inserted row count."""
 
+    if not records:
+        return 0
     evidence_ids = [record.evidence_id for record in records]
     if len(set(evidence_ids)) != len(evidence_ids):
         raise ValueError("duplicate evidence_id in persistence batch")
+
     existing = set(
         session.scalars(
             select(UniverseMembershipEvidence.evidence_id).where(
                 UniverseMembershipEvidence.evidence_id.in_(evidence_ids)
             )
-        )
+        ).all()
     )
     inserted = 0
     for record in records:
