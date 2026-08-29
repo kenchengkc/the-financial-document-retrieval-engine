@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal, Sequence
+from typing import Literal
 
 VerificationStatus = Literal["verified", "provisional", "rejected"]
 _ALLOWED_STATUSES = frozenset({"verified", "provisional", "rejected"})
