@@ -6,6 +6,11 @@ from apps.api.app.models.companies import Company
 from apps.api.app.models.documents import Chunk, Document, DocumentElement, Embedding
 from apps.api.app.models.evals import EvalQuestion, EvalResult
 from apps.api.app.models.financial_facts import FinancialFact
+from apps.api.app.models.historical_universe import (
+    Security,
+    SecurityIdentityPeriod,
+    UniverseMembership,
+)
 from apps.api.app.models.ingestion_runs import IngestionRun
 from apps.api.app.models.research_experiments import ResearchExperiment
 from apps.api.app.models.research_metric_snapshots import ResearchMetricSnapshot
@@ -28,4 +33,7 @@ __all__ = [
     "ResearchMetricSnapshot",
     "RetrievalResult",
     "RetrievalRun",
+    "Security",
+    "SecurityIdentityPeriod",
+    "UniverseMembership",
 ]

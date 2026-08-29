@@ -38,6 +38,9 @@ EXPECTED_TABLES = {
     "research_experiments",
     "retrieval_results",
     "retrieval_runs",
+    "securities",
+    "security_identity_periods",
+    "universe_memberships",
 }
 
 
@@ -57,6 +60,19 @@ def test_metadata_creates_expected_tables_and_indexes() -> None:
         "documents": {"company_id", "filing_date", "form_type"},
         "document_elements": {"document_id", "element_type", "section"},
         "chunks": {"chunk_type", "document_id", "section"},
+        "securities": {"company_id", "security_type"},
+        "security_identity_periods": {
+            "security_id",
+            "symbol",
+            "effective_from",
+            "effective_to",
+        },
+        "universe_memberships": {
+            "universe_code",
+            "security_id",
+            "effective_from",
+            "effective_to",
+        },
     }
     for table_name, indexed_columns in expected_indexes.items():
         actual_columns = {
