@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -13,7 +13,7 @@ from fdre.research.historical_universe_evidence import (
     resolve_membership_evidence,
 )
 
-OBSERVED_AT = datetime(2026, 8, 29, 20, 0, tzinfo=timezone.utc)
+OBSERVED_AT = datetime(2026, 8, 29, 20, 0, tzinfo=UTC)
 
 
 def _evidence(
