@@ -176,6 +176,24 @@ def _git_sha() -> str:
         return "unknown"
 
 
+def _primary_result_status(
+    primary_observation_count: int,
+    decision_status: str | None,
+) -> tuple[str, str]:
+    if decision_status is not None:
+        return decision_status, "Primary horizon reached the final sealed-OOS promotion layer."
+    if primary_observation_count == 0:
+        return (
+            "insufficient_not_yet_realized",
+            "No sealed-OOS observations have a fully realized primary-horizon outcome "
+            "at evaluation time.",
+        )
+    return (
+        "insufficient_no_promotion_decision",
+        "Primary-horizon observations exist but no final promotion decision was emitted.",
+    )
+
+
 def _write_note(path: Path, summary: dict[str, object]) -> None:
     diagnostics = summary["diagnostics"]
     decisions = summary["promotion_decisions"]
@@ -196,6 +214,8 @@ def _write_note(path: Path, summary: dict[str, object]) -> None:
         "",
         f"- Experiment ID: `{summary['experiment_id']}`",
         f"- Primary decision: **{str(summary['primary_status']).upper()}**",
+        f"- Primary OOS observations: {summary['primary_observation_count']}",
+        f"- Primary status detail: {summary['primary_status_reason']}",
         f"- OOS events: {summary['oos_event_count']}",
         f"- Eligible folds: {summary['eligible_fold_count']}",
         f"- Scored PIT filing events: {summary['scored_event_count']}",
@@ -247,6 +267,10 @@ def main() -> int:
     args = _parser().parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read the point-in-time research inputs, then close the transaction before
+    # potentially slow external market-data I/O. This avoids leaving PostgreSQL
+    # idle-in-transaction while providers throttle or the workflow retries.
     with Session(create_db_engine()) as session:
         tickers, sector_by_ticker = _select_universe(
             session,
@@ -264,92 +288,97 @@ def main() -> int:
                 limit=10_000,
             ),
         )
+        dataset_version = f"panel:{panel.corpus_snapshot_id}"
         raw_events = build_risk_churn_acceleration_events(panel.rows)
         events = _neutralize_events(raw_events, sector_by_ticker)
-        if len(events) < 50:
-            raise RuntimeError(
-                f"flagship sample has only {len(events)} scored PIT events; minimum is 50"
-            )
-        market_start = min(event.available_at.date() for event in events) - timedelta(days=10)
-        market_end = max(event.available_at.date() for event in events) + timedelta(
-            days=FORWARD_BUFFER_DAYS
-        )
-        market_tickers = sorted({event.ticker.upper() for event in events})
-        bars, missing = fetch_market_bars(
-            market_tickers,
-            market_start,
-            market_end,
-            benchmark=args.benchmark,
-            cache_dir=Path(args.market_cache_dir) if args.market_cache_dir else None,
-            cache_only=args.cache_only,
-            max_uncached_fetches=args.max_uncached_market_fetches,
-        )
-        if missing:
-            raise RuntimeError(
-                "flagship market-data coverage is incomplete: " + ", ".join(sorted(missing))
-            )
 
-        event_config = EventStudyConfig(
-            benchmark_ticker=args.benchmark,
-            windows=[
-                EventWindow(start=1, end=21),
-                EventWindow(start=1, end=63),
-                EventWindow(start=1, end=126),
-            ],
-            bootstrap_iterations=2000,
-            random_seed=17,
+    if len(events) < 50:
+        raise RuntimeError(
+            f"flagship sample has only {len(events)} scored PIT events; minimum is 50"
         )
-        walk_config = WalkForwardConfig(
-            mode="expanding",
-            train_months=24,
-            validation_months=6,
-            test_months=6,
-            step_months=6,
-            purge_unrealized_development=True,
-            min_train_events=50,
-            min_validation_events=20,
-            min_test_events=20,
-        )
-        definition = {
-            **RISK_CHURN_ACCELERATION_DEFINITION,
-            "neutralization": "same-sector same-filing-quarter z-score with period fallback",
-            "neutralization_version": NEUTRALIZATION_VERSION,
-            "primary_window": PRIMARY_WINDOW,
-            "secondary_windows": ["1:21", "1:126"],
-            "walk_forward": walk_config.model_dump(mode="json"),
-            "multiple_testing_family": list(PREDECLARED_WINDOWS),
-            "robustness_slice_rule": (
-                f"all known sectors with at least {MIN_SECTOR_SLICE_ISSUERS} scored issuers"
-            ),
-        }
-        source = run_walk_forward_signal_study(
-            events,
-            bars,
-            event_config,
-            walk_config,
-            signal_name=SIGNAL_NAME,
-            dataset_version=f"panel:{panel.corpus_snapshot_id}",
-            feature_version=FLAGSHIP_FEATURE_VERSION,
-            code_sha=_git_sha(),
-            definition=definition,
-        )
-        diagnostics = build_oos_diagnostics(source, OOSDiagnosticsConfig())
-        selection = evaluate_oos_selection_suite([diagnostics], OOSSelectionConfig())
-        implementation = evaluate_oos_implementation(
-            source,
-            selection,
-            OOSImplementationConfig(),
-        )
-        slices = _sector_slices(events, sector_by_ticker)
-        promotion = evaluate_oos_promotion(
-            source,
-            diagnostics,
-            selection,
-            implementation,
-            slices=slices,
-            config=OOSPromotionConfig(),
+    market_start = min(event.available_at.date() for event in events) - timedelta(days=10)
+    market_end = max(event.available_at.date() for event in events) + timedelta(
+        days=FORWARD_BUFFER_DAYS
+    )
+    market_tickers = sorted({event.ticker.upper() for event in events})
+    bars, missing = fetch_market_bars(
+        market_tickers,
+        market_start,
+        market_end,
+        benchmark=args.benchmark,
+        cache_dir=Path(args.market_cache_dir) if args.market_cache_dir else None,
+        cache_only=args.cache_only,
+        max_uncached_fetches=args.max_uncached_market_fetches,
+    )
+    if missing:
+        raise RuntimeError(
+            "flagship market-data coverage is incomplete: " + ", ".join(sorted(missing))
         )
 
+    event_config = EventStudyConfig(
+        benchmark_ticker=args.benchmark,
+        windows=[
+            EventWindow(start=1, end=21),
+            EventWindow(start=1, end=63),
+            EventWindow(start=1, end=126),
+        ],
+        bootstrap_iterations=2000,
+        random_seed=17,
+    )
+    walk_config = WalkForwardConfig(
+        mode="expanding",
+        train_months=24,
+        validation_months=6,
+        test_months=6,
+        step_months=6,
+        purge_unrealized_development=True,
+        min_train_events=50,
+        min_validation_events=20,
+        min_test_events=20,
+    )
+    definition = {
+        **RISK_CHURN_ACCELERATION_DEFINITION,
+        "neutralization": "same-sector same-filing-quarter z-score with period fallback",
+        "neutralization_version": NEUTRALIZATION_VERSION,
+        "primary_window": PRIMARY_WINDOW,
+        "secondary_windows": ["1:21", "1:126"],
+        "walk_forward": walk_config.model_dump(mode="json"),
+        "multiple_testing_family": list(PREDECLARED_WINDOWS),
+        "robustness_slice_rule": (
+            f"all known sectors with at least {MIN_SECTOR_SLICE_ISSUERS} scored issuers"
+        ),
+    }
+    source = run_walk_forward_signal_study(
+        events,
+        bars,
+        event_config,
+        walk_config,
+        signal_name=SIGNAL_NAME,
+        dataset_version=dataset_version,
+        feature_version=FLAGSHIP_FEATURE_VERSION,
+        code_sha=_git_sha(),
+        definition=definition,
+    )
+    diagnostics = build_oos_diagnostics(source, OOSDiagnosticsConfig())
+    selection = evaluate_oos_selection_suite([diagnostics], OOSSelectionConfig())
+    implementation = evaluate_oos_implementation(
+        source,
+        selection,
+        OOSImplementationConfig(),
+    )
+    slices = _sector_slices(events, sector_by_ticker)
+    promotion = evaluate_oos_promotion(
+        source,
+        diagnostics,
+        selection,
+        implementation,
+        slices=slices,
+        config=OOSPromotionConfig(),
+    )
+
+    # Persistence uses a fresh short-lived database transaction after all network
+    # and CPU-heavy evaluation has completed.
+    with Session(create_db_engine()) as session:
         persist_walk_forward_study(session, source)
         persist_oos_diagnostics(session, diagnostics)
         persist_oos_selection_suite(session, selection)
@@ -365,46 +394,56 @@ def main() -> int:
         persist_research_experiment_manifest(session, manifest)
         verify_research_experiment(session, manifest.experiment_id)
 
-        write_walk_forward_report(output_dir / "walk-forward.json", source)
-        write_oos_diagnostics_report(output_dir / "oos-diagnostics.json", diagnostics)
-        write_oos_selection_report(output_dir / "statistical-selection.json", selection)
-        write_oos_implementation_report(output_dir / "implementation.json", implementation)
-        write_oos_promotion_report(output_dir / "promotion.json", promotion)
-        write_research_experiment_manifest(output_dir / "manifest.json", manifest)
+    write_walk_forward_report(output_dir / "walk-forward.json", source)
+    write_oos_diagnostics_report(output_dir / "oos-diagnostics.json", diagnostics)
+    write_oos_selection_report(output_dir / "statistical-selection.json", selection)
+    write_oos_implementation_report(output_dir / "implementation.json", implementation)
+    write_oos_promotion_report(output_dir / "promotion.json", promotion)
+    write_research_experiment_manifest(output_dir / "manifest.json", manifest)
 
-        primary = next(
-            (item for item in promotion.decisions if item.window == PRIMARY_WINDOW),
-            None,
-        )
-        summary: dict[str, object] = {
-            "experiment_id": manifest.experiment_id,
-            "source_experiment_key": source.experiment_key,
-            "signal_name": SIGNAL_NAME,
-            "primary_window": PRIMARY_WINDOW,
-            "primary_status": primary.status if primary is not None else "missing",
-            "selected_ticker_count": len(tickers),
-            "scored_event_count": len(events),
-            "oos_event_count": source.oos_event_count,
-            "oos_observation_count": source.oos_observation_count,
-            "eligible_fold_count": source.eligible_fold_count,
-            "sector_slice_count": len(slices),
-            "sector_slices": {name: sorted(members) for name, members in slices.items()},
-            "diagnostics": [item.model_dump(mode="json") for item in diagnostics.windows],
-            "selection_decisions": [
-                item.model_dump(mode="json") for item in selection.decisions
-            ],
-            "implementation_windows": [
-                item.model_dump(mode="json") for item in implementation.windows
-            ],
-            "promotion_decisions": [
-                item.model_dump(mode="json") for item in promotion.decisions
-            ],
-        }
-        (output_dir / "summary.json").write_text(
-            json.dumps(summary, indent=2, sort_keys=True) + "\n"
-        )
-        _write_note(output_dir / "research-note.md", summary)
-        print("FLAGSHIP_RESULT_JSON=" + json.dumps(summary, sort_keys=True))
+    primary = next(
+        (item for item in promotion.decisions if item.window == PRIMARY_WINDOW),
+        None,
+    )
+    primary_observation_count = sum(
+        item.window == PRIMARY_WINDOW for item in source.oos_observations
+    )
+    primary_status, primary_status_reason = _primary_result_status(
+        primary_observation_count,
+        primary.status if primary is not None else None,
+    )
+    summary: dict[str, object] = {
+        "experiment_id": manifest.experiment_id,
+        "source_experiment_key": source.experiment_key,
+        "signal_name": SIGNAL_NAME,
+        "primary_window": PRIMARY_WINDOW,
+        "primary_status": primary_status,
+        "primary_status_reason": primary_status_reason,
+        "primary_observation_count": primary_observation_count,
+        "selected_ticker_count": len(tickers),
+        "scored_event_count": len(events),
+        "oos_event_count": source.oos_event_count,
+        "oos_observation_count": source.oos_observation_count,
+        "eligible_fold_count": source.eligible_fold_count,
+        "sector_slice_count": len(slices),
+        "sector_slices": {name: sorted(members) for name, members in slices.items()},
+        "diagnostics": [item.model_dump(mode="json") for item in diagnostics.windows],
+        "selection_decisions": [
+            item.model_dump(mode="json") for item in selection.decisions
+        ],
+        "implementation_windows": [
+            item.model_dump(mode="json") for item in implementation.windows
+        ],
+        "promotion_decisions": [
+            item.model_dump(mode="json") for item in promotion.decisions
+        ],
+    }
+    (output_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n"
+    )
+    _write_note(output_dir / "research-note.md", summary)
+    print("PRIMARY_RESULT=" + primary_status.upper())
+    print("FLAGSHIP_RESULT_JSON=" + json.dumps(summary, sort_keys=True))
     return 0
 
 
