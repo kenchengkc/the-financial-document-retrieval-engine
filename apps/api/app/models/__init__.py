@@ -10,6 +10,7 @@ from apps.api.app.models.historical_universe import (
     Security,
     SecurityIdentityPeriod,
     UniverseMembership,
+    UniverseMembershipEvidence,
 )
 from apps.api.app.models.ingestion_runs import IngestionRun
 from apps.api.app.models.research_experiments import ResearchExperiment
@@ -36,4 +37,5 @@ __all__ = [
     "Security",
     "SecurityIdentityPeriod",
     "UniverseMembership",
+    "UniverseMembershipEvidence",
 ]
