@@ -218,11 +218,11 @@ def _evaluate_decision(
 ) -> OOSPromotionDecision:
     # Pydantic artifacts are intentionally accessed via validated attributes here;
     # local aliases keep this function compact without weakening public types.
-    hypothesis_id = str(getattr(statistical, "hypothesis_id"))
-    signal_name = str(getattr(statistical, "signal_name"))
-    window = str(getattr(statistical, "window"))
-    statistical_status = str(getattr(statistical, "status"))
-    implementation_status = str(getattr(implementation, "status"))
+    hypothesis_id = str(statistical.hypothesis_id)
+    signal_name = str(statistical.signal_name)
+    window = str(statistical.window)
+    statistical_status = str(statistical.status)
+    implementation_status = str(implementation.status)
 
     if statistical_status == "rejected" or implementation_status == "rejected":
         return _basic_decision(
@@ -264,13 +264,13 @@ def _evaluate_decision(
     stress = next(
         (
             item
-            for item in getattr(implementation, "cost_scenarios")
+            for item in implementation.cost_scenarios
             if item.cost_bps == config.stress_cost_bps
         ),
         None,
     )
     stress_net_mean = stress.mean_net_return if stress is not None else None
-    concentration = _max_single_name_weight(getattr(implementation, "rebalances"))
+    concentration = _max_single_name_weight(implementation.rebalances)
     decay = _signal_decay(diagnostics_by_window)
     valid_decay = [item for item in decay if item.ic_mean is not None]
     positive_horizon_share = (
@@ -392,8 +392,8 @@ def _signal_decay(diagnostics_by_window: dict[str, object]) -> list[OOSSignalDec
 def _max_single_name_weight(rebalances: list[object]) -> float | None:
     values: list[float] = []
     for item in rebalances:
-        long_tickers = getattr(item, "long_tickers")
-        short_tickers = getattr(item, "short_tickers")
+        long_tickers = item.long_tickers
+        short_tickers = item.short_tickers
         if long_tickers:
             values.append(1.0 / len(long_tickers))
         if short_tickers:
@@ -407,11 +407,11 @@ def _upstream_missing_decision(
     reason: str,
 ) -> OOSPromotionDecision:
     return _basic_decision(
-        str(getattr(statistical, "hypothesis_id")),
-        str(getattr(statistical, "signal_name")),
-        str(getattr(statistical, "window")),
+        str(statistical.hypothesis_id),
+        str(statistical.signal_name),
+        str(statistical.window),
         "insufficient",
-        str(getattr(statistical, "status")),
+        str(statistical.status),
         "missing",
         config,
         [reason],
