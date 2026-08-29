@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from math import sqrt
 from pathlib import Path
 from statistics import mean
 from typing import Literal
@@ -466,8 +467,8 @@ def _spearman(left: list[float], right: list[float]) -> float:
         (a - left_mean) * (b - right_mean)
         for a, b in zip(left_ranks, right_ranks, strict=True)
     )
-    left_scale = sum((value - left_mean) ** 2 for value in left_ranks) ** 0.5
-    right_scale = sum((value - right_mean) ** 2 for value in right_ranks) ** 0.5
+    left_scale = sqrt(sum((value - left_mean) ** 2 for value in left_ranks))
+    right_scale = sqrt(sum((value - right_mean) ** 2 for value in right_ranks))
     if left_scale == 0 or right_scale == 0:
         return 0.0
     return covariance / (left_scale * right_scale)
