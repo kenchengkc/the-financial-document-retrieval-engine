@@ -404,7 +404,10 @@ def _long_short_weights(
 
 def _turnover(previous: dict[str, float], current: dict[str, float]) -> float:
     tickers = set(previous) | set(current)
-    return 0.5 * sum(abs(current.get(ticker, 0.0) - previous.get(ticker, 0.0)) for ticker in tickers)
+    return 0.5 * sum(
+        abs(current.get(ticker, 0.0) - previous.get(ticker, 0.0))
+        for ticker in tickers
+    )
 
 
 def _cost_scenario(
