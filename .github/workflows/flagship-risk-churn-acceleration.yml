@@ -99,6 +99,15 @@ jobs:
             status=${PIPESTATUS[0]}
             set -e
             if [ "${status}" -eq 0 ]; then
+              primary_result="$(grep '^PRIMARY_RESULT=' "${log_file}" | tail -1 || true)"
+              if [ -n "${primary_result}" ]; then
+                {
+                  echo "### Flagship primary result"
+                  echo
+                  echo "\`${primary_result}\`"
+                } >> "${GITHUB_STEP_SUMMARY}"
+                echo "::notice::${primary_result}"
+              fi
               exit 0
             fi
             if ! grep -q "flagship market-data coverage is incomplete" "${log_file}"; then
