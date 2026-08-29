@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import cast
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import Table, create_engine
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
@@ -162,7 +163,7 @@ def _persist_all_children(
 
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    ResearchExperiment.__table__.create(engine)
+    cast(Table, ResearchExperiment.__table__).create(engine)
     return Session(engine)
 
 
