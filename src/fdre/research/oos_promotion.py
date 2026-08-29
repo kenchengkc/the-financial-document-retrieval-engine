@@ -20,9 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_diagnostics import OOSDiagnosticsReport
-from fdre.research.oos_implementation import OOSImplementationReport
-from fdre.research.oos_selection import OOSSelectionSuiteReport
+from fdre.research.oos_diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
+from fdre.research.oos_implementation import (
+    OOSImplementationRebalance,
+    OOSImplementationReport,
+    OOSImplementationWindowResult,
+)
+from fdre.research.oos_selection import OOSHypothesisDecision, OOSSelectionSuiteReport
 from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 PromotionStatus = Literal["promote", "reject", "insufficient"]
@@ -210,9 +214,9 @@ def write_oos_promotion_report(path: str | Path, report: OOSPromotionReport) -> 
 
 def _evaluate_decision(
     source: WalkForwardStudyReport,
-    diagnostics_by_window: dict[str, object],
-    statistical: object,
-    implementation: object,
+    diagnostics_by_window: dict[str, OOSWindowDiagnostic],
+    statistical: OOSHypothesisDecision,
+    implementation: OOSImplementationWindowResult,
     slices: dict[str, set[str]],
     config: OOSPromotionConfig,
 ) -> OOSPromotionDecision:
@@ -372,7 +376,9 @@ def _slice_result(
     )
 
 
-def _signal_decay(diagnostics_by_window: dict[str, object]) -> list[OOSSignalDecayPoint]:
+def _signal_decay(
+    diagnostics_by_window: dict[str, OOSWindowDiagnostic],
+) -> list[OOSSignalDecayPoint]:
     points: list[OOSSignalDecayPoint] = []
     for window, result in diagnostics_by_window.items():
         try:
@@ -383,13 +389,15 @@ def _signal_decay(diagnostics_by_window: dict[str, object]) -> list[OOSSignalDec
             OOSSignalDecayPoint(
                 window=window,
                 holding_period_sessions=end - start,
-                ic_mean=getattr(result, "ic_mean", None),
+                ic_mean=result.ic_mean,
             )
         )
     return sorted(points, key=lambda item: (item.holding_period_sessions, item.window))
 
 
-def _max_single_name_weight(rebalances: list[object]) -> float | None:
+def _max_single_name_weight(
+    rebalances: list[OOSImplementationRebalance],
+) -> float | None:
     values: list[float] = []
     for item in rebalances:
         long_tickers = item.long_tickers
@@ -402,7 +410,7 @@ def _max_single_name_weight(rebalances: list[object]) -> float | None:
 
 
 def _upstream_missing_decision(
-    statistical: object,
+    statistical: OOSHypothesisDecision,
     config: OOSPromotionConfig,
     reason: str,
 ) -> OOSPromotionDecision:
