@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
-from fdre.research.historical_universe import UniverseMembershipRecord
+from fdre.research.historical_universe import UniverseMembershipRecord, VerificationStatus
 from fdre.research.historical_universe_evidence import ReconciledMembershipEvent
 
 MaterializationIssueCode = Literal[
@@ -141,7 +141,7 @@ def materialize_membership_intervals(
                 )
                 continue
 
-            status = (
+            status: VerificationStatus = (
                 "verified"
                 if open_addition.verification_status == "verified"
                 and event.verification_status == "verified"
