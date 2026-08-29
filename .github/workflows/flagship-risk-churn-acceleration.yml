@@ -1,0 +1,108 @@
+name: Flagship risk-churn acceleration
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_tickers:
+        description: "Maximum eligible issuer count"
+        default: "250"
+      min_documents:
+        description: "Minimum 10-K/10-Q history per issuer"
+        default: "6"
+      max_uncached_market_fetches:
+        description: "Maximum uncached market-data requests"
+        default: "300"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/flagship-risk-churn-acceleration.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-flagship-risk-churn-acceleration
+  cancel-in-progress: false
+
+jobs:
+  flagship:
+    name: Run sealed OOS flagship study
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      TIINGO_API_KEY: ${{ secrets.TIINGO_API_KEY }}
+      PYTHONPATH: .
+      MAX_TICKERS: ${{ github.event.inputs.max_tickers || '250' }}
+      MIN_DOCUMENTS: ${{ github.event.inputs.min_documents || '6' }}
+      MAX_UNCACHED_MARKET_FETCHES: ${{ github.event.inputs.max_uncached_market_fetches || '300' }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "${MAX_TICKERS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${MIN_DOCUMENTS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${MAX_UNCACHED_MARKET_FETCHES}" =~ ^[0-9]+$ ]]
+
+      - name: Check required database secret
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Restore market cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fdre-market-${{ runner.os }}-
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[data]"
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Run precommitted flagship study
+        run: |
+          python -m scripts.flagship_risk_churn_acceleration \
+            --max-tickers "${MAX_TICKERS}" \
+            --min-documents "${MIN_DOCUMENTS}" \
+            --max-uncached-market-fetches "${MAX_UNCACHED_MARKET_FETCHES}" \
+            --output-dir data/processed/flagship/risk-churn-acceleration
+
+      - name: Upload flagship research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flagship-risk-churn-acceleration-${{ github.run_id }}
+          path: data/processed/flagship/risk-churn-acceleration
+          if-no-files-found: warn
+
+      - name: Save market cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
