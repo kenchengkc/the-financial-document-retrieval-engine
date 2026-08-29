@@ -1,9 +1,9 @@
 """Runtime daily-price fetcher for event studies.
 
-Pulls dividend- and split-adjusted daily closes from the public Yahoo Finance
-chart API (no API key) and returns ``MarketBar`` rows the event-study engine
-consumes. Market data is fetched on demand and cached locally; it is never
-committed (see the repo data policy).
+Pulls dividend- and split-adjusted daily closes from Tiingo or the public Yahoo
+Finance chart API and returns ``MarketBar`` rows the event-study engine consumes.
+Market data is fetched on demand and cached locally; it is never committed (see
+the repo data policy).
 """
 
 from __future__ import annotations
@@ -33,6 +33,15 @@ _HEADERS = {
         "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     )
 }
+
+
+class MarketDataRateLimitError(requests.HTTPError):
+    """Provider-wide rate limit detected while fetching one market symbol."""
+
+    def __init__(self, provider: str, ticker: str) -> None:
+        super().__init__(f"{provider} rate limited market-data request for {ticker}")
+        self.provider = provider
+        self.ticker = ticker
 
 
 def _epoch(day: date) -> int:
@@ -82,6 +91,7 @@ def fetch_ticker_bars(
     crumb: str | None = None,
     cache_dir: Path | None = DEFAULT_CACHE_DIR,
     timeout: float = 25.0,
+    rate_limit_retries: int = 1,
 ) -> list[MarketBar]:
     """Daily adjusted closes for one ticker over [start, end]."""
     cache_path = None
@@ -100,11 +110,14 @@ def fetch_ticker_bars(
     if crumb:
         params["crumb"] = crumb
     payload: dict | None = None
+    saw_rate_limit = False
     for host in CHART_HOSTS:
-        for attempt in range(4):
+        for attempt in range(rate_limit_retries + 1):
             response = http.get(host.format(symbol=ticker.upper()), params=params, timeout=timeout)
             if response.status_code == 429:
-                time_module.sleep(2.0 * (attempt + 1))
+                saw_rate_limit = True
+                if attempt < rate_limit_retries:
+                    time_module.sleep(2.0 * (attempt + 1))
                 continue
             response.raise_for_status()
             payload = response.json()
@@ -112,6 +125,8 @@ def fetch_ticker_bars(
         if payload is not None:
             break
     if payload is None:
+        if saw_rate_limit:
+            raise MarketDataRateLimitError("yahoo", ticker)
         return []
     bars = _parse_chart(ticker, payload)
     if cache_path is not None and bars:
@@ -175,6 +190,8 @@ def fetch_ticker_bars_tiingo(
     )
     if response.status_code == 404:
         return []
+    if response.status_code == 429:
+        raise MarketDataRateLimitError("tiingo", ticker)
     response.raise_for_status()
     rows = response.json()
     bars = _parse_tiingo(ticker, rows)
@@ -217,15 +234,18 @@ def fetch_market_bars(
 
     Prefers Tiingo when a token is available (``tiingo_token`` arg or the
     ``TIINGO_API_KEY`` env var) and falls back per symbol to the keyless Yahoo
-    chart API when Tiingo is unavailable or rate-limited. When ``cache_only``
-    is true or ``max_uncached_fetches`` is exhausted, uncached symbols are
-    returned as missing without making network calls.
+    chart API. A provider-wide 429 trips a circuit breaker for the remainder of
+    the invocation so one throttled provider cannot stall every symbol. When
+    ``cache_only`` is true or ``max_uncached_fetches`` is exhausted, uncached
+    symbols are returned as missing without making network calls.
     """
     token = tiingo_token or os.environ.get("TIINGO_API_KEY")
     wanted = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
     session = requests.Session()
     crumb = None
     yahoo_session_ready = False
+    tiingo_rate_limited = False
+    yahoo_rate_limited = False
     bars: list[MarketBar] = []
     missing: list[str] = []
     uncached_fetches = 0
@@ -242,8 +262,13 @@ def fetch_market_bars(
             provider = "tiingo"
         elif yahoo_cache is not None and yahoo_cache.exists():
             provider = "yahoo"
+        elif token and not tiingo_rate_limited:
+            provider = "tiingo"
+        elif not yahoo_rate_limited:
+            provider = "yahoo"
         else:
-            provider = "tiingo" if token else "yahoo"
+            missing.append(symbol)
+            continue
         cache_path = _market_cache_path(
             symbol,
             start,
@@ -267,6 +292,7 @@ def fetch_market_bars(
                 missing.append(symbol)
                 continue
             uncached_fetches += 1
+        ticker_bars: list[MarketBar] = []
         try:
             if provider == "tiingo":
                 ticker_bars = fetch_ticker_bars_tiingo(
@@ -284,9 +310,19 @@ def fetch_market_bars(
                 ticker_bars = fetch_ticker_bars(
                     symbol, start, end, session=session, crumb=crumb, cache_dir=cache_dir
                 )
+        except MarketDataRateLimitError as error:
+            if error.provider == "tiingo":
+                tiingo_rate_limited = True
+            elif error.provider == "yahoo":
+                yahoo_rate_limited = True
         except requests.RequestException:
             ticker_bars = []
-        if provider == "tiingo" and not ticker_bars and not cache_only:
+        if (
+            provider == "tiingo"
+            and not ticker_bars
+            and not cache_only
+            and not yahoo_rate_limited
+        ):
             if not yahoo_session_ready:
                 session, crumb = open_yahoo_session()
                 yahoo_session_ready = True
@@ -294,6 +330,9 @@ def fetch_market_bars(
                 ticker_bars = fetch_ticker_bars(
                     symbol, start, end, session=session, crumb=crumb, cache_dir=cache_dir
                 )
+            except MarketDataRateLimitError:
+                yahoo_rate_limited = True
+                ticker_bars = []
             except requests.RequestException:
                 ticker_bars = []
         if ticker_bars:
