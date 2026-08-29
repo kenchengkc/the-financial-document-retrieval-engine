@@ -1,6 +1,6 @@
 # Cross-Sectional v2 Condition Replay Diagnosis
 
-This note explains the `0/8` strict condition-grounding result from the frozen Cross-Sectional v2 holdout first run. It does **not** replace or rewrite the Part 7.5 result.
+> Historical diagnostic note. This document preserves the frozen Cross-Sectional v2 holdout replay investigation. Current evaluation methodology and results live in [`docs/eval_plan.md`](../eval_plan.md) and [`docs/eval_results.md`](../eval_results.md).
 
 ## Frozen first-run result
 
@@ -25,11 +25,11 @@ Result:
 - issuer Recall@1: `15/15`
 - PIT leakage: `0%`
 
-This rules out a general regression in `execute_research_screen`, structured-value calculation, prior-filing selection, or the strict evaluator.
+This ruled out a general regression in `execute_research_screen`, structured-value calculation, prior-filing selection, or the strict evaluator.
 
 ## Post-freeze holdout diagnosis
 
-After the first holdout result was already frozen, an explicit sealed-holdout diagnostic re-executed only the 8 condition-bearing cases and compared every reviewed condition field separately.
+After the first holdout result was frozen, an explicit sealed-holdout diagnostic re-executed only the 8 condition-bearing cases and compared every reviewed condition field separately.
 
 Result:
 
@@ -55,15 +55,15 @@ The Part-7.2 development gold was captured from the production screen-context pa
 
 No holdout labels were edited after seeing the result, and no production lineage hash was weakened to improve the score.
 
-## Evaluation contract after diagnosis
+## Durable lesson
 
 Cross-sectional reports now expose three separate condition diagnostics:
 
-1. **Condition correctness/source grounding** — current/prior selected filings, condition identity, feature, pass/fail, numeric values, and source-accession chain.
+1. **Condition correctness/source grounding** — selected filings, condition identity, values, pass/fail, and source-accession chain.
 2. **Exact lineage replay** — current/prior snapshot-scoped lineage IDs.
-3. **Strict condition grounding** — the conjunction of correctness/source grounding and exact lineage replay. This preserves the historical Part-7.5 meaning.
+3. **Strict condition grounding** — the conjunction of correctness/source grounding and exact lineage replay.
 
-For future sealed benchmarks that intend to score exact lineage replay, lineage labels should be captured from a raw `ResearchPanel` built with the exact frozen screen-plan universe and PIT filters. That does not require running retrieval or the screen itself.
+For future sealed benchmarks that score exact lineage replay, lineage labels must be captured from a raw `ResearchPanel` built with the exact frozen screen-plan universe and PIT filters.
 
 ## Reproduce the development diagnostic
 
@@ -73,4 +73,4 @@ FDRE_ALLOW_PROD=1 python3 -m scripts.diagnose_condition_replay \
   --split development
 ```
 
-A sealed holdout remains protected and requires the same deliberate `--allow-sealed-holdout` opt-in used by the benchmark runner.
+A sealed holdout remains protected and requires the deliberate `--allow-sealed-holdout` opt-in used by the benchmark runner.
