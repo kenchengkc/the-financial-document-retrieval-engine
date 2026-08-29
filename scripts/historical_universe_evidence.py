@@ -49,7 +49,12 @@ def _write_jsonl(path: Path, records: tuple[MembershipEvidence, ...]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for record in sorted(
             records,
-            key=lambda item: (item.effective_at, item.event_type, item.raw_symbol, item.evidence_id),
+            key=lambda item: (
+                item.effective_at,
+                item.event_type,
+                item.raw_symbol,
+                item.evidence_id,
+            ),
         ):
             handle.write(json.dumps(_evidence_dict(record), sort_keys=True) + "\n")
 
