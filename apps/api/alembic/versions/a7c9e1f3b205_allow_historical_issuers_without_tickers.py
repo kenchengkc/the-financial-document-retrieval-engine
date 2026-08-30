@@ -7,6 +7,7 @@ Create Date: 2026-08-30 19:20:00
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a7c9e1f3b205"
@@ -17,12 +18,25 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     with op.batch_alter_table("companies") as batch_op:
-        batch_op.alter_column("ticker", existing_type=None, nullable=True)
+        batch_op.alter_column(
+            "ticker",
+            existing_type=sa.String(length=32),
+            nullable=True,
+        )
 
 
 def downgrade() -> None:
-    # Historical-only issuers deliberately carry ticker=NULL. A downgrade is unsafe until those
-    # rows are removed or assigned a real current ticker, so fail rather than inventing identity.
-    raise RuntimeError(
-        "cannot make companies.ticker non-null while historical-only issuer rows may exist"
+    connection = op.get_bind()
+    null_count = connection.scalar(
+        sa.text("SELECT count(*) FROM companies WHERE ticker IS NULL")
     )
+    if int(null_count or 0) > 0:
+        raise RuntimeError(
+            "cannot make companies.ticker non-null while historical-only issuer rows exist"
+        )
+    with op.batch_alter_table("companies") as batch_op:
+        batch_op.alter_column(
+            "ticker",
+            existing_type=sa.String(length=32),
+            nullable=False,
+        )
