@@ -5,6 +5,10 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
+from scripts.bootstrap_current_security_master import (
+    bootstrap_current_security_master,
+    load_current_security_bootstrap,
+)
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -15,10 +19,6 @@ from apps.api.app.models.historical_universe import (
     Security,
     SecurityIdentityPeriod,
     UniverseMembership,
-)
-from scripts.bootstrap_current_security_master import (
-    bootstrap_current_security_master,
-    load_current_security_bootstrap,
 )
 
 
