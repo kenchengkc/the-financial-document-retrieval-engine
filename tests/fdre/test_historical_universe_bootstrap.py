@@ -10,6 +10,7 @@ from scripts.bootstrap_current_security_master import (
     load_current_security_bootstrap,
 )
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -22,7 +23,7 @@ from apps.api.app.models.historical_universe import (
 )
 
 
-def _engine():
+def _engine() -> Engine:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
