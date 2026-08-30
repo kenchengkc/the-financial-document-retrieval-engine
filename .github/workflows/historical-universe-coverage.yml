@@ -2,10 +2,17 @@ name: Historical Universe coverage audit
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_security_bootstrap:
+        description: Apply HU2-R0 current security-master bootstrap before the audit
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
       - ".github/workflows/historical-universe-coverage.yml"
+      - "scripts/bootstrap_current_security_master.py"
       - "scripts/historical_universe_coverage.py"
       - "src/fdre/research/historical_universe_sources.py"
       - "src/fdre/research/historical_universe_pipeline.py"
@@ -23,7 +30,7 @@ concurrency:
 
 jobs:
   audit:
-    name: Run read-only HU-2 coverage audit
+    name: Run HU-2 coverage audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -63,6 +70,22 @@ jobs:
           else
             echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
           fi
+
+      - name: Plan current security-master bootstrap
+        run: |
+          python -m scripts.bootstrap_current_security_master \
+            --database-url "${DATABASE_URL}" \
+            --current-constituents "data/sample/sp500_tickers.json" \
+            --output "${OUTPUT_DIR}/security-master-bootstrap-plan.json"
+
+      - name: Apply current security-master bootstrap
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_security_bootstrap }}
+        run: |
+          python -m scripts.bootstrap_current_security_master \
+            --database-url "${DATABASE_URL}" \
+            --current-constituents "data/sample/sp500_tickers.json" \
+            --apply \
+            --output "${OUTPUT_DIR}/security-master-bootstrap-applied.json"
 
       - name: Resolve immutable source revisions
         run: |
@@ -108,6 +131,24 @@ jobs:
       - name: Publish summary
         if: always()
         run: |
+          if [ -f "${OUTPUT_DIR}/security-master-bootstrap-plan.json" ]; then
+            {
+              echo "### Current security-master bootstrap plan"
+              echo
+              echo '```json'
+              cat "${OUTPUT_DIR}/security-master-bootstrap-plan.json"
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f "${OUTPUT_DIR}/security-master-bootstrap-applied.json" ]; then
+            {
+              echo "### Current security-master bootstrap applied"
+              echo
+              echo '```json'
+              cat "${OUTPUT_DIR}/security-master-bootstrap-applied.json"
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
           if [ -f "${OUTPUT_DIR}/coverage.json" ]; then
             {
               echo "### Historical Universe coverage audit"
