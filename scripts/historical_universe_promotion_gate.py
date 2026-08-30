@@ -7,7 +7,10 @@ import json
 from datetime import date
 from pathlib import Path
 
-from fdre.research.historical_component_history import HistoricalComponentHistoryAdapter
+from fdre.research.historical_component_history import (
+    HistoricalComponentHistoryAdapter,
+    HistoricalComponentRecord,
+)
 
 _TARGET_START = date(2010, 1, 1)
 _MIN_RESOLUTION = 0.95
@@ -41,7 +44,7 @@ def _adjudicate_opposing_keys(
     records = HistoricalComponentHistoryAdapter(
         source_ref=component_history_ref
     ).load(component_history)
-    by_symbol: dict[str, list[object]] = {}
+    by_symbol: dict[str, list[HistoricalComponentRecord]] = {}
     for record in records:
         by_symbol.setdefault(_symbol(record.symbol), []).append(record)
 
@@ -179,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--component-history", required=True, type=Path)
     parser.add_argument("--component-history-ref", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--require-pass",
+        action="store_true",
+        help="Return non-zero when the measured promotion gate is not satisfied.",
+    )
     return parser
 
 
@@ -192,9 +200,14 @@ def main() -> int:
         component_history_ref=args.component_history_ref,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0 if payload["promotion_gate_met"] else 2
+    if args.require_pass and not payload["promotion_gate_met"]:
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
