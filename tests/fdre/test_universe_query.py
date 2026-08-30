@@ -43,7 +43,11 @@ def _seed_security(
         name=f"{ticker} Corp",
         exchange="NYSE",
     )
-    security = Security(id=security_id, company=company, security_type="common_stock")
+    security = Security(
+        id=security_id,
+        company_id=security_id,
+        security_type="common_stock",
+    )
     identity = SecurityIdentityPeriod(
         id=security_id,
         security=security,
