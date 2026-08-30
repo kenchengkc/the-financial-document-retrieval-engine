@@ -148,6 +148,7 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
             | jq -s '{workflows: map(.workflows) | add}')"
 
+          # shellcheck disable=SC2016 -- $path and $keep are jq variables, not shell variables.
           mapfile -t stale_rows < <(
             jq -r --argjson keep "${keep_paths}" '
               .workflows[]
@@ -188,4 +189,3 @@ jobs:
           done
 
           echo "Deleted ${total_deleted} completed runs from obsolete workflow registrations."
-          echo "TOTAL_OBSOLETE_WORKFLOW_RUNS_DELETED=${total_deleted}" >> "${GITHUB_ENV}"
