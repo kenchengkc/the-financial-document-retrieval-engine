@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -40,7 +40,7 @@ def _hash(payload: object) -> str:
 
 
 class _AliasAugmentedIssuerIndex(SecCikNameIndex):
-    """Read-only one-hop overlay over the pinned SEC issuer-name index."""
+    """Read-only evidence-scoped overlay over the pinned SEC issuer-name index."""
 
     def __init__(
         self,
@@ -55,7 +55,7 @@ class _AliasAugmentedIssuerIndex(SecCikNameIndex):
 
     @property
     def name_count(self) -> int:
-        raise RuntimeError("combined alias overlay does not expose a standalone name count")
+        raise RuntimeError("evidence-scoped alias overlay has no standalone name count")
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,8 +106,9 @@ def run_hu2_reconstruction(
     """Resolve, reconcile, materialize, and audit one HU-2 evidence batch.
 
     ``issuer_index`` is the pinned SEC exact-name index. R1 derives one-hop aliases only from
-    exact cross-source membership-event agreement against that SEC index, then uses a read-only
-    overlay for resolution. Derived aliases never feed back into alias derivation.
+    exact cross-source membership-event agreement against that SEC index. Each alias is then
+    applied only to the exact evidence row named by its provenance; it never becomes a global
+    historical name rule and never feeds back into alias derivation.
     """
 
     ordered_evidence = tuple(sorted(evidence, key=lambda item: item.evidence_id))
@@ -115,18 +116,23 @@ def run_hu2_reconstruction(
         ordered_evidence,
         sec_index=issuer_index,
     )
-    combined_issuer_index = _AliasAugmentedIssuerIndex(
-        issuer_index,
-        tuple(alias.as_issuer_name_evidence() for alias in derived_aliases),
-    )
+    aliases_by_target: dict[str, list[IssuerNameEvidence]] = defaultdict(list)
+    for alias in derived_aliases:
+        aliases_by_target[alias.target_evidence_id].append(alias.as_issuer_name_evidence())
 
     resolutions: list[IdentityResolution] = []
     issuer_resolutions: list[IssuerNameResolution | None] = []
     for record in ordered_evidence:
+        scoped_aliases = tuple(aliases_by_target.get(record.evidence_id, ()))
+        scoped_issuer_index = (
+            _AliasAugmentedIssuerIndex(issuer_index, scoped_aliases)
+            if scoped_aliases
+            else issuer_index
+        )
         resolution, issuer_resolution = resolve_membership_with_sec_issuer_fallback(
             record,
             identities=identities,
-            issuer_index=combined_issuer_index,
+            issuer_index=scoped_issuer_index,
             securities=securities,
         )
         resolutions.append(resolution)
