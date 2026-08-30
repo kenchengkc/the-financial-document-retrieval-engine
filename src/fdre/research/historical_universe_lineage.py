@@ -273,7 +273,7 @@ def resolve_evidence_via_ticker_lineage(
         ]
         if len(candidates) != 1:
             status: LineageResolutionStatus = "ambiguous" if len(candidates) > 1 else "unresolved"
-            reason: str | None = (
+            boundary_reason = (
                 "multiple complete-history ticker intervals match the raw event boundary"
                 if len(candidates) > 1
                 else "no exact complete-history ticker interval boundary match"
@@ -297,7 +297,7 @@ def resolve_evidence_via_ticker_lineage(
                     supporting_evidence_ids=(),
                     supporting_sources=(),
                     resolution_hash=resolution_hash,
-                    reason=reason,
+                    reason=boundary_reason,
                 )
             )
             continue
