@@ -196,6 +196,69 @@ is not a stable listed-security master and must not be backdated. The ordered re
 No historical S&P membership performance/result is claimed yet. Historical research must continue
 to label the current-constituent limitation explicitly, and HU-3/HU-4 remain gated on HU-2.
 
+### HU-2 remediation checkpoint — R0 security bootstrap and R1 issuer aliases
+
+The first two remediation steps were measured in production on 2026-08-30 without backdating the
+current constituent seed or writing historical memberships.
+
+`HU2-R0` was explicitly applied in [Actions run
+`33299892680`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33299892680).
+It created **502 stable common-stock securities and 502 provisional current identity periods** for
+the 502 mapped present-day constituent symbols. Those identities begin on the committed current
+snapshot date, **2026-06-08**. They do not assert when the securities entered the S&P 500 and do not
+establish pre-snapshot ticker history. `CBOE` remains the one unmapped current symbol.
+
+Immediately after R0, the 2010+ audit resolved **98 / 1,055 observations (9.29%)** to stable
+securities. This established that the present-day security master removes the zero-security
+bootstrap bottleneck but does not by itself provide historical identity coverage.
+
+`HU2-R1` then added an evidence-scoped cross-source issuer-alias derivation and was measured by
+[Actions run
+`33300609711`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33300609711),
+producing audit ID `d3405d7c325a36f5f292fa615dc1411ca2322a070130d1f8e11fbc801296e4a5`.
+An alias is usable only for the exact membership-evidence row supported by independent sources on
+the same universe/date/event-type/symbol key, where another source's issuer name resolves uniquely
+through the pinned SEC cumulative CIK lookup. Derived aliases are not global name-to-CIK rules,
+are not chained transitively, and conflicting CIK derivations fail closed.
+
+| Measurement | Post-R0 | Post-R1 |
+| --- | ---: | ---: |
+| Stable securities / current identity periods | 502 / 502 | 502 / 502 |
+| Stable-security CIKs | 499 | 499 |
+| Full-history issuer names resolved | 545 | **702** |
+| Full-history issuer names unresolved | 1,101 | **944** |
+| Full-history security observations resolved | 143 | **198** |
+| 2010+ security observations resolved | 98 / 1,055 | **147 / 1,055** |
+| 2010+ stable-security resolution rate | 9.29% | **13.93%** |
+| Derived issuer-alias evidence rows | — | **157** |
+| Distinct derived normalized alias names | — | **153** |
+| Verified / provisional reconciled events | 1 / 140 | **56 / 85** |
+| Reconciled events carrying conflict codes | 3 | **58** |
+
+R1 therefore added **49 resolved observations in the 2010+ target window**, a **+4.64 percentage
+point** improvement. Across the full evidence history it created 157 source-backed alias
+observations; 55 of those reach a stable security, while **102 now stop at the next fail-closed
+boundary: the issuer resolves, but FDRE has no stable historical common-stock security for that
+CIK**.
+
+The post-R1 remediation audit contains **509 evidence rows across 313 resolved CIKs** that are
+blocked by the missing historical stable-security layer. It also retains **944 rows / 769 normalized
+names** without exact SEC or cross-source alias resolution and **79 rows / 62 normalized names**
+with exact-name CIK ambiguity. The 2010+ resolution rate remains far below the **95%** pipeline-
+readiness floor, so the HU-2 promotion gate remains closed.
+
+The increase from 3 to 58 reconciled conflict-bearing events is not treated as evidence that R1
+manufactured disagreement. Reconciliation checks opposing add/remove events by **stable security +
+effective date**, whereas the earlier raw diagnostic only counted same-symbol opposing rows. Better
+identity resolution therefore exposes additional same-security corporate-action/ticker-transition
+boundaries that were previously invisible. Those boundaries remain provisional and require dated
+adjudication; they are not guessed away.
+
+The highest-leverage next remediation is now historical stable-security/identity expansion for the
+already-resolved issuer queue, while preserving share-class distinctions and dated corporate-action
+lineage. Creating one historical security per CIK without listed-security evidence would violate the
+HU fail-closed contract and is explicitly out of scope.
+
 ## Historical measurements retained for provenance
 
 Earlier snapshots/results remain useful for showing improvement over time but are no longer the current headline:
