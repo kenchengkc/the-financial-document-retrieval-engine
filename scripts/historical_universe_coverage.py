@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
@@ -228,6 +228,7 @@ def main() -> int:
     engine = create_db_engine(args.database_url)
     try:
         with Session(engine) as session:
+            company_count = int(session.scalar(select(func.count(Company.id))) or 0)
             identities = _load_identity_records(session)
             securities = load_stable_securities(session)
         result = run_hu2_reconstruction(
@@ -292,6 +293,7 @@ def main() -> int:
         "issuer_name_evidence_count": len(issuer_evidence),
         "issuer_name_count": issuer_index.name_count,
         "issuer_resolution_counts": dict(result.audit.issuer_resolution_counts),
+        "production_company_count": company_count,
         "security_identity_record_count": len(identities),
         "stable_security_count": len(securities),
         "stable_common_stock_security_count": sum(
