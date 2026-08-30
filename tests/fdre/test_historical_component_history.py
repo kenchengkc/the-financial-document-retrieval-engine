@@ -8,7 +8,10 @@ from fdre.research.historical_component_history import (
     HistoricalComponentIdentityIndex,
     resolve_component_identity,
 )
-from fdre.research.historical_universe_evidence import MembershipEvidence, canonical_source_record_hash
+from fdre.research.historical_universe_evidence import (
+    MembershipEvidence,
+    canonical_source_record_hash,
+)
 
 OBSERVED_AT = datetime(2026, 8, 30, 17, 0, tzinfo=UTC)
 
@@ -41,7 +44,10 @@ def _history(tmp_path: Path, rows: str) -> HistoricalComponentIdentityIndex:
 def test_unique_historical_symbol_resolves_without_name_similarity(tmp_path: Path) -> None:
     index = _history(
         tmp_path,
-        "AAP,0001158449,Advance Auto Parts,consumer_discretionary,2015-07-09,2023-08-25,2015-07-09\n",
+        (
+            "AAP,0001158449,Advance Auto Parts,consumer_discretionary,"
+            "2015-07-09,2023-08-25,2015-07-09\n"
+        ),
     )
     resolution = resolve_component_identity(
         _evidence(symbol="AAP", when=date(2015, 7, 8)),
