@@ -148,13 +148,14 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
             | jq -s '{workflows: map(.workflows) | add}')"
 
-          # shellcheck disable=SC2016 -- $path and $keep are jq variables, not shell variables.
+          cat > /tmp/stale-workflows.jq <<'JQ'
+          .workflows[]
+          | select((.path as $path | $keep | index($path)) == null)
+          | [.id, .name, .path, .state] | @tsv
+          JQ
           mapfile -t stale_rows < <(
-            jq -r --argjson keep "${keep_paths}" '
-              .workflows[]
-              | select((.path as $path | $keep | index($path)) == null)
-              | [.id, .name, .path, .state] | @tsv
-            ' <<< "${workflows_json}"
+            jq -r --argjson keep "${keep_paths}" -f /tmp/stale-workflows.jq \
+              <<< "${workflows_json}"
           )
 
           echo "Found ${#stale_rows[@]} obsolete workflow registrations."
