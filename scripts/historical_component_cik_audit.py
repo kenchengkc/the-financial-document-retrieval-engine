@@ -16,14 +16,17 @@ from fdre.research.historical_component_history import (
     HistoricalComponentIdentityIndex,
     resolve_component_identity,
 )
-from fdre.research.historical_universe_identity import SecCikLookupAdapter, SecCikNameIndex
+from fdre.research.historical_universe_identity import (
+    SecCikLookupAdapter,
+    SecCikNameIndex,
+    load_stable_securities,
+)
 from fdre.research.historical_universe_pipeline import run_hu2_reconstruction
 from scripts.historical_universe_coverage import (
     _load_identity_records,
     _load_sources,
     _parse_timestamp,
 )
-from fdre.research.historical_universe_identity import load_stable_securities
 
 _TARGET_START = datetime(2010, 1, 1, tzinfo=UTC).date()
 _SCHEMA_VERSION = "fdre-hu2-historical-component-cik-audit-v1"
@@ -131,7 +134,9 @@ def main() -> int:
         "component_history_record_count": len(component_records),
         "component_history_symbol_count": component_index.symbol_count,
         "component_recovered_count": recovered,
-        "component_resolution_method_counts_for_baseline_failures": dict(sorted(methods.items())),
+        "component_resolution_method_counts_for_baseline_failures": dict(
+            sorted(methods.items())
+        ),
         "projected_resolved_count": projected,
         "projected_resolution_rate": round(projected / denominator, 6) if denominator else 0.0,
         "projected_unique_cik_count": len(projected_ciks),
@@ -146,8 +151,12 @@ def main() -> int:
         "residual": residual,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({key: value for key, value in report.items() if key != "residual"}, indent=2, sort_keys=True))
+    args.output.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    summary = {key: value for key, value in report.items() if key != "residual"}
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
