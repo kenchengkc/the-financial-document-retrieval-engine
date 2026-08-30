@@ -26,7 +26,7 @@ def main() -> int:
         database_url=args.database_url,
     )
     if args.output is not None:
-        write_universe_snapshot(snapshot, args.output, format=args.format)
+        write_universe_snapshot(snapshot, args.output, export_format=args.format)
     print(json.dumps(snapshot_to_dict(snapshot), indent=2, sort_keys=True))
     return 0
 
