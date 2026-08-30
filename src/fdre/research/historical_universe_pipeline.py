@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -18,9 +18,12 @@ from fdre.research.historical_universe_evidence import (
     reconcile_membership_evidence,
 )
 from fdre.research.historical_universe_identity import (
+    DerivedIssuerAliasEvidence,
+    IssuerNameEvidence,
     IssuerNameResolution,
     SecCikNameIndex,
     StableSecurityRecord,
+    derive_cross_source_issuer_aliases,
     resolve_membership_with_sec_issuer_fallback,
 )
 from fdre.research.historical_universe_materialization import (
@@ -28,12 +31,31 @@ from fdre.research.historical_universe_materialization import (
     materialize_membership_intervals,
 )
 
-_PIPELINE_SCHEMA_VERSION = "fdre-hu2-reconstruction-audit-v1"
+_PIPELINE_SCHEMA_VERSION = "fdre-hu2-reconstruction-audit-v2"
 
 
 def _hash(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+class _AliasAugmentedIssuerIndex(SecCikNameIndex):
+    """Read-only evidence-scoped overlay over the pinned SEC issuer-name index."""
+
+    def __init__(
+        self,
+        base: SecCikNameIndex,
+        aliases: Sequence[IssuerNameEvidence],
+    ) -> None:
+        self._base = base
+        self._alias_index = SecCikNameIndex(aliases)
+
+    def lookup(self, raw_name: str | None) -> tuple[IssuerNameEvidence, ...]:
+        return (*self._base.lookup(raw_name), *self._alias_index.lookup(raw_name))
+
+    @property
+    def name_count(self) -> int:
+        raise RuntimeError("evidence-scoped alias overlay has no standalone name count")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +68,8 @@ class HistoricalUniverseDataAudit:
     issuer_resolution_counts: tuple[tuple[str, int], ...]
     security_resolution_counts: tuple[tuple[str, int], ...]
     security_resolution_method_counts: tuple[tuple[str, int], ...]
+    derived_issuer_alias_evidence_count: int
+    derived_issuer_alias_name_count: int
     verified_event_count: int
     provisional_event_count: int
     conflict_event_count: int
@@ -60,6 +84,7 @@ class HistoricalUniverseDataAudit:
 class HistoricalUniverseReconstructionResult:
     resolutions: tuple[IdentityResolution, ...]
     issuer_resolutions: tuple[IssuerNameResolution | None, ...]
+    derived_issuer_aliases: tuple[DerivedIssuerAliasEvidence, ...]
     events: tuple[ReconciledMembershipEvent, ...]
     memberships: tuple[UniverseMembershipRecord, ...]
     materialization_issues: tuple[MembershipMaterializationIssue, ...]
@@ -78,16 +103,36 @@ def run_hu2_reconstruction(
     issuer_index: SecCikNameIndex,
     securities: Sequence[StableSecurityRecord],
 ) -> HistoricalUniverseReconstructionResult:
-    """Resolve, reconcile, materialize, and audit one HU-2 evidence batch."""
+    """Resolve, reconcile, materialize, and audit one HU-2 evidence batch.
+
+    ``issuer_index`` is the pinned SEC exact-name index. R1 derives one-hop aliases only from
+    exact cross-source membership-event agreement against that SEC index. Each alias is then
+    applied only to the exact evidence row named by its provenance; it never becomes a global
+    historical name rule and never feeds back into alias derivation.
+    """
 
     ordered_evidence = tuple(sorted(evidence, key=lambda item: item.evidence_id))
+    derived_aliases = derive_cross_source_issuer_aliases(
+        ordered_evidence,
+        sec_index=issuer_index,
+    )
+    aliases_by_target: dict[str, list[IssuerNameEvidence]] = defaultdict(list)
+    for alias in derived_aliases:
+        aliases_by_target[alias.target_evidence_id].append(alias.as_issuer_name_evidence())
+
     resolutions: list[IdentityResolution] = []
     issuer_resolutions: list[IssuerNameResolution | None] = []
     for record in ordered_evidence:
+        scoped_aliases = tuple(aliases_by_target.get(record.evidence_id, ()))
+        scoped_issuer_index = (
+            _AliasAugmentedIssuerIndex(issuer_index, scoped_aliases)
+            if scoped_aliases
+            else issuer_index
+        )
         resolution, issuer_resolution = resolve_membership_with_sec_issuer_fallback(
             record,
             identities=identities,
-            issuer_index=issuer_index,
+            issuer_index=scoped_issuer_index,
             securities=securities,
         )
         resolutions.append(resolution)
@@ -118,6 +163,7 @@ def run_hu2_reconstruction(
         "schema_version": _PIPELINE_SCHEMA_VERSION,
         "universe_code": reconciliation.audit.universe_code,
         "evidence_ids": [record.evidence_id for record in ordered_evidence],
+        "derived_issuer_alias_ids": [alias.alias_id for alias in derived_aliases],
         "issuer_resolution_hashes": sorted(
             resolution.resolution_hash
             for resolution in issuer_resolutions
@@ -146,6 +192,10 @@ def run_hu2_reconstruction(
         issuer_resolution_counts=_count_pairs(issuer_statuses),
         security_resolution_counts=_count_pairs(security_statuses),
         security_resolution_method_counts=_count_pairs(resolution_methods),
+        derived_issuer_alias_evidence_count=len(derived_aliases),
+        derived_issuer_alias_name_count=len(
+            {alias.normalized_name for alias in derived_aliases}
+        ),
         verified_event_count=reconciliation.audit.verified_event_count,
         provisional_event_count=reconciliation.audit.provisional_event_count,
         conflict_event_count=reconciliation.audit.conflict_event_count,
@@ -158,6 +208,7 @@ def run_hu2_reconstruction(
     return HistoricalUniverseReconstructionResult(
         resolutions=tuple(resolutions),
         issuer_resolutions=tuple(issuer_resolutions),
+        derived_issuer_aliases=derived_aliases,
         events=reconciliation.events,
         memberships=materialization.memberships,
         materialization_issues=materialization.issues,
