@@ -13,6 +13,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -304,7 +305,7 @@ def build_historical_security_seed_plan(
 
     candidates.sort(key=lambda row: (str(row["cik"]), str(row["symbol"])))
     candidate_target_rows = sum(
-        int(row["target_resolved_evidence_count"]) for row in candidates
+        cast(int, row["target_resolved_evidence_count"]) for row in candidates
     )
     candidate_missing_company_count = sum(
         bool(row["requires_historical_company_row"]) for row in candidates
