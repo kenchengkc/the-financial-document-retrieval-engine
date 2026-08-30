@@ -30,7 +30,7 @@ def _seed(database_path: Path) -> None:
             name="ABC Corp",
             exchange="NYSE",
         )
-        security = Security(id=1, company=company, security_type="common_stock")
+        security = Security(id=1, company_id=1, security_type="common_stock")
         session.add_all(
             (
                 company,
