@@ -62,6 +62,16 @@ def test_sec_cik_lookup_parses_colon_in_company_name() -> None:
     assert len(record.evidence_id) == 64
 
 
+def test_sec_cik_lookup_skips_cik_only_rows_without_name_evidence() -> None:
+    assert (
+        SecCikLookupAdapter.parse_line(
+            ":0001003197:\n",
+            observed_at=OBSERVED_AT,
+        )
+        is None
+    )
+
+
 def test_sec_name_resolution_fails_closed_on_multiple_ciks() -> None:
     first = SecCikLookupAdapter.parse_line(
         "ALPHA CORP:0000000001:\n",
