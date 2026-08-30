@@ -79,7 +79,7 @@ Implemented:
 
 ### HU-2 — Membership reconstruction
 
-**Status: ACTIVE / NEXT IMPLEMENTATION.**
+**Status: ACTIVE / PRODUCTION AUDIT COMPLETE; REMEDIATION REQUIRED.**
 
 Build a reproducible evidence-reconciliation pipeline for historical index membership.
 
@@ -95,6 +95,20 @@ Required outputs:
 8. current-date reconciliation against the existing S&P seed without using that seed as historical evidence.
 
 **HU-2 promotion gate:** do not integrate historical membership into flagship research until the coverage audit can characterize where history is trustworthy and where it is provisional.
+
+The first production-backed audit now characterizes the blocking gaps. The ordered remediation
+sequence is:
+
+1. bootstrap the present-day stable-security/identity layer without creating historical
+   membership;
+2. persist source-backed historical issuer aliases and adjudicate dated CIK successor/reincorporation
+   cases;
+3. classify same-symbol corporate actions and genuine source disagreement;
+4. add an independently sourced complete target-window anchor; and
+5. rerun the deterministic audit until the canonical HU-2 promotion gate is satisfied.
+
+Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
+definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
 
 ### HU-3 — Universe API / SDK
 
@@ -194,6 +208,9 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Implement HU-2 membership reconstruction and coverage auditing.**
+**Remediate the measured HU-2 identity and coverage gaps.**
 
-Do not start the decade-scale filing backfill yet. First prove that FDRE can reconstruct and audit historical universe membership with sufficient provenance to know which dates/securities are research-eligible. Once that contract is credible, HU-3 can expose it programmatically and HU-4 can safely spend compute/storage on longer history.
+Do not start the decade-scale filing backfill yet. First populate the stable-security prerequisite,
+resolve the evidence queues without guessing, add a complete historical anchor, and satisfy the
+promotion gate. Once that contract is credible, HU-3 can expose it programmatically and HU-4 can
+safely spend compute/storage on longer history.

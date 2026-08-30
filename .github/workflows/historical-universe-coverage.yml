@@ -12,6 +12,7 @@ on:
       - "src/fdre/research/historical_universe_identity.py"
       - "src/fdre/research/historical_universe_evidence.py"
       - "src/fdre/research/historical_universe_materialization.py"
+      - "data/sample/sp500_tickers.json"
 
 permissions:
   contents: read
@@ -98,6 +99,7 @@ jobs:
             --snp-history "${SOURCE_DIR}/snp-history.csv" \
             --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
             --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
+            --current-constituents "data/sample/sp500_tickers.json" \
             --observed-at "${OBSERVED_AT}" \
             --snp-history-ref "${SNP_HISTORY_REF}" \
             --wikipedia-revision "${WIKIPEDIA_REVISION}" \
@@ -112,6 +114,12 @@ jobs:
               echo
               echo '```json'
               cat "${OUTPUT_DIR}/coverage.json"
+              echo '```'
+              echo
+              echo '### Remediation gate'
+              echo
+              echo '```json'
+              cat "${OUTPUT_DIR}/remediation.json"
               echo '```'
             } >> "${GITHUB_STEP_SUMMARY}"
           fi

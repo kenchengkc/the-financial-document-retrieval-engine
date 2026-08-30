@@ -237,6 +237,30 @@ interval materialization
 coverage + disagreement audit
 ```
 
+#### HU-2 promotion gate
+
+HU-2 is complete only when all of the following are true for the intended 2010+ research
+window:
+
+- the current constituent catalog has no unmapped symbols and every current listed share class
+  resolves to exactly one active stable-security identity;
+- at least **95%** of raw membership observations resolve to a stable security, with every
+  remainder retained in the published unresolved queue;
+- every event boundary used by a strict research snapshot is verified or explicitly adjudicated;
+  unresolved boundaries make the affected date/security ineligible rather than guessed;
+- every same-date, same-symbol opposing add/remove pair is classified as an evidenced corporate
+  action or retained as a conflict;
+- at least one pinned, independently sourced complete constituent snapshot at or before
+  `2010-01-01` anchors the target window; change records alone are not a starting universe;
+- materialization has no unexplained overlaps, missing active identities, or unresolved event
+  order; and
+- exact replay from the same code and source manifest produces the same audit and snapshot IDs.
+
+The 95% threshold is a pipeline-readiness floor, not permission to fill the remainder. A date is
+eligible for strict research only when all membership and identity boundaries affecting that
+snapshot meet the stricter evidence rule above. Current measured results and the remediation
+queue live in [`eval_results.md`](eval_results.md).
+
 ### HU-3 — Universe API / SDK
 
 Expose strict PIT resolution through the research layer.
