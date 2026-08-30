@@ -304,6 +304,7 @@ def resolve_evidence_via_ticker_lineage(
 
         lineage = candidates[0]
         ciks = cik_support.get(lineage.lineage_id, ())
+        cik: str | None
         if len(ciks) == 1:
             status = "resolved"
             cik = ciks[0]
