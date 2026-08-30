@@ -13,6 +13,7 @@ on:
     paths:
       - ".github/workflows/historical-universe-coverage.yml"
       - "scripts/bootstrap_current_security_master.py"
+      - "scripts/historical_universe_alias_audit.py"
       - "scripts/historical_universe_coverage.py"
       - "src/fdre/research/historical_universe_sources.py"
       - "src/fdre/research/historical_universe_pipeline.py"
@@ -114,19 +115,32 @@ jobs:
             "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt" \
             --output "${SOURCE_DIR}/sec-cik-lookup-data.txt"
 
+      - name: Set audit observation time
+        run: echo "HU2_OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_ENV}"
+
       - name: Run coverage audit
         run: |
-          OBSERVED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python -m scripts.historical_universe_coverage \
             --database-url "${DATABASE_URL}" \
             --snp-history "${SOURCE_DIR}/snp-history.csv" \
             --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
             --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
             --current-constituents "data/sample/sp500_tickers.json" \
-            --observed-at "${OBSERVED_AT}" \
+            --observed-at "${HU2_OBSERVED_AT}" \
             --snp-history-ref "${SNP_HISTORY_REF}" \
             --wikipedia-revision "${WIKIPEDIA_REVISION}" \
             --output-dir "${OUTPUT_DIR}"
+
+      - name: Emit cross-source issuer aliases
+        run: |
+          python -m scripts.historical_universe_alias_audit \
+            --snp-history "${SOURCE_DIR}/snp-history.csv" \
+            --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
+            --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
+            --observed-at "${HU2_OBSERVED_AT}" \
+            --snp-history-ref "${SNP_HISTORY_REF}" \
+            --wikipedia-revision "${WIKIPEDIA_REVISION}" \
+            --output "${OUTPUT_DIR}/issuer-aliases.json"
 
       - name: Publish summary
         if: always()
@@ -147,6 +161,29 @@ jobs:
               echo '```json'
               cat "${OUTPUT_DIR}/security-master-bootstrap-applied.json"
               echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f "${OUTPUT_DIR}/issuer-aliases.json" ]; then
+            {
+              echo "### HU2-R1 cross-source issuer aliases"
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("data/processed/historical-universe/coverage/issuer-aliases.json").read_text())
+          summary = {key: payload[key] for key in (
+              "schema_version",
+              "membership_evidence_count",
+              "sec_name_evidence_count",
+              "derived_alias_evidence_count",
+              "derived_alias_name_count",
+              "repeated_alias_name_count",
+              "derivation_rule",
+          )}
+          print("```json")
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          print("```")
+          PY
             } >> "${GITHUB_STEP_SUMMARY}"
           fi
           if [ -f "${OUTPUT_DIR}/coverage.json" ]; then
