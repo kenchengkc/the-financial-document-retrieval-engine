@@ -129,14 +129,9 @@ class HistoricalComponentHistoryAdapter:
                     row["date_removed"] or ""
                 )
                 created_at, _ = _parse_source_date(row["created_at"] or "")
-                required_values_present = (
-                    bool(symbol)
-                    and bool(raw_cik)
-                    and bool(name)
-                    and effective_from is not None
-                    and created_at is not None
-                )
-                if not required_values_present:
+                if not symbol or not raw_cik or not name:
+                    raise ValueError(f"invalid historical component row {row_number}")
+                if effective_from is None or created_at is None:
                     raise ValueError(f"invalid historical component row {row_number}")
                 if effective_to is not None and effective_to <= effective_from:
                     raise ValueError(
