@@ -13,7 +13,7 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -33,8 +33,11 @@ IssuerResolutionStatus = Literal["resolved", "ambiguous", "unresolved"]
 
 _SEC_CIK_LOOKUP_SOURCE = "sec-edgar-cik-lookup"
 _SEC_CIK_LOOKUP_URL = "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"
+_CROSS_SOURCE_ALIAS_SOURCE = "fdre-cross-source-membership-alias"
+_CROSS_SOURCE_ALIAS_URL = "fdre://historical-universe/cross-source-membership-alias"
 _ISSUER_EVIDENCE_SCHEMA_VERSION = "fdre-hu-issuer-name-evidence-v1"
-_ISSUER_RESOLUTION_SCHEMA_VERSION = "fdre-hu-issuer-name-resolution-v1"
+_ISSUER_RESOLUTION_SCHEMA_VERSION = "fdre-hu-issuer-name-resolution-v2"
+_DERIVED_ALIAS_SCHEMA_VERSION = "fdre-hu2-cross-source-issuer-alias-v1"
 
 
 def _sha256_json(payload: object) -> str:
@@ -58,9 +61,13 @@ def normalize_cik(value: str) -> str:
     return stripped.zfill(10)
 
 
+def _normalize_symbol(value: str) -> str:
+    return value.strip().upper().replace(".", "-")
+
+
 @dataclass(frozen=True, slots=True)
 class IssuerNameEvidence:
-    """One exact name-to-CIK association observed in the SEC cumulative lookup."""
+    """One exact name-to-CIK association from a pinned or derived evidence source."""
 
     cik: str
     raw_name: str
@@ -96,6 +103,90 @@ class IssuerNameEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class DerivedIssuerAliasEvidence:
+    """Issuer alias inferred only from an exact event shared by independent sources.
+
+    One source must provide a raw issuer name that resolves exactly through the SEC cumulative
+    CIK lookup. A different source may then contribute a second raw issuer name for the exact
+    same universe/date/event-type/symbol key. No fuzzy string similarity or transitive alias
+    chaining participates in this derivation.
+    """
+
+    cik: str
+    raw_name: str
+    normalized_name: str
+    universe_code: str
+    effective_at: date
+    event_type: str
+    raw_symbol: str
+    target_evidence_id: str
+    supporting_evidence_ids: tuple[str, ...]
+    supporting_sources: tuple[str, ...]
+    supporting_raw_names: tuple[str, ...]
+    source_observed_at: datetime
+    source: str = _CROSS_SOURCE_ALIAS_SOURCE
+    source_url: str = _CROSS_SOURCE_ALIAS_URL
+
+    def __post_init__(self) -> None:
+        if self.cik != normalize_cik(self.cik):
+            raise ValueError("cik must be zero-padded to 10 digits")
+        if not self.raw_name.strip() or not self.normalized_name:
+            raise ValueError("alias name is required")
+        if not self.supporting_evidence_ids:
+            raise ValueError("cross-source alias requires supporting evidence")
+        if not self.supporting_sources:
+            raise ValueError("cross-source alias requires a supporting source")
+        if self.source_observed_at.tzinfo is None or self.source_observed_at.utcoffset() is None:
+            raise ValueError("source_observed_at must be timezone-aware")
+
+    @property
+    def alias_id(self) -> str:
+        return _sha256_json(
+            {
+                "schema_version": _DERIVED_ALIAS_SCHEMA_VERSION,
+                "cik": self.cik,
+                "normalized_name": self.normalized_name,
+                "universe_code": self.universe_code,
+                "effective_at": self.effective_at.isoformat(),
+                "event_type": self.event_type,
+                "raw_symbol": self.raw_symbol,
+                "target_evidence_id": self.target_evidence_id,
+                "supporting_evidence_ids": list(self.supporting_evidence_ids),
+            }
+        )
+
+    def as_issuer_name_evidence(self) -> IssuerNameEvidence:
+        return IssuerNameEvidence(
+            cik=self.cik,
+            raw_name=self.raw_name,
+            normalized_name=self.normalized_name,
+            source_record_hash=self.alias_id,
+            source_observed_at=self.source_observed_at,
+            source=self.source,
+            source_url=self.source_url,
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "alias_id": self.alias_id,
+            "cik": self.cik,
+            "raw_name": self.raw_name,
+            "normalized_name": self.normalized_name,
+            "universe_code": self.universe_code,
+            "effective_at": self.effective_at.isoformat(),
+            "event_type": self.event_type,
+            "raw_symbol": self.raw_symbol,
+            "target_evidence_id": self.target_evidence_id,
+            "supporting_evidence_ids": list(self.supporting_evidence_ids),
+            "supporting_sources": list(self.supporting_sources),
+            "supporting_raw_names": list(self.supporting_raw_names),
+            "source_observed_at": self.source_observed_at.isoformat(),
+            "source": self.source,
+            "source_url": self.source_url,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class IssuerNameResolution:
     """Exact historical issuer-name resolution result."""
 
@@ -105,6 +196,7 @@ class IssuerNameResolution:
     cik: str | None
     candidate_ciks: tuple[str, ...]
     evidence_ids: tuple[str, ...]
+    evidence_sources: tuple[str, ...]
     resolution_hash: str
     reason: str | None = None
 
@@ -126,7 +218,7 @@ class StableSecurityRecord:
 
 
 class SecCikNameIndex:
-    """Compact exact-name index over the SEC cumulative CIK lookup."""
+    """Compact exact-name index over source-backed issuer-name evidence."""
 
     def __init__(self, records: Sequence[IssuerNameEvidence]) -> None:
         by_name: dict[str, list[IssuerNameEvidence]] = defaultdict(list)
@@ -222,6 +314,7 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
     matches = index.lookup(raw_name)
     ciks = tuple(sorted({record.cik for record in matches}))
     evidence_ids = tuple(sorted(record.evidence_id for record in matches))
+    evidence_sources = tuple(sorted({record.source for record in matches}))
     status: IssuerResolutionStatus
     if len(ciks) == 1:
         status = "resolved"
@@ -230,11 +323,11 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
     elif len(ciks) > 1:
         status = "ambiguous"
         cik = None
-        reason = "exact normalized SEC name maps to multiple CIKs"
+        reason = "exact normalized issuer name maps to multiple CIKs"
     else:
         status = "unresolved"
         cik = None
-        reason = "no exact normalized SEC historical name match"
+        reason = "no exact normalized issuer-name evidence match"
     resolution_hash = _sha256_json(
         {
             "schema_version": _ISSUER_RESOLUTION_SCHEMA_VERSION,
@@ -242,6 +335,7 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
             "status": status,
             "candidate_ciks": ciks,
             "evidence_ids": evidence_ids,
+            "evidence_sources": evidence_sources,
         }
     )
     return IssuerNameResolution(
@@ -251,9 +345,122 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
         cik=cik,
         candidate_ciks=ciks,
         evidence_ids=evidence_ids,
+        evidence_sources=evidence_sources,
         resolution_hash=resolution_hash,
         reason=reason,
     )
+
+
+def derive_cross_source_issuer_aliases(
+    evidence: Sequence[MembershipEvidence],
+    *,
+    sec_index: SecCikNameIndex,
+) -> tuple[DerivedIssuerAliasEvidence, ...]:
+    """Derive fail-closed issuer aliases from exact cross-source membership-event agreement.
+
+    The SEC-only index is intentionally passed separately and is the sole identity authority for
+    supporting names. Derived aliases are never fed back into this derivation, preventing
+    transitive alias chains. A group is eligible only when at least two independent source names
+    describe the exact same universe/date/event-type/symbol key and all SEC-resolved support
+    points to one CIK.
+    """
+
+    by_event: dict[tuple[str, date, str, str], list[MembershipEvidence]] = defaultdict(list)
+    for record in evidence:
+        key = (
+            record.universe_code.strip().lower(),
+            record.effective_at,
+            record.event_type,
+            _normalize_symbol(record.raw_symbol),
+        )
+        by_event[key].append(record)
+
+    aliases: list[DerivedIssuerAliasEvidence] = []
+    for (universe_code, effective_at, event_type, symbol), records in sorted(
+        by_event.items(), key=lambda item: item[0]
+    ):
+        if len({record.source for record in records}) < 2:
+            continue
+
+        resolved_support: list[tuple[MembershipEvidence, str]] = []
+        resolutions: dict[str, IssuerNameResolution] = {}
+        for record in records:
+            resolution = resolve_issuer_name(record.raw_name, sec_index)
+            resolutions[record.evidence_id] = resolution
+            if resolution.status == "resolved" and resolution.cik is not None:
+                resolved_support.append((record, resolution.cik))
+        supported_ciks = {cik for _, cik in resolved_support}
+        if len(supported_ciks) != 1:
+            continue
+        cik = next(iter(supported_ciks))
+
+        for target in records:
+            target_resolution = resolutions[target.evidence_id]
+            if target_resolution.status != "unresolved" or target.raw_name is None:
+                continue
+            normalized_name = normalize_issuer_name(target.raw_name)
+            if not normalized_name:
+                continue
+            supporting_records = tuple(
+                sorted(
+                    (
+                        support
+                        for support, support_cik in resolved_support
+                        if support_cik == cik and support.source != target.source
+                    ),
+                    key=lambda item: (item.source, item.evidence_id),
+                )
+            )
+            if not supporting_records:
+                continue
+            aliases.append(
+                DerivedIssuerAliasEvidence(
+                    cik=cik,
+                    raw_name=target.raw_name.strip(),
+                    normalized_name=normalized_name,
+                    universe_code=universe_code,
+                    effective_at=effective_at,
+                    event_type=event_type,
+                    raw_symbol=symbol,
+                    target_evidence_id=target.evidence_id,
+                    supporting_evidence_ids=tuple(
+                        record.evidence_id for record in supporting_records
+                    ),
+                    supporting_sources=tuple(
+                        sorted({record.source for record in supporting_records})
+                    ),
+                    supporting_raw_names=tuple(
+                        sorted(
+                            {
+                                record.raw_name.strip()
+                                for record in supporting_records
+                                if record.raw_name is not None and record.raw_name.strip()
+                            }
+                        )
+                    ),
+                    source_observed_at=max(
+                        record.source_observed_at for record in (target, *supporting_records)
+                    ),
+                )
+            )
+
+    return tuple(
+        sorted(
+            aliases,
+            key=lambda item: (
+                item.normalized_name,
+                item.cik,
+                item.effective_at,
+                item.event_type,
+                item.raw_symbol,
+                item.target_evidence_id,
+            ),
+        )
+    )
+
+
+def issuer_resolution_uses_cross_source_alias(resolution: IssuerNameResolution | None) -> bool:
+    return resolution is not None and _CROSS_SOURCE_ALIAS_SOURCE in resolution.evidence_sources
 
 
 def resolve_membership_with_sec_issuer_fallback(
@@ -266,9 +473,9 @@ def resolve_membership_with_sec_issuer_fallback(
     """Resolve membership evidence without inventing historical ticker periods.
 
     Existing HU-1 date-aware ticker/CIK identity periods always get first priority. Only when
-    they return ``unresolved`` do we attempt exact SEC historical-name resolution. A unique CIK
-    can resolve to a stable security only when exactly one listed security exists for that CIK;
-    multiple share classes fail closed as ambiguous.
+    they return ``unresolved`` do we attempt exact source-backed historical-name resolution. A
+    unique CIK can resolve to a stable security only when exactly one listed security exists for
+    that CIK; multiple share classes fail closed as ambiguous.
     """
 
     primary = resolve_membership_evidence(evidence, identities)
@@ -297,17 +504,23 @@ def resolve_membership_with_sec_issuer_fallback(
             }
         )
     )
+    alias_backed = issuer_resolution_uses_cross_source_alias(issuer)
     if len(candidates) == 1:
         return (
             IdentityResolution(
                 evidence_id=evidence.evidence_id,
                 status="resolved",
                 method="cik_exact",
-                confidence=0.90,
+                confidence=0.85 if alias_backed else 0.90,
                 security_id=candidates[0],
                 cik=issuer.cik,
                 candidate_security_ids=candidates,
-                reason="CIK derived from exact SEC historical name; unique common-stock security",
+                reason=(
+                    "CIK derived from exact cross-source issuer alias evidence; unique "
+                    "common-stock security"
+                    if alias_backed
+                    else "CIK derived from exact SEC historical name; unique common-stock security"
+                ),
             ),
             issuer,
         )
@@ -319,7 +532,7 @@ def resolve_membership_with_sec_issuer_fallback(
                 method="unresolved",
                 confidence=0.0,
                 candidate_security_ids=candidates,
-                reason="SEC issuer resolved but multiple common-stock securities remain",
+                reason="issuer resolved but multiple common-stock securities remain",
             ),
             issuer,
         )
@@ -329,7 +542,7 @@ def resolve_membership_with_sec_issuer_fallback(
             status="unresolved",
             method="unresolved",
             confidence=0.0,
-            reason="SEC issuer resolved but no stable common-stock security exists in FDRE",
+            reason="issuer resolved but no stable common-stock security exists in FDRE",
         ),
         issuer,
     )
