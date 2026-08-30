@@ -18,14 +18,17 @@ from fdre.research.historical_universe_evidence import (
 class WikipediaHistoricalComponentsAdapter:
     """Parse Wikipedia's S&P 500 component-change table from a local HTML copy.
 
-    The maintained table lives on ``List of S&P 500 companies``. The source revision is
-    attributed in every record when callers provide a pinned ``oldid`` URL. FDRE does not
-    download or bundle Wikipedia content. Rows that are explicitly ticker/name changes are
-    skipped because they describe identity mutation rather than index entry or exit.
+    The maintained historical table lives on ``Historical components of the S&P 500``.
+    The source revision is attributed in every record when callers provide a pinned ``oldid``
+    URL. FDRE does not download or bundle Wikipedia content. Rows that are explicitly
+    ticker/name changes are skipped because they describe identity mutation rather than index
+    entry or exit.
     """
 
     source_name = "wikipedia-sp500-historical-components"
-    default_source_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    default_source_url = (
+        "https://en.wikipedia.org/wiki/Historical_components_of_the_S%26P_500"
+    )
 
     def __init__(
         self,

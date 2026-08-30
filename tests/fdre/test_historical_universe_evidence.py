@@ -107,6 +107,27 @@ def test_snp_history_adapter_rejects_incomplete_schema(tmp_path: Path) -> None:
         SnpHistoryCsvAdapter().load(source, observed_at=OBSERVED_AT)
 
 
+def test_snp_history_adapter_skips_absent_na_side_without_inventing_evidence(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "history.csv"
+    source.write_text(
+        "Announced,Implemented,,Addition,Addition Ticker,Removal,Removal Ticker,"
+        "Removal Type,Reason for Removal\n"
+        "3/11/2014,4/3/2014,After Close,Google Inc. Class C,GOOGL,N/A,,N/A,N/A\n"
+        "4/1/2014,4/7/2014,After Close,N/A,N/A,Beta Corp,BET,Failure,N/A\n",
+        encoding="utf-8",
+    )
+
+    records = SnpHistoryCsvAdapter().load(source, observed_at=OBSERVED_AT)
+
+    assert [(record.event_type, record.raw_symbol) for record in records] == [
+        ("addition", "GOOGL"),
+        ("removal", "BET"),
+    ]
+    assert dict(records[1].metadata) == {"removal_type": "Failure"}
+
+
 def test_resolution_prefers_exact_historical_identity_without_future_inference() -> None:
     evidence = _evidence(source="source-a", symbol="BRK.B")
     identities = [

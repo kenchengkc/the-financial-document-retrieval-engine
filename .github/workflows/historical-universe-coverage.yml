@@ -12,6 +12,7 @@ on:
       - "src/fdre/research/historical_universe_identity.py"
       - "src/fdre/research/historical_universe_evidence.py"
       - "src/fdre/research/historical_universe_materialization.py"
+      - "data/sample/sp500_tickers.json"
 
 permissions:
   contents: read
@@ -28,6 +29,7 @@ jobs:
     env:
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      GH_TOKEN: ${{ github.token }}
       OUTPUT_DIR: data/processed/historical-universe/coverage
       SOURCE_DIR: data/cache/historical-universe-sources
       PYTHONPATH: .
@@ -64,13 +66,13 @@ jobs:
 
       - name: Resolve immutable source revisions
         run: |
-          SNP_HISTORY_REF="$(curl --fail --location --retry 3 \
-            https://api.github.com/repos/shawnlinxl/snp-history/commits/master \
-            | python -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          SNP_HISTORY_REF="$(gh api repos/shawnlinxl/snp-history/commits/master --jq .sha)"
           WIKIPEDIA_REVISION="$(curl --fail --location --retry 3 \
             -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
-            'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=List_of_S%26P_500_companies&rvprop=ids&format=json' \
+            'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=Historical_components_of_the_S%26P_500&rvprop=ids&format=json' \
             | python -c 'import json,sys; d=json.load(sys.stdin); print(next(iter(d["query"]["pages"].values()))["revisions"][0]["revid"])')"
+          [[ "${SNP_HISTORY_REF}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${WIKIPEDIA_REVISION}" =~ ^[0-9]+$ ]]
           echo "SNP_HISTORY_REF=${SNP_HISTORY_REF}" >> "${GITHUB_ENV}"
           echo "WIKIPEDIA_REVISION=${WIKIPEDIA_REVISION}" >> "${GITHUB_ENV}"
 
@@ -82,8 +84,8 @@ jobs:
             --output "${SOURCE_DIR}/snp-history.csv"
           curl --fail --location --retry 3 \
             -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
-            "https://en.wikipedia.org/w/index.php?title=List_of_S%26P_500_companies&oldid=${WIKIPEDIA_REVISION}" \
-            --output "${SOURCE_DIR}/wikipedia-sp500-companies.html"
+            "https://en.wikipedia.org/w/index.php?title=Historical_components_of_the_S%26P_500&oldid=${WIKIPEDIA_REVISION}" \
+            --output "${SOURCE_DIR}/wikipedia-historical-components.html"
           curl --fail --location --retry 3 \
             -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
             "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt" \
@@ -95,8 +97,9 @@ jobs:
           python -m scripts.historical_universe_coverage \
             --database-url "${DATABASE_URL}" \
             --snp-history "${SOURCE_DIR}/snp-history.csv" \
-            --wikipedia-html "${SOURCE_DIR}/wikipedia-sp500-companies.html" \
+            --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
             --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
+            --current-constituents "data/sample/sp500_tickers.json" \
             --observed-at "${OBSERVED_AT}" \
             --snp-history-ref "${SNP_HISTORY_REF}" \
             --wikipedia-revision "${WIKIPEDIA_REVISION}" \
@@ -111,6 +114,12 @@ jobs:
               echo
               echo '```json'
               cat "${OUTPUT_DIR}/coverage.json"
+              echo '```'
+              echo
+              echo '### Remediation gate'
+              echo
+              echo '```json'
+              cat "${OUTPUT_DIR}/remediation.json"
               echo '```'
             } >> "${GITHUB_STEP_SUMMARY}"
           fi

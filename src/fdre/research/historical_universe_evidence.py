@@ -199,6 +199,13 @@ class SnpHistoryCsvAdapter:
             return "before_open"
         return "unspecified"
 
+    @staticmethod
+    def _source_value(value: str | None) -> str:
+        """Normalize the upstream marker for an absent side of a change row."""
+
+        stripped = (value or "").strip()
+        return "" if stripped.casefold() == "n/a" else stripped
+
     def load(
         self,
         path: Path,
@@ -239,16 +246,16 @@ class SnpHistoryCsvAdapter:
                 session = self._session(row.get(""))
                 record_hash = canonical_source_record_hash(row)
                 row_id = str(row_number - 1)
-                removal_type = (row.get("Removal Type") or "").strip()
-                removal_reason = (row.get("Reason for Removal") or "").strip()
+                removal_type = self._source_value(row.get("Removal Type"))
+                removal_reason = self._source_value(row.get("Reason for Removal"))
 
                 pairs = (
                     ("addition", "Addition", "Addition Ticker"),
                     ("removal", "Removal", "Removal Ticker"),
                 )
                 for event_type_raw, name_key, symbol_key in pairs:
-                    raw_symbol = (row.get(symbol_key) or "").strip()
-                    raw_name = (row.get(name_key) or "").strip()
+                    raw_symbol = self._source_value(row.get(symbol_key))
+                    raw_name = self._source_value(row.get(name_key))
                     if not raw_symbol and not raw_name:
                         continue
                     if not raw_symbol:

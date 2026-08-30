@@ -173,7 +173,10 @@ class SecCikLookupAdapter:
             raise ValueError(f"unexpected trailing SEC CIK lookup field: {text!r}")
         normalized_name = normalize_issuer_name(raw_name)
         if not normalized_name:
-            raise ValueError("SEC CIK lookup name cannot normalize to empty")
+            # The cumulative SEC file currently contains a small number of CIK-only
+            # rows (for example ``:0001003197:``). They provide no issuer-name
+            # evidence and therefore cannot participate in exact name resolution.
+            return None
         return IssuerNameEvidence(
             cik=normalize_cik(cik),
             raw_name=raw_name.strip(),

@@ -4,6 +4,18 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def normalize_database_url(value: str) -> str:
+    """Normalize provider-issued bare Postgres URLs to FDRE's psycopg v3 driver."""
+
+    if value.startswith("postgresql+"):
+        return value
+    if value.startswith("postgresql://"):
+        return "postgresql+psycopg://" + value[len("postgresql://") :]
+    if value.startswith("postgres://"):
+        return "postgresql+psycopg://" + value[len("postgres://") :]
+    return value
+
+
 class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
 
@@ -81,13 +93,7 @@ class Settings(BaseSettings):
     def _ensure_psycopg_driver(cls, value: str) -> str:
         """Normalize bare Postgres URLs (e.g. Railway's) to the psycopg driver."""
 
-        if value.startswith("postgresql+"):
-            return value
-        if value.startswith("postgresql://"):
-            return "postgresql+psycopg://" + value[len("postgresql://") :]
-        if value.startswith("postgres://"):
-            return "postgresql+psycopg://" + value[len("postgres://") :]
-        return value
+        return normalize_database_url(value)
 
     @property
     def cors_origin_list(self) -> list[str]:

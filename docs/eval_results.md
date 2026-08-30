@@ -144,7 +144,57 @@ After session-lifecycle, market-provider retry/circuit-breaker, and explicit-pri
 - fail-closed interval/identity behavior;
 - migration and unit coverage.
 
-No historical S&P membership performance/result is claimed yet. **HU-2 must first reconstruct and audit public membership evidence.** Until that audit exists, historical research should continue to label the current-constituent limitation explicitly.
+### First production-backed HU-2 coverage audit
+
+The read-only audit completed successfully on 2026-08-30 ([Actions run
+`33293629439`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33293629439)).
+It replayed two pinned public change sources plus a content-hashed SEC CIK lookup and produced
+audit ID `51149298c38040e01bc393f47eb96c48ad868cd65d55230a64a23107bf36f54b`.
+
+| Measurement | Result |
+| --- | ---: |
+| Date coverage | 1976-07-01 through 2026-08-18 |
+| Normalized evidence observations | 1,730 |
+| `shawnlinxl/snp-history` observations | 970 |
+| Wikipedia historical-component observations | 760 |
+| Production issuer/company rows | 499 |
+| Stable securities / historical identity periods | 0 / 0 |
+| Exact SEC issuer-name resolution | 545 |
+| No exact SEC historical-name match | 1,106 |
+| Exact name mapping to multiple CIKs | 79 |
+| Resolved security observations | 0 |
+| Verified/provisional/conflicting events | 0 / 0 / 0 |
+| Materialized/promoted membership intervals | 0 / 0 |
+
+This is a useful fail-closed result, not historical-universe coverage. HU-1 created the schema and
+snapshot contract but did not seed production stable securities. Consequently, **545 observations
+covering 437 unique CIKs resolve to an SEC issuer and then stop at the missing security layer**.
+The remaining work queues contain **1,106 observations / 868 normalized names** with no exact SEC
+name match and **79 observations / 62 normalized names** with dated CIK ambiguity.
+
+For the intended 2010+ research window, the audit has 1,055 observations: 291 resolve to an issuer,
+735 have no exact issuer-name match, and 29 are issuer-ambiguous. The stable-security resolution
+rate is therefore **0.0%**, versus the newly precommitted HU-2 pipeline-readiness floor of **95%**.
+
+Before identity resolution, the sources contain 241 exact cross-source event keys covering 482
+observations. Five same-date/same-symbol keys contain both additions and removals (`AET`, `GAS`,
+`JCI`, `FOX`, and `FOXA`). These are queued for corporate-action review; they are not automatically
+called source conflicts. No reconciled conflict count is yet meaningful because no observation
+resolved to a stable security.
+
+The committed present-day seed describes 503 constituent symbols, maps 502 through the issuer
+catalog, and leaves `CBOE` unmapped. It collapses those symbols to 499 issuer-ingestion tickers; it
+is not a stable listed-security master and must not be backdated. The ordered remediation is:
+
+1. complete the current constituent catalog and create evidenced present-day security identities,
+   preserving all share classes and creating no historical membership;
+2. add source-backed historical issuer aliases and dated CIK-successor adjudications;
+3. classify the five same-symbol corporate-action keys and retain genuine disagreements;
+4. add an independently sourced complete constituent anchor at or before 2010; and
+5. rerun until the gate in [`historical_universe_v1.md`](historical_universe_v1.md) passes.
+
+No historical S&P membership performance/result is claimed yet. Historical research must continue
+to label the current-constituent limitation explicitly, and HU-3/HU-4 remain gated on HU-2.
 
 ## Historical measurements retained for provenance
 
