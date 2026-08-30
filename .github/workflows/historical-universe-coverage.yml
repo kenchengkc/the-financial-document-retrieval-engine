@@ -13,11 +13,13 @@ on:
     paths:
       - ".github/workflows/historical-universe-coverage.yml"
       - "scripts/bootstrap_current_security_master.py"
+      - "scripts/historical_component_cik_audit.py"
       - "scripts/historical_security_seed_plan.py"
       - "scripts/historical_universe_alias_audit.py"
       - "scripts/historical_universe_anchor_audit.py"
       - "scripts/historical_universe_lineage_audit.py"
       - "scripts/historical_universe_coverage.py"
+      - "src/fdre/research/historical_component_history.py"
       - "src/fdre/research/historical_universe_anchor.py"
       - "src/fdre/research/historical_universe_lineage.py"
       - "src/fdre/research/historical_universe_sources.py"
@@ -97,15 +99,20 @@ jobs:
       - name: Resolve immutable source revisions
         run: |
           SNP_HISTORY_REF="$(gh api repos/shawnlinxl/snp-history/commits/master --jq .sha)"
+          COMPONENT_HISTORY_REF="$(gh api repos/lawcal/sp500-components-history/commits/main --jq .sha)"
           WIKIPEDIA_REVISION="$(curl --fail --location --retry 3 \
             -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
             'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=Historical_components_of_the_S%26P_500&rvprop=ids&format=json' \
             | python -c 'import json,sys; d=json.load(sys.stdin); print(next(iter(d["query"]["pages"].values()))["revisions"][0]["revid"])')"
           [[ "${SNP_HISTORY_REF}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${COMPONENT_HISTORY_REF}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${WIKIPEDIA_REVISION}" =~ ^[0-9]+$ ]]
           [[ "${HISTORICAL_ANCHOR_REF}" =~ ^[0-9a-f]{40}$ ]]
-          echo "SNP_HISTORY_REF=${SNP_HISTORY_REF}" >> "${GITHUB_ENV}"
-          echo "WIKIPEDIA_REVISION=${WIKIPEDIA_REVISION}" >> "${GITHUB_ENV}"
+          {
+            echo "SNP_HISTORY_REF=${SNP_HISTORY_REF}"
+            echo "COMPONENT_HISTORY_REF=${COMPONENT_HISTORY_REF}"
+            echo "WIKIPEDIA_REVISION=${WIKIPEDIA_REVISION}"
+          } >> "${GITHUB_ENV}"
 
       - name: Fetch pinned source copies
         run: |
@@ -127,6 +134,9 @@ jobs:
           curl --fail --location --retry 3 \
             "https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/sp500_ticker_start_end.csv" \
             --output "${SOURCE_DIR}/sp500-ticker-start-end.csv"
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/lawcal/sp500-components-history/${COMPONENT_HISTORY_REF}/data/components_history.csv" \
+            --output "${SOURCE_DIR}/components-history.csv"
 
       - name: Set audit observation time
         run: echo "HU2_OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_ENV}"
@@ -190,6 +200,20 @@ jobs:
             --snp-history-ref "${SNP_HISTORY_REF}" \
             --wikipedia-revision "${WIKIPEDIA_REVISION}" \
             --output "${OUTPUT_DIR}/ticker-lineage-audit.json"
+
+      - name: Measure historical component CIK recovery
+        run: |
+          python -m scripts.historical_component_cik_audit \
+            --database-url "${DATABASE_URL}" \
+            --snp-history "${SOURCE_DIR}/snp-history.csv" \
+            --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
+            --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
+            --component-history "${SOURCE_DIR}/components-history.csv" \
+            --component-history-ref "${COMPONENT_HISTORY_REF}" \
+            --observed-at "${HU2_OBSERVED_AT}" \
+            --snp-history-ref "${SNP_HISTORY_REF}" \
+            --wikipedia-revision "${WIKIPEDIA_REVISION}" \
+            --output "${OUTPUT_DIR}/component-cik-audit.json"
 
       - name: Publish summary
         if: always()
@@ -290,6 +314,26 @@ jobs:
               "projected_unique_cik_count", "projected_unique_lineage_count",
               "projected_missing_company_cik_count", "lineage_status_counts_for_baseline_failures",
               "residual_count",
+          )
+          print("```json")
+          print(json.dumps({key: payload[key] for key in keys}, indent=2, sort_keys=True))
+          print("```")
+          PY
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f "${OUTPUT_DIR}/component-cik-audit.json" ]; then
+            {
+              echo "### HU2 historical component CIK recovery"
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("data/processed/historical-universe/coverage/component-cik-audit.json").read_text())
+          keys = (
+              "target_evidence_count", "baseline_resolved_count", "component_history_record_count",
+              "component_history_symbol_count", "component_recovered_count", "projected_resolved_count",
+              "projected_resolution_rate", "projected_unique_cik_count", "residual_count",
+              "residual_component_status_counts",
           )
           print("```json")
           print(json.dumps({key: payload[key] for key in keys}, indent=2, sort_keys=True))
