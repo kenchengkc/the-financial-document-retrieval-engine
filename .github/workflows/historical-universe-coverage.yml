@@ -13,8 +13,11 @@ on:
     paths:
       - ".github/workflows/historical-universe-coverage.yml"
       - "scripts/bootstrap_current_security_master.py"
+      - "scripts/historical_security_seed_plan.py"
       - "scripts/historical_universe_alias_audit.py"
+      - "scripts/historical_universe_anchor_audit.py"
       - "scripts/historical_universe_coverage.py"
+      - "src/fdre/research/historical_universe_anchor.py"
       - "src/fdre/research/historical_universe_sources.py"
       - "src/fdre/research/historical_universe_pipeline.py"
       - "src/fdre/research/historical_universe_identity.py"
@@ -41,6 +44,7 @@ jobs:
       OUTPUT_DIR: data/processed/historical-universe/coverage
       SOURCE_DIR: data/cache/historical-universe-sources
       PYTHONPATH: .
+      HISTORICAL_ANCHOR_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
 
     steps:
       - name: Check required database secret
@@ -97,6 +101,7 @@ jobs:
             | python -c 'import json,sys; d=json.load(sys.stdin); print(next(iter(d["query"]["pages"].values()))["revisions"][0]["revid"])')"
           [[ "${SNP_HISTORY_REF}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${WIKIPEDIA_REVISION}" =~ ^[0-9]+$ ]]
+          [[ "${HISTORICAL_ANCHOR_REF}" =~ ^[0-9a-f]{40}$ ]]
           echo "SNP_HISTORY_REF=${SNP_HISTORY_REF}" >> "${GITHUB_ENV}"
           echo "WIKIPEDIA_REVISION=${WIKIPEDIA_REVISION}" >> "${GITHUB_ENV}"
 
@@ -114,6 +119,9 @@ jobs:
             -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
             "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt" \
             --output "${SOURCE_DIR}/sec-cik-lookup-data.txt"
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv" \
+            --output "${SOURCE_DIR}/sp500-complete-history.csv"
 
       - name: Set audit observation time
         run: echo "HU2_OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_ENV}"
@@ -141,6 +149,28 @@ jobs:
             --snp-history-ref "${SNP_HISTORY_REF}" \
             --wikipedia-revision "${WIKIPEDIA_REVISION}" \
             --output "${OUTPUT_DIR}/issuer-aliases.json"
+
+      - name: Emit complete target-window anchor
+        run: |
+          ANCHOR_URL="https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv"
+          python -m scripts.historical_universe_anchor_audit \
+            --input "${SOURCE_DIR}/sp500-complete-history.csv" \
+            --source-ref "${HISTORICAL_ANCHOR_REF}" \
+            --source-url "${ANCHOR_URL}" \
+            --observed-at "${HU2_OBSERVED_AT}" \
+            --output "${OUTPUT_DIR}/complete-snapshot-anchor.json"
+
+      - name: Plan historical security seeds
+        run: |
+          python -m scripts.historical_security_seed_plan \
+            --database-url "${DATABASE_URL}" \
+            --snp-history "${SOURCE_DIR}/snp-history.csv" \
+            --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
+            --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
+            --observed-at "${HU2_OBSERVED_AT}" \
+            --snp-history-ref "${SNP_HISTORY_REF}" \
+            --wikipedia-revision "${WIKIPEDIA_REVISION}" \
+            --output "${OUTPUT_DIR}/historical-security-seed-plan.json"
 
       - name: Publish summary
         if: always()
@@ -182,6 +212,47 @@ jobs:
           )}
           print("```json")
           print(json.dumps(summary, indent=2, sort_keys=True))
+          print("```")
+          PY
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f "${OUTPUT_DIR}/complete-snapshot-anchor.json" ]; then
+            {
+              echo "### HU2 complete target-window anchor"
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("data/processed/historical-universe/coverage/complete-snapshot-anchor.json").read_text())
+          summary = {key: payload[key] for key in (
+              "anchor_id", "effective_at", "constituent_count", "source", "source_ref",
+              "source_hash", "duplicate_display_symbols", "complete_target_window_anchor",
+          )}
+          print("```json")
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          print("```")
+          PY
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f "${OUTPUT_DIR}/historical-security-seed-plan.json" ]; then
+            {
+              echo "### HU2 historical security seed plan"
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("data/processed/historical-universe/coverage/historical-security-seed-plan.json").read_text())
+          keys = (
+              "target_missing_security_resolved_issuer_evidence_count",
+              "target_missing_security_resolved_issuer_cik_count",
+              "candidate_cik_count",
+              "candidate_target_evidence_count",
+              "candidate_missing_company_count",
+              "candidate_existing_company_without_security_count",
+              "exclusion_cik_counts",
+          )
+          print("```json")
+          print(json.dumps({key: payload[key] for key in keys}, indent=2, sort_keys=True))
           print("```")
           PY
             } >> "${GITHUB_STEP_SUMMARY}"
