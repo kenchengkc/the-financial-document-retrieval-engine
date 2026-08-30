@@ -132,10 +132,19 @@ def _yearly_resolution_rows(
 ) -> list[dict[str, object]]:
     counts_by_year: dict[int, Counter[str]] = defaultdict(Counter)
     ordered_evidence = tuple(sorted(evidence, key=lambda item: item.evidence_id))
-    for record, resolution in zip(ordered_evidence, result.resolutions, strict=True):
+    for record, resolution, issuer_resolution in zip(
+        ordered_evidence,
+        result.resolutions,
+        result.issuer_resolutions,
+        strict=True,
+    ):
         counts = counts_by_year[record.effective_at.year]
         counts["evidence"] += 1
         counts[f"security_{resolution.status}"] += 1
+        issuer_status = (
+            issuer_resolution.status if issuer_resolution is not None else "not_attempted"
+        )
+        counts[f"issuer_{issuer_status}"] += 1
         counts[f"source_{record.source}"] += 1
     for event in result.events:
         counts_by_year[event.effective_at.year][f"event_{event.verification_status}"] += 1
@@ -231,8 +240,16 @@ def main() -> int:
         engine.dispose()
 
     ordered_evidence = tuple(sorted(evidence, key=lambda item: item.evidence_id))
-    unresolved = [
-        {
+    unresolved: list[dict[str, object]] = []
+    for evidence_record, resolution, issuer_resolution in zip(
+        ordered_evidence,
+        result.resolutions,
+        result.issuer_resolutions,
+        strict=True,
+    ):
+        if resolution.status == "resolved":
+            continue
+        row: dict[str, object] = {
             "evidence_id": evidence_record.evidence_id,
             "source": evidence_record.source,
             "effective_at": evidence_record.effective_at.isoformat(),
@@ -244,13 +261,18 @@ def main() -> int:
             "reason": resolution.reason,
             "candidate_security_ids": list(resolution.candidate_security_ids),
         }
-        for evidence_record, resolution in zip(
-            ordered_evidence,
-            result.resolutions,
-            strict=True,
-        )
-        if resolution.status != "resolved"
-    ]
+        if issuer_resolution is not None:
+            row.update(
+                {
+                    "issuer_resolution_status": issuer_resolution.status,
+                    "issuer_cik": issuer_resolution.cik,
+                    "issuer_candidate_ciks": list(issuer_resolution.candidate_ciks),
+                    "issuer_reason": issuer_resolution.reason,
+                }
+            )
+        else:
+            row["issuer_resolution_status"] = "not_attempted"
+        unresolved.append(row)
     coverage_start = (
         result.audit.coverage_start.isoformat() if result.audit.coverage_start else None
     )
@@ -262,9 +284,20 @@ def main() -> int:
         "universe_code": result.audit.universe_code,
         "evidence_count": result.audit.evidence_count,
         "source_count": result.audit.source_count,
+        "source_evidence_counts": dict(
+            sorted(Counter(record.source for record in ordered_evidence).items())
+        ),
         "coverage_start": coverage_start,
         "coverage_end": coverage_end,
+        "issuer_name_evidence_count": len(issuer_evidence),
+        "issuer_name_count": issuer_index.name_count,
         "issuer_resolution_counts": dict(result.audit.issuer_resolution_counts),
+        "security_identity_record_count": len(identities),
+        "stable_security_count": len(securities),
+        "stable_common_stock_security_count": sum(
+            security.security_type == "common_stock" for security in securities
+        ),
+        "stable_security_cik_count": len({security.cik for security in securities}),
         "security_resolution_counts": dict(result.audit.security_resolution_counts),
         "security_resolution_method_counts": dict(
             result.audit.security_resolution_method_counts
@@ -277,6 +310,9 @@ def main() -> int:
         "provisional_interval_count": result.audit.provisional_interval_count,
         "materialization_issue_counts": dict(result.audit.materialization_issue_counts),
         "unresolved_or_ambiguous_count": len(unresolved),
+        "resolution_failure_reason_counts": dict(
+            sorted(Counter(str(row["reason"]) for row in unresolved).items())
+        ),
         "promoted_membership_count": 0,
     }
     manifest = _source_manifest(
