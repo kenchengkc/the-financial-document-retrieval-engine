@@ -4,7 +4,7 @@ from functools import lru_cache
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session
 
-from apps.api.app.config import get_settings
+from apps.api.app.config import get_settings, normalize_database_url
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_name)s",
@@ -24,7 +24,8 @@ class Base(DeclarativeBase):
 def create_db_engine(database_url: str | None = None) -> Engine:
     """Create a SQLAlchemy engine without connecting at import time."""
 
-    return create_engine(database_url or get_settings().database_url, pool_pre_ping=True)
+    normalized_url = normalize_database_url(database_url or get_settings().database_url)
+    return create_engine(normalized_url, pool_pre_ping=True)
 
 
 @lru_cache
