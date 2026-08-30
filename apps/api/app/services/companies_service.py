@@ -122,9 +122,10 @@ def _indexed_company_tickers(session: Session) -> list[str]:
     statement = (
         select(Company.ticker)
         .join(indexed_company_ids, indexed_company_ids.c.company_id == Company.id)
+        .where(Company.ticker.is_not(None))
         .order_by(Company.ticker)
     )
-    return list(session.scalars(statement))
+    return [ticker for ticker in session.scalars(statement) if ticker is not None]
 
 
 def list_companies(
@@ -210,6 +211,7 @@ def _indexed_company_rows(session: Session) -> list[CompanySummary]:
         .outerjoin(Document, Document.company_id == Company.id)
         .outerjoin(Chunk, Chunk.document_id == Document.id)
         .outerjoin(Embedding, Embedding.chunk_id == Chunk.id)
+        .where(Company.ticker.is_not(None))
         .group_by(Company.id)
         .order_by(Company.ticker)
     )
@@ -225,4 +227,5 @@ def _indexed_company_rows(session: Session) -> list[CompanySummary]:
             indexed=int(row.chunk_count or 0) > 0,
         )
         for row in rows
+        if row.ticker is not None
     ]
