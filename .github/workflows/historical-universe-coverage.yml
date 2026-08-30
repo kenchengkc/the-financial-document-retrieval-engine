@@ -1,0 +1,124 @@
+name: Historical Universe coverage audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/historical-universe-coverage.yml"
+      - "scripts/historical_universe_coverage.py"
+      - "src/fdre/research/historical_universe_sources.py"
+      - "src/fdre/research/historical_universe_pipeline.py"
+      - "src/fdre/research/historical_universe_identity.py"
+      - "src/fdre/research/historical_universe_evidence.py"
+      - "src/fdre/research/historical_universe_materialization.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-historical-universe-coverage
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Run read-only HU-2 coverage audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      OUTPUT_DIR: data/processed/historical-universe/coverage
+      SOURCE_DIR: data/cache/historical-universe-sources
+      PYTHONPATH: .
+
+    steps:
+      - name: Check required database secret
+        run: |
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[data]"
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Resolve immutable source revisions
+        run: |
+          SNP_HISTORY_REF="$(curl --fail --location --retry 3 \
+            https://api.github.com/repos/shawnlinxl/snp-history/commits/master \
+            | python -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          WIKIPEDIA_REVISION="$(curl --fail --location --retry 3 \
+            -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
+            'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=List_of_S%26P_500_companies&rvprop=ids&format=json' \
+            | python -c 'import json,sys; d=json.load(sys.stdin); print(next(iter(d["query"]["pages"].values()))["revisions"][0]["revid"])')"
+          echo "SNP_HISTORY_REF=${SNP_HISTORY_REF}" >> "${GITHUB_ENV}"
+          echo "WIKIPEDIA_REVISION=${WIKIPEDIA_REVISION}" >> "${GITHUB_ENV}"
+
+      - name: Fetch pinned source copies
+        run: |
+          mkdir -p "${SOURCE_DIR}"
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/shawnlinxl/snp-history/${SNP_HISTORY_REF}/data/history.csv" \
+            --output "${SOURCE_DIR}/snp-history.csv"
+          curl --fail --location --retry 3 \
+            -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
+            "https://en.wikipedia.org/w/index.php?title=List_of_S%26P_500_companies&oldid=${WIKIPEDIA_REVISION}" \
+            --output "${SOURCE_DIR}/wikipedia-sp500-companies.html"
+          curl --fail --location --retry 3 \
+            -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
+            "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt" \
+            --output "${SOURCE_DIR}/sec-cik-lookup-data.txt"
+
+      - name: Run coverage audit
+        run: |
+          OBSERVED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python -m scripts.historical_universe_coverage \
+            --database-url "${DATABASE_URL}" \
+            --snp-history "${SOURCE_DIR}/snp-history.csv" \
+            --wikipedia-html "${SOURCE_DIR}/wikipedia-sp500-companies.html" \
+            --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" \
+            --observed-at "${OBSERVED_AT}" \
+            --snp-history-ref "${SNP_HISTORY_REF}" \
+            --wikipedia-revision "${WIKIPEDIA_REVISION}" \
+            --output-dir "${OUTPUT_DIR}"
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f "${OUTPUT_DIR}/coverage.json" ]; then
+            {
+              echo "### Historical Universe coverage audit"
+              echo
+              echo '```json'
+              cat "${OUTPUT_DIR}/coverage.json"
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-universe-coverage-${{ github.run_id }}
+          path: data/processed/historical-universe/coverage
+          if-no-files-found: warn

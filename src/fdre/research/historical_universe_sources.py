@@ -16,18 +16,25 @@ from fdre.research.historical_universe_evidence import (
 
 
 class WikipediaHistoricalComponentsAdapter:
-    """Parse a local HTML copy of Wikipedia's S&P 500 historical-components table.
+    """Parse Wikipedia's S&P 500 component-change table from a local HTML copy.
 
-    The source page is attributed in every record. FDRE does not download or bundle Wikipedia
-    content. Rows that are explicitly ticker/name changes are skipped because they describe an
-    identity mutation rather than entry to or exit from the index.
+    The maintained table lives on ``List of S&P 500 companies``. The source revision is
+    attributed in every record when callers provide a pinned ``oldid`` URL. FDRE does not
+    download or bundle Wikipedia content. Rows that are explicitly ticker/name changes are
+    skipped because they describe identity mutation rather than index entry or exit.
     """
 
     source_name = "wikipedia-sp500-historical-components"
-    source_url = "https://en.wikipedia.org/wiki/Historical_components_of_the_S%26P_500"
+    default_source_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
-    def __init__(self, *, universe_code: str = "sp500") -> None:
+    def __init__(
+        self,
+        *,
+        universe_code: str = "sp500",
+        source_url: str | None = None,
+    ) -> None:
         self.universe_code = universe_code
+        self.source_url = source_url or self.default_source_url
 
     @staticmethod
     def _parse_date(value: str, row_number: int) -> date:
@@ -46,7 +53,7 @@ class WikipediaHistoricalComponentsAdapter:
             header = " ".join(table.stripped_strings)
             if all(token in header for token in ("Effective Date", "Added", "Removed", "Reason")):
                 return table
-        raise ValueError("could not find Wikipedia S&P 500 historical-components table")
+        raise ValueError("could not find Wikipedia S&P 500 component-change table")
 
     @staticmethod
     def _is_identity_only(reason: str) -> bool:
