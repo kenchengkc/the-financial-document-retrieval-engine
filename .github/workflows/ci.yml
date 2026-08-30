@@ -113,3 +113,79 @@ jobs:
 
       - name: End-to-end tests
         run: npm run test:e2e
+
+  prune-obsolete-workflow-runs:
+    name: Prune obsolete workflow history
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, 'chore: prune obsolete Actions workflows')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Delete runs for workflows no longer in the live allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          keep_paths='[
+            ".github/workflows/ci.yml",
+            ".github/workflows/company-facts.yml",
+            ".github/workflows/flagship-risk-churn-acceleration.yml",
+            ".github/workflows/historical-universe-coverage.yml",
+            ".github/workflows/ingest.yml",
+            ".github/workflows/signal-study.yml",
+            ".github/workflows/sp500-ingest.yml"
+          ]'
+
+          workflows_json="$(gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            | jq -s '{workflows: map(.workflows) | add}')"
+
+          mapfile -t stale_rows < <(
+            jq -r --argjson keep "${keep_paths}" '
+              .workflows[]
+              | select((.path as $path | $keep | index($path)) == null)
+              | [.id, .name, .path, .state] | @tsv
+            ' <<< "${workflows_json}"
+          )
+
+          echo "Found ${#stale_rows[@]} obsolete workflow registrations."
+          total_deleted=0
+          {
+            echo "### Obsolete Actions workflow purge"
+            echo
+            echo "| Workflow | Path | State | Runs deleted |"
+            echo "| --- | --- | --- | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          for row in "${stale_rows[@]}"; do
+            IFS=$'\t' read -r workflow_id workflow_name workflow_path workflow_state <<< "${row}"
+            mapfile -t run_ids < <(
+              gh api --paginate \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?per_page=100" \
+                --jq '.workflow_runs[] | select(.status == "completed") | .id'
+            )
+
+            deleted=0
+            for run_id in "${run_ids[@]}"; do
+              gh api --method DELETE \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+              deleted=$((deleted + 1))
+            done
+            total_deleted=$((total_deleted + deleted))
+            printf '| %s | `%s` | `%s` | %d |\n' \
+              "${workflow_name}" "${workflow_path}" "${workflow_state}" "${deleted}" \
+              >> "${GITHUB_STEP_SUMMARY}"
+          done
+
+          echo "Deleted ${total_deleted} completed runs from obsolete workflow registrations."
+          echo "TOTAL_OBSOLETE_WORKFLOW_RUNS_DELETED=${total_deleted}" >> "${GITHUB_ENV}"
