@@ -12,6 +12,8 @@ from fdre.research.historical_universe_identity import (
     SecCikLookupAdapter,
     SecCikNameIndex,
     StableSecurityRecord,
+    derive_cross_source_issuer_aliases,
+    issuer_resolution_uses_cross_source_alias,
     resolve_issuer_name,
     resolve_membership_with_sec_issuer_fallback,
 )
@@ -44,6 +46,7 @@ def _membership_evidence(
                 "event_type": event_type,
                 "effective_at": effective_at.isoformat(),
                 "symbol": symbol,
+                "name": name,
             }
         ),
     )
@@ -162,6 +165,159 @@ def test_sec_lookup_can_filter_large_file_to_observed_names(tmp_path: Path) -> N
     assert [record.cik for record in records] == ["0000000002"]
 
 
+def test_cross_source_alias_requires_exact_event_and_independent_sec_backed_peer() -> None:
+    sec_record = SecCikLookupAdapter.parse_line(
+        "ALPHA CORPORATION:0000000001:\n",
+        observed_at=OBSERVED_AT,
+    )
+    assert sec_record is not None
+    sec_index = SecCikNameIndex((sec_record,))
+    effective_at = date(2012, 6, 1)
+    exact = _membership_evidence(
+        source="source-a",
+        event_type="addition",
+        effective_at=effective_at,
+        name="Alpha Corporation",
+    )
+    alias = _membership_evidence(
+        source="source-b",
+        event_type="addition",
+        effective_at=effective_at,
+        name="Alpha Corp",
+    )
+
+    aliases = derive_cross_source_issuer_aliases((alias, exact), sec_index=sec_index)
+
+    assert len(aliases) == 1
+    derived = aliases[0]
+    assert derived.cik == "0000000001"
+    assert derived.raw_name == "Alpha Corp"
+    assert derived.normalized_name == "alpha corp"
+    assert derived.supporting_sources == ("source-a",)
+    assert derived.supporting_evidence_ids == (exact.evidence_id,)
+    assert derived.target_evidence_id == alias.evidence_id
+    assert len(derived.alias_id) == 64
+
+
+def test_cross_source_alias_fails_closed_without_independent_support() -> None:
+    sec_record = SecCikLookupAdapter.parse_line(
+        "ALPHA CORPORATION:0000000001:\n",
+        observed_at=OBSERVED_AT,
+    )
+    assert sec_record is not None
+    sec_index = SecCikNameIndex((sec_record,))
+    effective_at = date(2012, 6, 1)
+    exact = _membership_evidence(
+        source="source-a",
+        event_type="addition",
+        effective_at=effective_at,
+        name="Alpha Corporation",
+    )
+    same_source_alias = _membership_evidence(
+        source="source-a",
+        event_type="addition",
+        effective_at=effective_at,
+        name="Alpha Corp",
+    )
+
+    assert not derive_cross_source_issuer_aliases(
+        (exact, same_source_alias),
+        sec_index=sec_index,
+    )
+
+
+def test_cross_source_alias_fails_closed_on_conflicting_sec_ciks() -> None:
+    first = SecCikLookupAdapter.parse_line(
+        "ALPHA CORPORATION:0000000001:\n",
+        observed_at=OBSERVED_AT,
+    )
+    second = SecCikLookupAdapter.parse_line(
+        "ALPHA HOLDINGS:0000000002:\n",
+        observed_at=OBSERVED_AT,
+    )
+    assert first is not None and second is not None
+    sec_index = SecCikNameIndex((first, second))
+    effective_at = date(2012, 6, 1)
+    evidence = (
+        _membership_evidence(
+            source="source-a",
+            event_type="addition",
+            effective_at=effective_at,
+            name="Alpha Corporation",
+        ),
+        _membership_evidence(
+            source="source-b",
+            event_type="addition",
+            effective_at=effective_at,
+            name="Alpha Holdings",
+        ),
+        _membership_evidence(
+            source="source-c",
+            event_type="addition",
+            effective_at=effective_at,
+            name="Alpha Corp",
+        ),
+    )
+
+    assert not derive_cross_source_issuer_aliases(evidence, sec_index=sec_index)
+
+
+def test_hu2_pipeline_resolves_one_hop_cross_source_alias_without_fuzzy_matching() -> None:
+    sec_record = SecCikLookupAdapter.parse_line(
+        "ALPHA CORPORATION:0000000001:\n",
+        observed_at=OBSERVED_AT,
+    )
+    assert sec_record is not None
+    sec_index = SecCikNameIndex((sec_record,))
+    effective_at = date(2012, 6, 1)
+    evidence = (
+        _membership_evidence(
+            source="source-a",
+            event_type="addition",
+            effective_at=effective_at,
+            name="Alpha Corporation",
+        ),
+        _membership_evidence(
+            source="source-b",
+            event_type="addition",
+            effective_at=effective_at,
+            name="Alpha Corp",
+        ),
+    )
+
+    result = run_hu2_reconstruction(
+        evidence,
+        identities=(),
+        issuer_index=sec_index,
+        securities=(StableSecurityRecord(security_id=11, cik="0000000001"),),
+    )
+
+    assert result.audit.derived_issuer_alias_evidence_count == 1
+    assert result.audit.derived_issuer_alias_name_count == 1
+    assert len(result.derived_issuer_aliases) == 1
+    resolutions = {
+        record.raw_name: (resolution, issuer)
+        for record, resolution, issuer in zip(
+            sorted(evidence, key=lambda item: item.evidence_id),
+            result.resolutions,
+            result.issuer_resolutions,
+            strict=True,
+        )
+    }
+    exact_resolution, exact_issuer = resolutions["Alpha Corporation"]
+    alias_resolution, alias_issuer = resolutions["Alpha Corp"]
+    assert exact_resolution.status == "resolved"
+    assert exact_resolution.confidence == 0.90
+    assert exact_issuer is not None
+    assert not issuer_resolution_uses_cross_source_alias(exact_issuer)
+    assert alias_resolution.status == "resolved"
+    assert alias_resolution.security_id == 11
+    assert alias_resolution.confidence == 0.85
+    assert alias_issuer is not None
+    assert issuer_resolution_uses_cross_source_alias(alias_issuer)
+    assert result.audit.verified_event_count == 1
+
+
 def test_wikipedia_adapter_parses_membership_rows_and_skips_ticker_changes(
     tmp_path: Path,
 ) -> None:
@@ -258,6 +414,7 @@ def test_two_real_source_shapes_can_verify_and_materialize_via_sec_issuer_identi
     assert result.audit.verified_event_count == 2
     assert result.audit.materialized_interval_count == 1
     assert result.audit.verified_interval_count == 1
+    assert result.audit.derived_issuer_alias_evidence_count == 0
     assert dict(result.audit.issuer_resolution_counts) == {"resolved": 4}
     assert dict(result.audit.security_resolution_counts) == {"resolved": 4}
     assert len(result.audit.audit_id) == 64
@@ -291,3 +448,4 @@ def test_hu2_audit_is_deterministic_under_input_order() -> None:
 
     assert left.audit.audit_id == right.audit.audit_id
     assert left.events == right.events
+    assert left.derived_issuer_aliases == right.derived_issuer_aliases
