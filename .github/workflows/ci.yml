@@ -184,7 +184,7 @@ jobs:
               deleted=$((deleted + 1))
             done
             total_deleted=$((total_deleted + deleted))
-            printf '| %s | `%s` | `%s` | %d |\n' \
+            printf "| %s | \`%s\` | \`%s\` | %d |\n" \
               "${workflow_name}" "${workflow_path}" "${workflow_state}" "${deleted}" \
               >> "${GITHUB_STEP_SUMMARY}"
           done
