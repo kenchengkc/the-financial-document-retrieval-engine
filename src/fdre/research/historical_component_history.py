@@ -122,13 +122,27 @@ class HistoricalComponentHistoryAdapter:
                 symbol = normalize_symbol(row["symbol"] or "")
                 raw_cik = (row["cik"] or "").strip()
                 name = (row["name"] or "").strip()
-                effective_from, added_approximate = _parse_source_date(row["date_added"] or "")
-                effective_to, removed_approximate = _parse_source_date(row["date_removed"] or "")
+                effective_from, added_approximate = _parse_source_date(
+                    row["date_added"] or ""
+                )
+                effective_to, removed_approximate = _parse_source_date(
+                    row["date_removed"] or ""
+                )
                 created_at, _ = _parse_source_date(row["created_at"] or "")
-                if not symbol or not raw_cik or not name or effective_from is None or created_at is None:
+                required_values_present = (
+                    bool(symbol)
+                    and bool(raw_cik)
+                    and bool(name)
+                    and effective_from is not None
+                    and created_at is not None
+                )
+                if not required_values_present:
                     raise ValueError(f"invalid historical component row {row_number}")
                 if effective_to is not None and effective_to <= effective_from:
-                    raise ValueError(f"non-positive historical component interval on row {row_number}")
+                    raise ValueError(
+                        "non-positive historical component interval "
+                        f"on row {row_number}"
+                    )
                 rows.append(
                     HistoricalComponentRecord(
                         symbol=symbol,
