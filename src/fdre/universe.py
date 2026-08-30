@@ -249,16 +249,18 @@ def write_universe_snapshot(
     snapshot: UniverseSnapshot,
     path: Path | str,
     *,
-    format: UniverseExportFormat | None = None,
+    export_format: UniverseExportFormat | None = None,
 ) -> Path:
     """Export one replayable universe snapshot as JSON or Parquet."""
 
     output = Path(path)
-    export_format = format or ("parquet" if output.suffix.lower() == ".parquet" else "json")
-    if export_format not in {"json", "parquet"}:
-        raise ValueError(f"unsupported universe export format: {export_format}")
+    resolved_format = export_format or (
+        "parquet" if output.suffix.lower() == ".parquet" else "json"
+    )
+    if resolved_format not in {"json", "parquet"}:
+        raise ValueError(f"unsupported universe export format: {resolved_format}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    if export_format == "json":
+    if resolved_format == "json":
         output.write_text(
             json.dumps(snapshot_to_dict(snapshot), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
