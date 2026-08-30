@@ -14,6 +14,7 @@ from apps.api.app.routes.operations import router as operations_router
 from apps.api.app.routes.research import router as research_router
 from apps.api.app.routes.research_profiled import router as research_profiled_router
 from apps.api.app.routes.search import router as search_router
+from apps.api.app.routes.universe import router as universe_router
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     # the deployed semantic bottleneck is measured and optimized.
     app.include_router(research_profiled_router)
     app.include_router(research_router)
+    app.include_router(universe_router)
     app.include_router(search_router)
     return app
 
