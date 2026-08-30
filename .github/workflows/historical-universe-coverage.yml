@@ -28,6 +28,7 @@ jobs:
     env:
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      GH_TOKEN: ${{ github.token }}
       OUTPUT_DIR: data/processed/historical-universe/coverage
       SOURCE_DIR: data/cache/historical-universe-sources
       PYTHONPATH: .
@@ -64,9 +65,7 @@ jobs:
 
       - name: Resolve immutable source revisions
         run: |
-          SNP_HISTORY_REF="$(curl --fail --location --retry 3 \
-            https://api.github.com/repos/shawnlinxl/snp-history/commits/master \
-            | python -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          SNP_HISTORY_REF="$(gh api repos/shawnlinxl/snp-history/commits/master --jq .sha)"
           WIKIPEDIA_REVISION="$(curl --fail --location --retry 3 \
             -H "User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com" \
             'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=Historical_components_of_the_S%26P_500&rvprop=ids&format=json' \
