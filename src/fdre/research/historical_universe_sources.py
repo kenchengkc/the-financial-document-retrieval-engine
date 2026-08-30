@@ -24,7 +24,7 @@ class WikipediaHistoricalComponentsAdapter:
     skipped because they describe identity mutation rather than index entry or exit.
     """
 
-    source_name = "wikipedia-sp500-component-changes"
+    source_name = "wikipedia-sp500-historical-components"
     default_source_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
     def __init__(

@@ -2,6 +2,16 @@ name: Historical Universe coverage audit
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/historical-universe-coverage.yml"
+      - "scripts/historical_universe_coverage.py"
+      - "src/fdre/research/historical_universe_sources.py"
+      - "src/fdre/research/historical_universe_pipeline.py"
+      - "src/fdre/research/historical_universe_identity.py"
+      - "src/fdre/research/historical_universe_evidence.py"
+      - "src/fdre/research/historical_universe_materialization.py"
 
 permissions:
   contents: read
