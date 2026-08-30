@@ -28,7 +28,9 @@ def test_source_manifest_records_hashes_and_pins(tmp_path: Path) -> None:
     sources = cast(dict[str, dict[str, object]], manifest["sources"])
     assert sources["snp_history"]["sha256"] == _sha256_file(snp)
     assert sources["snp_history"]["git_ref"] == "abc123"
-    assert sources["wikipedia_sp500_component_changes"]["revision"] == "1234567890"
+    wikipedia = sources["wikipedia_historical_components"]
+    assert wikipedia["revision"] == "1234567890"
+    assert wikipedia["title"] == "Historical components of the S&P 500"
     assert sources["sec_cik_lookup"]["sha256"] == _sha256_file(sec)
     assert manifest["observed_at"] == observed_at.isoformat()
 

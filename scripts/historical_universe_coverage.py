@@ -112,7 +112,7 @@ def _load_sources(
         else None
     )
     wiki_url = (
-        "https://en.wikipedia.org/w/index.php?title=List_of_S%26P_500_companies"
+        "https://en.wikipedia.org/w/index.php?title=Historical_components_of_the_S%26P_500"
         f"&oldid={wikipedia_revision}"
         if wikipedia_revision
         else None
@@ -166,10 +166,11 @@ def _source_manifest(
                 "sha256": _sha256_file(snp_history),
                 "git_ref": snp_history_ref,
             },
-            "wikipedia_sp500_component_changes": {
+            "wikipedia_historical_components": {
                 "path": wikipedia_html.name,
                 "sha256": _sha256_file(wikipedia_html),
                 "revision": wikipedia_revision,
+                "title": "Historical components of the S&P 500",
             },
             "sec_cik_lookup": {
                 "path": sec_cik_lookup.name,
