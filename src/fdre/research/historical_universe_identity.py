@@ -323,11 +323,11 @@ def resolve_issuer_name(raw_name: str | None, index: SecCikNameIndex) -> IssuerN
     elif len(ciks) > 1:
         status = "ambiguous"
         cik = None
-        reason = "exact normalized issuer name maps to multiple CIKs"
+        reason = "exact normalized SEC name maps to multiple CIKs"
     else:
         status = "unresolved"
         cik = None
-        reason = "no exact normalized issuer-name evidence match"
+        reason = "no exact normalized SEC historical name match"
     resolution_hash = _sha256_json(
         {
             "schema_version": _ISSUER_RESOLUTION_SCHEMA_VERSION,
@@ -362,7 +362,8 @@ def derive_cross_source_issuer_aliases(
     supporting names. Derived aliases are never fed back into this derivation, preventing
     transitive alias chains. A group is eligible only when at least two independent source names
     describe the exact same universe/date/event-type/symbol key and all SEC-resolved support
-    points to one CIK.
+    points to one CIK. If the same normalized alias is independently derived to different CIKs,
+    every derivation for that alias is discarded rather than converted into a guess.
     """
 
     by_event: dict[tuple[str, date, str, str], list[MembershipEvidence]] = defaultdict(list)
@@ -444,9 +445,17 @@ def derive_cross_source_issuer_aliases(
                 )
             )
 
+    ciks_by_alias: dict[str, set[str]] = defaultdict(set)
+    for alias in aliases:
+        ciks_by_alias[alias.normalized_name].add(alias.cik)
+    conflicting_names = {
+        normalized_name
+        for normalized_name, ciks in ciks_by_alias.items()
+        if len(ciks) > 1
+    }
     return tuple(
         sorted(
-            aliases,
+            (alias for alias in aliases if alias.normalized_name not in conflicting_names),
             key=lambda item: (
                 item.normalized_name,
                 item.cik,
@@ -532,7 +541,7 @@ def resolve_membership_with_sec_issuer_fallback(
                 method="unresolved",
                 confidence=0.0,
                 candidate_security_ids=candidates,
-                reason="issuer resolved but multiple common-stock securities remain",
+                reason="SEC issuer resolved but multiple common-stock securities remain",
             ),
             issuer,
         )
@@ -542,7 +551,7 @@ def resolve_membership_with_sec_issuer_fallback(
             status="unresolved",
             method="unresolved",
             confidence=0.0,
-            reason="issuer resolved but no stable common-stock security exists in FDRE",
+            reason="SEC issuer resolved but no stable common-stock security exists in FDRE",
         ),
         issuer,
     )
