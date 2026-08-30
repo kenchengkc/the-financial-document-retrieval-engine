@@ -19,6 +19,7 @@ from fdre.research.historical_universe_evidence import (
 )
 from fdre.research.historical_universe_identity import (
     DerivedIssuerAliasEvidence,
+    IssuerNameEvidence,
     IssuerNameResolution,
     SecCikNameIndex,
     StableSecurityRecord,
@@ -36,6 +37,25 @@ _PIPELINE_SCHEMA_VERSION = "fdre-hu2-reconstruction-audit-v2"
 def _hash(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+class _AliasAugmentedIssuerIndex(SecCikNameIndex):
+    """Read-only one-hop overlay over the pinned SEC issuer-name index."""
+
+    def __init__(
+        self,
+        base: SecCikNameIndex,
+        aliases: Sequence[IssuerNameEvidence],
+    ) -> None:
+        self._base = base
+        self._alias_index = SecCikNameIndex(aliases)
+
+    def lookup(self, raw_name: str | None) -> tuple[IssuerNameEvidence, ...]:
+        return (*self._base.lookup(raw_name), *self._alias_index.lookup(raw_name))
+
+    @property
+    def name_count(self) -> int:
+        raise RuntimeError("combined alias overlay does not expose a standalone name count")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,8 +106,8 @@ def run_hu2_reconstruction(
     """Resolve, reconcile, materialize, and audit one HU-2 evidence batch.
 
     ``issuer_index`` is the pinned SEC exact-name index. R1 derives one-hop aliases only from
-    exact cross-source membership-event agreement against that SEC index, then uses the combined
-    source-backed index for resolution. Derived aliases never feed back into alias derivation.
+    exact cross-source membership-event agreement against that SEC index, then uses a read-only
+    overlay for resolution. Derived aliases never feed back into alias derivation.
     """
 
     ordered_evidence = tuple(sorted(evidence, key=lambda item: item.evidence_id))
@@ -95,11 +115,9 @@ def run_hu2_reconstruction(
         ordered_evidence,
         sec_index=issuer_index,
     )
-    combined_issuer_index = SecCikNameIndex(
-        (
-            *issuer_index.records,
-            *(alias.as_issuer_name_evidence() for alias in derived_aliases),
-        )
+    combined_issuer_index = _AliasAugmentedIssuerIndex(
+        issuer_index,
+        tuple(alias.as_issuer_name_evidence() for alias in derived_aliases),
     )
 
     resolutions: list[IdentityResolution] = []
