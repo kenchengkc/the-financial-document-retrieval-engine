@@ -2,7 +2,7 @@
 
 FDRE is point-in-time financial research infrastructure for technically sophisticated research and engineering audiences. The product bar is not “interesting AI demo”; it is **credible research infrastructure**: correct historical data, reproducible experiments, auditable lineage, strong retrieval, statistically disciplined signal research, predictable latency, and explicit failure behavior.
 
-> Status reviewed against `main` on **2026-08-29**.
+> Status reviewed against `main` on **2026-08-30**.
 
 ## Product principles
 
@@ -49,6 +49,9 @@ Redis, Kafka, Elasticsearch/OpenSearch, Snowflake, a dedicated feature store, an
 - Flagship risk-churn acceleration study with precommitted walk-forward windows, purged unrealized outcomes, implementation-cost accounting, sector robustness, promotion gates, immutable artifacts, and honest `PROMOTE` / `REJECT` / `INSUFFICIENT` outcomes.
 - Market-data cache/retry/circuit-breaker hardening.
 - **Historical Universe HU-1:** stable security layer, time-varying identity/membership schema, provenance/confidence/verification state, deterministic PIT snapshot contract, Alembic migration, and tests.
+- **Historical Universe HU-3:** DB-backed PIT universe API, deterministic snapshot IDs,
+  constituent provenance, strict/provisional modes, JSON/Parquet export, replay and leakage tests,
+  and research-panel composition.
 
 ### Current measured flagship state
 
@@ -79,7 +82,7 @@ Implemented:
 
 ### HU-2 — Membership reconstruction
 
-**Status: ACTIVE / PRODUCTION AUDIT COMPLETE; REMEDIATION REQUIRED.**
+**Status: ACTIVE / IDENTITY-RESOLUTION FLOOR PROJECTED; PRODUCTION PROMOTION NOT COMPLETE.**
 
 Build a reproducible evidence-reconciliation pipeline for historical index membership.
 
@@ -96,30 +99,36 @@ Required outputs:
 
 **HU-2 promotion gate:** do not integrate historical membership into flagship research until the coverage audit can characterize where history is trustworthy and where it is provisional.
 
-The first production-backed audit now characterizes the blocking gaps. The ordered remediation
-sequence is:
+The first production-backed audit now characterizes the blocking gaps. R0/R1 created the current
+security prerequisite and evidence-scoped aliases. Subsequent pinned, read-only measurements added
+an independent 2010 anchor, exact ticker lineage, and historical component CIK evidence. The latest
+component-history projection resolves **1,043 / 1,055 (98.86%)** target-window observations, but
+that is a projection rather than a production write or a passed materialization gate.
 
-1. bootstrap the present-day stable-security/identity layer without creating historical
-   membership;
-2. persist source-backed historical issuer aliases and adjudicate dated CIK successor/reincorporation
-   cases;
-3. classify same-symbol corporate actions and genuine source disagreement;
-4. add an independently sourced complete target-window anchor; and
-5. rerun the deterministic audit until the canonical HU-2 promotion gate is satisfied.
+The remaining sequence is:
+
+1. materialize historical issuers, securities, identities, and memberships without synthetic
+   current tickers or guessed dates;
+2. prove the written state has one Alembic head, no interval overlap, deterministic replay, and
+   agreement with the pinned complete anchor at audited dates;
+3. keep non-agreeing boundaries provisional and publish the residual 12-row identity queue; and
+4. rerun the production audit until the canonical HU-2 promotion gate is satisfied.
 
 Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
 definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
 
 ### HU-3 — Universe API / SDK
 
-Expose strict PIT universe resolution:
+**Status: COMPLETE (merged 2026-08-30).**
+
+Strict PIT universe resolution is exposed through:
 
 ```python
 fdre.universe("sp500", as_of="2020-03-20")
 fdre.universe("sp500", as_of="2020-03-20", include_provisional=True)
 ```
 
-Acceptance criteria:
+Implemented:
 
 - deterministic snapshot IDs;
 - constituent-level source lineage;
@@ -208,9 +217,9 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Remediate the measured HU-2 identity and coverage gaps.**
+**Finish and verify HU-2 production materialization.**
 
-Do not start the decade-scale filing backfill yet. First populate the stable-security prerequisite,
-resolve the evidence queues without guessing, add a complete historical anchor, and satisfy the
-promotion gate. Once that contract is credible, HU-3 can expose it programmatically and HU-4 can
+Do not start the decade-scale filing backfill yet. First validate the production write against the
+complete historical anchor and all fail-closed interval rules, publish the residual queue, and
+satisfy the promotion gate. HU-3 is implemented; once HU-2's written state is credible, HU-4 can
 safely spend compute/storage on longer history.

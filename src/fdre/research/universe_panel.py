@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models.companies import Company
 from fdre.research.historical_universe import UniverseSnapshot
-from fdre.research.panel import ResearchPanel, ResearchPanelQuery, build_research_panel
+from fdre.research.panel import (
+    ResearchPanel,
+    ResearchPanelQuery,
+    build_research_panel,
+    empty_research_panel,
+)
 from fdre.universe import universe_from_session
 
 
@@ -69,5 +74,9 @@ def build_research_panel_for_universe(
             "as_of": panel_as_of,
         }
     )
-    panel = build_research_panel(session, composed_query)
+    panel = (
+        build_research_panel(session, composed_query)
+        if ciks
+        else empty_research_panel(composed_query)
+    )
     return UniverseResearchPanel(universe_snapshot=snapshot, panel=panel)

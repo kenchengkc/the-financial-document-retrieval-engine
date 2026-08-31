@@ -259,6 +259,35 @@ already-resolved issuer queue, while preserving share-class distinctions and dat
 lineage. Creating one historical security per CIK without listed-security evidence would violate the
 HU fail-closed contract and is explicitly out of scope.
 
+### HU-2 exact-lineage and component-history checkpoint
+
+The latest successful read-only audit on `main` is [Actions run
+`33330177836`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33330177836).
+It preserves the post-R1 production state while measuring two additional pinned identity sources
+and a complete historical anchor. These are projected recoveries; the workflow did not write
+historical membership or promote HU-2.
+
+| Measurement | Exact ticker lineage | Historical component CIK |
+| --- | ---: | ---: |
+| 2010+ target observations | 1,055 | 1,055 |
+| Post-R1 baseline resolved | 147 | 147 |
+| Additional projected recoveries | 261 | **896** |
+| Projected resolved observations | 408 | **1,043** |
+| Projected resolution rate | 38.67% | **98.86%** |
+| Residual observations | 647 | **12** |
+| Projected unique CIKs | 193 | **539** |
+
+The independently pinned complete anchor contains **501 constituents at 2010-01-01** and replays
+from source ref `c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff`. The component-history residual is
+11 unresolved observations plus one ambiguous observation. The existing production audit remains
+at **147 / 1,055 (13.93%)** until the projected identities are safely materialized and re-audited.
+
+Crossing the 95% identity-resolution floor does not by itself pass HU-2. The production gate must
+also verify the state actually written: a complete current catalog, non-overlapping membership and
+identity intervals, explicit treatment of every provisional boundary, agreement with the pinned
+anchor at audited dates, deterministic snapshot replay, and a published unresolved queue. Until
+those checks pass, HU-2 remains active and strict historical research remains gated.
+
 ## Historical measurements retained for provenance
 
 Earlier snapshots/results remain useful for showing improvement over time but are no longer the current headline:
