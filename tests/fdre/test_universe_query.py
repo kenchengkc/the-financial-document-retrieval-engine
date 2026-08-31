@@ -188,3 +188,17 @@ def test_parquet_export_is_row_addressable_and_carries_snapshot_metadata(
     assert table.num_rows == 1
     assert table.column("symbol").to_pylist() == ["ABC"]
     assert table.schema.metadata[b"fdre_snapshot_id"].decode() == snapshot.snapshot_id
+
+
+def test_empty_parquet_export_preserves_the_snapshot_schema(tmp_path: Path) -> None:
+    pyarrow = pytest.importorskip("pyarrow.parquet")
+    with _session() as session:
+        snapshot = universe_from_session(session, "sp500", as_of="2021-01-01")
+
+    output = write_universe_snapshot(snapshot, tmp_path / "empty-snapshot.parquet")
+    table = pyarrow.read_table(output)
+
+    assert table.num_rows == 0
+    assert "symbol" in table.column_names
+    assert "membership_source_hash" in table.column_names
+    assert table.schema.metadata[b"fdre_snapshot_id"].decode() == snapshot.snapshot_id

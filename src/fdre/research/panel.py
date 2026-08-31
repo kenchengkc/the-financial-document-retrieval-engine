@@ -206,6 +206,17 @@ class ResearchPanel(BaseModel):
     rows: list[ResearchPanelRow]
 
 
+def empty_research_panel(query: ResearchPanelQuery) -> ResearchPanel:
+    """Return the canonical empty panel without executing an unfiltered document query."""
+
+    return ResearchPanel(
+        query=query,
+        feature_version=FEATURE_VERSION,
+        corpus_snapshot_id=_corpus_snapshot_id([]),
+        rows=[],
+    )
+
+
 def build_research_panel(
     session: Session,
     query: ResearchPanelQuery,
@@ -247,13 +258,7 @@ def build_research_panel(
     documents = list(session.scalars(statement.limit(query.limit)).unique())
     _record_timing(timings_ms, "panel_document_select", document_select_started)
     if not documents:
-        snapshot_id = _corpus_snapshot_id([])
-        return ResearchPanel(
-            query=query,
-            feature_version=FEATURE_VERSION,
-            corpus_snapshot_id=snapshot_id,
-            rows=[],
-        )
+        return empty_research_panel(query)
 
     history_pool_started = perf_counter()
     company_ids = {document.company_id for document in documents}

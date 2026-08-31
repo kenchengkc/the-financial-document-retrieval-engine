@@ -130,7 +130,7 @@ def test_overlapping_memberships_fail_closed() -> None:
 def test_missing_or_overlapping_identity_fails_closed() -> None:
     membership = _membership(1, date(2020, 1, 1))
 
-    with pytest.raises(ValueError, match="no active eligible identity"):
+    with pytest.raises(ValueError, match="no active identity"):
         build_universe_snapshot(
             universe_code="sp500",
             as_of=date(2021, 1, 1),
@@ -146,6 +146,43 @@ def test_missing_or_overlapping_identity_fails_closed() -> None:
             identities=[
                 _identity(1, "ABC", date(2019, 1, 1), source_hash="one"),
                 _identity(1, "XYZ", date(2020, 1, 1), source_hash="two"),
+            ],
+        )
+
+
+def test_provisional_identity_overlap_cannot_hide_in_strict_snapshot() -> None:
+    membership = _membership(1, date(2020, 1, 1))
+
+    with pytest.raises(ValueError, match="active provisional identity"):
+        build_universe_snapshot(
+            universe_code="sp500",
+            as_of=date(2021, 1, 1),
+            memberships=[membership],
+            identities=[
+                _identity(
+                    1,
+                    "ABC",
+                    date(2020, 1, 1),
+                    source_hash="provisional",
+                    status="provisional",
+                )
+            ],
+        )
+
+    with pytest.raises(ValueError, match="overlapping active identities"):
+        build_universe_snapshot(
+            universe_code="sp500",
+            as_of=date(2021, 1, 1),
+            memberships=[membership],
+            identities=[
+                _identity(1, "ABC", date(2020, 1, 1), source_hash="verified"),
+                _identity(
+                    1,
+                    "XYZ",
+                    date(2020, 6, 1),
+                    source_hash="provisional",
+                    status="provisional",
+                ),
             ],
         )
 
