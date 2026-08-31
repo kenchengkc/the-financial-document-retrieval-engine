@@ -216,8 +216,6 @@ def build_universe_snapshot(
             continue
         if not _is_active(identity.effective_from, identity.effective_to, as_of):
             continue
-        if not _eligible_status(identity.verification_status, include_provisional):
-            continue
         active_identity_by_security.setdefault(identity.security_id, []).append(identity)
 
     constituents: list[UniverseSnapshotConstituent] = []
@@ -226,13 +224,17 @@ def build_universe_snapshot(
         if len(matching_identities) != 1:
             if not matching_identities:
                 raise ValueError(
-                    f"no active eligible identity for security_id={security_id} as_of={as_of}"
+                    f"no active identity for security_id={security_id} as_of={as_of}"
                 )
             raise ValueError(
                 f"overlapping active identities for security_id={security_id} as_of={as_of}"
             )
 
         identity = matching_identities[0]
+        if not _eligible_status(identity.verification_status, include_provisional):
+            raise ValueError(
+                "active provisional identity requires include_provisional=True or verification"
+            )
         status: VerificationStatus = (
             "provisional"
             if "provisional"

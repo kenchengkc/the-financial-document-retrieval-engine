@@ -273,7 +273,25 @@ def write_universe_snapshot(
     except ImportError as exc:  # pragma: no cover - exercised only without [data]
         raise RuntimeError("Parquet export requires the fdre[data] optional dependencies") from exc
     rows = _parquet_rows(snapshot)
-    table = pa.Table.from_pylist(rows)
+    schema = pa.schema(
+        [
+            ("snapshot_id", pa.string()),
+            ("universe_code", pa.string()),
+            ("as_of", pa.string()),
+            ("includes_provisional", pa.bool_()),
+            ("security_id", pa.int64()),
+            ("cik", pa.string()),
+            ("symbol", pa.string()),
+            ("name", pa.string()),
+            ("exchange", pa.string()),
+            ("membership_effective_from", pa.string()),
+            ("identity_effective_from", pa.string()),
+            ("membership_source_hash", pa.string()),
+            ("identity_source_hash", pa.string()),
+            ("verification_status", pa.string()),
+        ]
+    )
+    table = pa.Table.from_pylist(rows, schema=schema)
     metadata = dict(table.schema.metadata or {})
     metadata[b"fdre_snapshot_id"] = snapshot.snapshot_id.encode("utf-8")
     metadata[b"fdre_universe_code"] = snapshot.universe_code.encode("utf-8")
