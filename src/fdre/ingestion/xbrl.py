@@ -58,7 +58,11 @@ def ingest_company_facts(
     *,
     tickers: Iterable[str] | None = None,
 ) -> XBRLIngestionSummary:
-    statement = select(Company).order_by(Company.ticker)
+    statement = (
+        select(Company)
+        .where(Company.ticker.is_not(None))
+        .order_by(Company.ticker)
+    )
     normalized_tickers = [ticker.upper() for ticker in tickers or []]
     if normalized_tickers:
         statement = statement.where(Company.ticker.in_(normalized_tickers))
@@ -96,6 +100,8 @@ def normalize_company_facts(
     company: Company,
     payload: dict[str, Any],
 ) -> tuple[list[FinancialFact], int, int]:
+    if company.ticker is None:
+        raise ValueError("company-facts ingestion requires a current company ticker")
     documents = {
         document.accession_number: document
         for document in session.scalars(

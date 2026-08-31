@@ -566,7 +566,12 @@ def main() -> int:
             company_count = int(session.scalar(select(func.count(Company.id))) or 0)
             production_tickers = tuple(
                 str(ticker)
-                for ticker in session.scalars(select(Company.ticker).order_by(Company.ticker))
+                for ticker in session.scalars(
+                    select(Company.ticker)
+                    .where(Company.ticker.is_not(None))
+                    .order_by(Company.ticker)
+                )
+                if ticker is not None
             )
             identities = _load_identity_records(session)
             securities = load_stable_securities(session)

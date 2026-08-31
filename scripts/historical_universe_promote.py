@@ -118,7 +118,10 @@ def _load_current(path: Path) -> dict[str, CurrentIssuer]:
     return result
 
 
-def _verified_interval_keys(lineage_path: Path, source_ref: str) -> set[tuple[str, date, date | None]]:
+def _verified_interval_keys(
+    lineage_path: Path,
+    source_ref: str,
+) -> set[tuple[str, date, date | None]]:
     lineages = TickerMembershipLineageAdapter(source_ref=source_ref).load(lineage_path)
     return {
         (_symbol(lineage.symbol), lineage.effective_from, lineage.effective_to)
@@ -297,8 +300,10 @@ def materialize(
             for identity in existing_identities:
                 if identity.effective_from <= identity_start and (
                     identity.effective_to is None
-                    or identity_end is not None
-                    and identity_end <= identity.effective_to
+                    or (
+                        identity_end is not None
+                        and identity_end <= identity.effective_to
+                    )
                 ):
                     identity_exists = True
                     break

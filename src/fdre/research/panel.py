@@ -223,6 +223,7 @@ def build_research_panel(
         .options(contains_eager(Document.company))
         .join(Company, Company.id == Document.company_id)
         .where(
+            Company.ticker.is_not(None),
             Document.available_at.is_not(None),
             Document.period_end_date.is_not(None),
         )
@@ -357,7 +358,7 @@ def _latest_documents_with_priors(
     """
     latest_by_ticker: dict[str, Document] = {}
     for document in documents:
-        ticker = document.company.ticker
+        ticker = _required_company_ticker(document)
         incumbent = latest_by_ticker.get(ticker)
         if (
             incumbent is None
@@ -613,7 +614,7 @@ def _build_row(
         if feature in selected_features
     }
     return ResearchPanelRow(
-        ticker=document.company.ticker,
+        ticker=_required_company_ticker(document),
         cik=document.company.cik,
         accession_number=document.accession_number,
         form_type=document.form_type,
@@ -961,6 +962,13 @@ def _required_datetime(value: datetime | None) -> datetime:
     if value is None:
         raise ValueError("Point-in-time panel requires document availability timestamps")
     return value
+
+
+def _required_company_ticker(document: Document) -> str:
+    ticker = document.company.ticker
+    if ticker is None:
+        raise ValueError("research panels require a current company ticker")
+    return ticker
 
 
 def _export_record(row: ResearchPanelRow) -> dict[str, Any]:

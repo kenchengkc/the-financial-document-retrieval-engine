@@ -174,9 +174,17 @@ def bootstrap_current_security_master(
     """
 
     snapshot_date = bootstrap.source_observed_at.date()
-    companies = tuple(session.scalars(select(Company).order_by(Company.ticker, Company.id)))
+    companies = tuple(
+        session.scalars(
+            select(Company)
+            .where(Company.ticker.is_not(None))
+            .order_by(Company.ticker, Company.id)
+        )
+    )
     companies_by_ticker: dict[str, Company] = {}
     for company in companies:
+        if company.ticker is None:
+            raise ValueError("current security bootstrap requires a current company ticker")
         ticker = _normalize_symbol(company.ticker)
         if ticker in companies_by_ticker:
             raise ValueError(f"multiple production companies normalize to ticker {ticker}")

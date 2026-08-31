@@ -55,7 +55,10 @@ def select_documents(
     counts: dict[tuple[str, str], int] = {}
     selected: list[Document] = []
     for document in documents:
-        key = (document.company.ticker, document.form_type)
+        ticker = document.company.ticker
+        if ticker is None:
+            raise ValueError("filing selection requires a current company ticker")
+        key = (ticker, document.form_type)
         count = counts.get(key, 0)
         if count >= form_limits[document.form_type.upper()]:
             continue

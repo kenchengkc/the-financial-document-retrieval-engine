@@ -113,11 +113,14 @@ def evaluate(
     )
     anchor_date = date.fromisoformat(str(anchor["effective_at"]))
     anchor_complete = bool(anchor.get("complete_target_window_anchor"))
-    anchor_count = int(anchor.get("constituent_count", 0))
+    raw_anchor_count = anchor.get("constituent_count", 0)
+    if isinstance(raw_anchor_count, bool) or not isinstance(raw_anchor_count, int):
+        raise ValueError("anchor constituent_count must be an integer")
+    anchor_count = raw_anchor_count
     anchor_met = anchor_complete and anchor_date <= _TARGET_START and 490 <= anchor_count <= 510
     replay = bool(coverage.get("deterministic_replay_match"))
 
-    requirements = [
+    requirements: list[dict[str, object]] = [
         {
             "id": "current_constituent_catalog_complete",
             "actual": len(missing_catalog),

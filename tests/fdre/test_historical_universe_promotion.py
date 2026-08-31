@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from fdre.research.historical_component_history import HistoricalComponentRecord
 from scripts.historical_universe_promote import (
     _identity_bounds,
     _load_current,
     _membership_verified,
 )
+
+from fdre.research.historical_component_history import HistoricalComponentRecord
 
 
 def _record(
@@ -35,7 +36,9 @@ def _record(
 
 def test_membership_verification_requires_exact_independent_interval() -> None:
     record = _record(start=date(2012, 1, 2), end=date(2014, 5, 6))
-    intervals = {("ABC", date(2012, 1, 2), date(2014, 5, 6))}
+    intervals: set[tuple[str, date, date | None]] = {
+        ("ABC", date(2012, 1, 2), date(2014, 5, 6))
+    }
     assert _membership_verified(record, intervals) is True
     assert _membership_verified(record, set()) is False
 
@@ -46,7 +49,9 @@ def test_approximate_source_dates_remain_provisional() -> None:
         end=date(2014, 5, 6),
         added_approximate=True,
     )
-    intervals = {("ABC", date(2012, 1, 2), date(2014, 5, 6))}
+    intervals: set[tuple[str, date, date | None]] = {
+        ("ABC", date(2012, 1, 2), date(2014, 5, 6))
+    }
     assert _membership_verified(record, intervals) is False
 
 
