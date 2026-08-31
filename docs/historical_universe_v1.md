@@ -197,6 +197,12 @@ Implemented:
 
 **Status: ACTIVE.**
 
+R0/R1 are applied, and the latest pinned read-only component-history audit projects
+**1,043 / 1,055 (98.86%)** target-window identity resolution with 12 observations retained in the
+residual queue. A complete 501-constituent anchor is pinned at 2010-01-01. These measurements do not
+yet constitute a verified production materialization or a passed promotion gate; current results
+live in [`eval_results.md`](eval_results.md).
+
 Build a reproducible importer/reconciler for public constituent-change evidence.
 
 Acceptance criteria:
@@ -263,14 +269,16 @@ queue live in [`eval_results.md`](eval_results.md).
 
 ### HU-3 — Universe API / SDK
 
-Expose strict PIT resolution through the research layer.
+**Status: COMPLETE (merged 2026-08-30).**
+
+Strict PIT resolution is exposed through the research layer.
 
 ```python
 fdre.universe("sp500", as_of="2020-03-20")
 fdre.universe("sp500", as_of="2020-03-20", include_provisional=True)
 ```
 
-Acceptance criteria:
+Implemented:
 
 - deterministic snapshot ID;
 - constituent-level source lineage;
