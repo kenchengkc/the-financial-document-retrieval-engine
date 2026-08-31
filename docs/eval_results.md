@@ -288,6 +288,41 @@ identity intervals, explicit treatment of every provisional boundary, agreement 
 anchor at audited dates, deterministic snapshot replay, and a published unresolved queue. Until
 those checks pass, HU-2 remains active and strict historical research remains gated.
 
+### HU-2 fail-closed materialization rehearsal
+
+The pinned lawcal component history at
+`ed4cf46e5ec5bb02e709aa08ee8a3a218d1b7d19`, fja05680 lineage/anchor source at
+`c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff`, and the 501-constituent anchor effective
+2009-12-30 were replayed against an empty schema before production apply.
+
+| Staged measurement | Result |
+| --- | ---: |
+| Historical issuer creates (`ticker = NULL`) | 394 |
+| Current issuer creates | 500 |
+| Stable security creates | 980 |
+| Gap-preserving identity periods | 999 |
+| Membership intervals | 999 |
+| Independently verified memberships | 411 |
+| Provisional memberships | 588 |
+| Provisional anchor-date constituents | 533 |
+| Expected anchor-date constituents | 501 |
+| Missing expected anchor symbols | 29 |
+| Unexpected staged anchor symbols | 61 |
+| Identity overlaps | 0 |
+| Membership overlaps | 0 |
+| Memberships missing identity coverage | 0 |
+
+The provisional snapshot replayed to the same snapshot ID, but it did not match the anchor. Strict
+resolution failed closed on active provisional membership. The explicit apply therefore exited
+non-zero, reported `applied: false`, and rolled back all staged companies, securities, identities,
+and memberships; post-attempt row counts were zero in all four tables.
+
+This replaces “materialize the 98.86% projection” with a narrower evidence task: reconcile the 29
+missing and 61 unexpected anchor symbols, independently verify or adjudicate the provisional
+boundaries, publish the residual 12-row identity queue, then repeat staged validation. Production
+apply remains prohibited until both strict and provisional anchor snapshots match and the complete
+promotion gate passes.
+
 ## Historical measurements retained for provenance
 
 Earlier snapshots/results remain useful for showing improvement over time but are no longer the current headline:

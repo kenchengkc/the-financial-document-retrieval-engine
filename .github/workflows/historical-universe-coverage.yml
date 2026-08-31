@@ -139,6 +139,11 @@ jobs:
       - name: Set audit observation time
         run: echo "HU2_OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_ENV}"
 
+      - name: Emit complete target-window anchor
+        run: |
+          ANCHOR_URL="https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv"
+          python -m scripts.historical_universe_anchor_audit --input "${SOURCE_DIR}/sp500-complete-history.csv" --source-ref "${HISTORICAL_ANCHOR_REF}" --source-url "${ANCHOR_URL}" --observed-at "${HU2_OBSERVED_AT}" --output "${OUTPUT_DIR}/complete-snapshot-anchor.json"
+
       - name: Plan HU-2 production materialization
         run: |
           python -m scripts.historical_universe_promote \
@@ -148,6 +153,7 @@ jobs:
             --current-components "${SOURCE_DIR}/current-components.csv" \
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
             --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
+            --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
             --observed-at "${HU2_OBSERVED_AT}" \
             --output "${OUTPUT_DIR}/historical-universe-materialization-plan.json"
 
@@ -161,6 +167,7 @@ jobs:
             --current-components "${SOURCE_DIR}/current-components.csv" \
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
             --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
+            --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
             --observed-at "${HU2_OBSERVED_AT}" \
             --apply \
             --output "${OUTPUT_DIR}/historical-universe-materialization-applied.json"
@@ -182,11 +189,6 @@ jobs:
         run: |
           python -m scripts.historical_universe_alias_audit --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/issuer-aliases.json"
 
-      - name: Emit complete target-window anchor
-        run: |
-          ANCHOR_URL="https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv"
-          python -m scripts.historical_universe_anchor_audit --input "${SOURCE_DIR}/sp500-complete-history.csv" --source-ref "${HISTORICAL_ANCHOR_REF}" --source-url "${ANCHOR_URL}" --observed-at "${HU2_OBSERVED_AT}" --output "${OUTPUT_DIR}/complete-snapshot-anchor.json"
-
       - name: Plan historical security seeds
         run: |
           python -m scripts.historical_security_seed_plan --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/historical-security-seed-plan.json"
@@ -201,12 +203,16 @@ jobs:
 
       - name: Evaluate final HU-2 promotion gate
         run: |
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
+          MATERIALIZATION_REPORT="${OUTPUT_DIR}/historical-universe-materialization-plan.json"
+          if [ -f "${OUTPUT_DIR}/historical-universe-materialization-applied.json" ]; then
+            MATERIALIZATION_REPORT="${OUTPUT_DIR}/historical-universe-materialization-applied.json"
+          fi
+          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --materialization "${MATERIALIZATION_REPORT}" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
 
       - name: Require HU-2 gate after explicit production apply
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
         run: |
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
+          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
 
       - name: Publish summary
         if: always()

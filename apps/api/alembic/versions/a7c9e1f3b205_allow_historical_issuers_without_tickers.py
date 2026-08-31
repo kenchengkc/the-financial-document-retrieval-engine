@@ -1,7 +1,7 @@
 """allow historical issuers without current tickers
 
 Revision ID: a7c9e1f3b205
-Revises: f2a4c6e8b103
+Revises: b2d4f6a8c105
 Create Date: 2026-08-30 19:20:00
 """
 

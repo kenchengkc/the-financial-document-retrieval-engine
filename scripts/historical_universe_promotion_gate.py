@@ -14,7 +14,7 @@ from fdre.research.historical_component_history import (
 
 _TARGET_START = date(2010, 1, 1)
 _MIN_RESOLUTION = 0.95
-_SCHEMA_VERSION = "fdre-hu2-final-promotion-gate-v1"
+_SCHEMA_VERSION = "fdre-hu2-final-promotion-gate-v2"
 
 
 def _symbol(value: str) -> str:
@@ -87,6 +87,7 @@ def evaluate(
     coverage: dict[str, object],
     remediation: dict[str, object],
     anchor: dict[str, object],
+    materialization: dict[str, object],
     component_history: Path,
     component_history_ref: str,
 ) -> dict[str, object]:
@@ -118,7 +119,30 @@ def evaluate(
         raise ValueError("anchor constituent_count must be an integer")
     anchor_count = raw_anchor_count
     anchor_met = anchor_complete and anchor_date <= _TARGET_START and 490 <= anchor_count <= 510
-    replay = bool(coverage.get("deterministic_replay_match"))
+    replay = coverage.get("deterministic_replay_match") is True
+    validation = materialization.get("validation")
+    if not isinstance(validation, dict):
+        raise ValueError("materialization artifact lacks validation")
+    materialization_applied = materialization.get("applied") is True
+    commit_eligible = validation.get("commit_eligible") is True
+    provisional_anchor_match = validation.get("provisional_anchor_match") is True
+    strict_anchor_match = validation.get("strict_anchor_match") is True
+    materialized_replay = validation.get("deterministic_replay_match") is True
+    interval_counts = {
+        "identity_overlap_count": validation.get("identity_overlap_count"),
+        "membership_overlap_count": validation.get("membership_overlap_count"),
+        "missing_identity_coverage_count": validation.get("missing_identity_coverage_count"),
+    }
+    interval_integrity = all(
+        isinstance(value, int) and not isinstance(value, bool) and value == 0
+        for value in interval_counts.values()
+    )
+    materialization_anchor_aligned = (
+        validation.get("anchor_id") == anchor.get("anchor_id")
+        and validation.get("universe_code") == anchor.get("universe_code", "sp500")
+        and validation.get("as_of") == anchor_date.isoformat()
+        and validation.get("expected_constituent_count") == anchor_count
+    )
 
     requirements: list[dict[str, object]] = [
         {
@@ -162,6 +186,49 @@ def evaluate(
             "target": True,
             "met": replay,
         },
+        {
+            "id": "materialization_committed_after_validation",
+            "actual_applied": materialization_applied,
+            "actual_commit_eligible": commit_eligible,
+            "target": True,
+            "met": materialization_applied and commit_eligible,
+        },
+        {
+            "id": "materialized_anchor_alignment",
+            "actual_anchor_id": validation.get("anchor_id"),
+            "actual_as_of": validation.get("as_of"),
+            "actual_universe_code": validation.get("universe_code"),
+            "actual_constituent_count": validation.get("expected_constituent_count"),
+            "target_anchor_id": anchor.get("anchor_id"),
+            "target_as_of": anchor_date.isoformat(),
+            "target_universe_code": anchor.get("universe_code", "sp500"),
+            "target_constituent_count": anchor_count,
+            "met": materialization_anchor_aligned,
+        },
+        {
+            "id": "materialized_provisional_snapshot_matches_anchor",
+            "actual": provisional_anchor_match,
+            "target": True,
+            "met": provisional_anchor_match,
+        },
+        {
+            "id": "materialized_strict_snapshot_matches_anchor",
+            "actual": strict_anchor_match,
+            "target": True,
+            "met": strict_anchor_match,
+        },
+        {
+            "id": "materialized_interval_integrity",
+            **interval_counts,
+            "target": 0,
+            "met": interval_integrity,
+        },
+        {
+            "id": "materialized_snapshot_replay",
+            "actual": materialized_replay,
+            "target": True,
+            "met": materialized_replay,
+        },
     ]
     return {
         "schema_version": _SCHEMA_VERSION,
@@ -182,6 +249,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--coverage", required=True, type=Path)
     parser.add_argument("--remediation", required=True, type=Path)
     parser.add_argument("--anchor", required=True, type=Path)
+    parser.add_argument("--materialization", required=True, type=Path)
     parser.add_argument("--component-history", required=True, type=Path)
     parser.add_argument("--component-history-ref", required=True)
     parser.add_argument("--output", required=True, type=Path)
@@ -199,6 +267,7 @@ def main() -> int:
         coverage=_read(args.coverage),
         remediation=_read(args.remediation),
         anchor=_read(args.anchor),
+        materialization=_read(args.materialization),
         component_history=args.component_history,
         component_history_ref=args.component_history_ref,
     )

@@ -82,7 +82,7 @@ Implemented:
 
 ### HU-2 — Membership reconstruction
 
-**Status: ACTIVE / IDENTITY-RESOLUTION FLOOR PROJECTED; PRODUCTION PROMOTION NOT COMPLETE.**
+**Status: ACTIVE / FAIL-CLOSED MATERIALIZATION IMPLEMENTED; PRODUCTION PROMOTION NOT COMPLETE.**
 
 Build a reproducible evidence-reconciliation pipeline for historical index membership.
 
@@ -103,16 +103,22 @@ The first production-backed audit now characterizes the blocking gaps. R0/R1 cre
 security prerequisite and evidence-scoped aliases. Subsequent pinned, read-only measurements added
 an independent 2010 anchor, exact ticker lineage, and historical component CIK evidence. The latest
 component-history projection resolves **1,043 / 1,055 (98.86%)** target-window observations, but
-that is a projection rather than a production write or a passed materialization gate.
+that is a projection rather than a production write or a passed materialization gate. An
+empty-schema rehearsal of the pinned materialization now proves that the write path is atomic, but
+also measures why it must not yet be applied: **411 / 999** intervals are verified, **588 / 999**
+remain provisional, and the provisional anchor-date snapshot contains **533** names versus the
+independent **501**-name anchor. Strict resolution rejects the active provisional evidence, and the
+failed gate leaves all production tables unchanged.
 
 The remaining sequence is:
 
-1. materialize historical issuers, securities, identities, and memberships without synthetic
-   current tickers or guessed dates;
-2. prove the written state has one Alembic head, no interval overlap, deterministic replay, and
-   agreement with the pinned complete anchor at audited dates;
-3. keep non-agreeing boundaries provisional and publish the residual 12-row identity queue; and
-4. rerun the production audit until the canonical HU-2 promotion gate is satisfied.
+1. reconcile the anchor-date difference: 29 expected symbols are missing and 61 staged symbols are
+   unexpected;
+2. independently verify or adjudicate the 588 provisional boundaries without guessing dates;
+3. publish the residual 12-row identity queue and retain every unresolved boundary as provisional;
+4. rerun the staged validation until strict and provisional snapshots both match the pinned anchor;
+   and
+5. explicitly apply the atomic write and rerun the canonical production promotion gate.
 
 Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
 definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
@@ -217,9 +223,9 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Finish and verify HU-2 production materialization.**
+**Reconcile and verify HU-2 before production materialization.**
 
-Do not start the decade-scale filing backfill yet. First validate the production write against the
-complete historical anchor and all fail-closed interval rules, publish the residual queue, and
-satisfy the promotion gate. HU-3 is implemented; once HU-2's written state is credible, HU-4 can
-safely spend compute/storage on longer history.
+Do not start the decade-scale filing backfill yet. First close the measured 533-versus-501 anchor
+difference, verify or adjudicate provisional boundaries, publish the residual queue, and satisfy
+the fail-closed staged promotion gate. HU-3 is implemented; once HU-2's written state is credible,
+HU-4 can safely spend compute/storage on longer history.

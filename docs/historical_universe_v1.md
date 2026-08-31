@@ -199,9 +199,12 @@ Implemented:
 
 R0/R1 are applied, and the latest pinned read-only component-history audit projects
 **1,043 / 1,055 (98.86%)** target-window identity resolution with 12 observations retained in the
-residual queue. A complete 501-constituent anchor is pinned at 2010-01-01. These measurements do not
-yet constitute a verified production materialization or a passed promotion gate; current results
-live in [`eval_results.md`](eval_results.md).
+residual queue. A complete 501-constituent anchor effective at 2009-12-30 is pinned to anchor the
+2010-01-01 target window. The fail-closed materializer and staged validator are implemented, but
+the pinned rehearsal produces 533 provisional constituents at the anchor date and strict mode
+rejects active provisional evidence. These measurements do not constitute a production
+materialization or a passed promotion gate; current results live in
+[`eval_results.md`](eval_results.md).
 
 Build a reproducible importer/reconciler for public constituent-change evidence.
 
@@ -261,6 +264,12 @@ window:
 - materialization has no unexplained overlaps, missing active identities, or unresolved event
   order; and
 - exact replay from the same code and source manifest produces the same audit and snapshot IDs.
+
+The materialization command is non-mutating by default. An explicit apply stages all issuer,
+security, identity, and membership changes in one transaction, evaluates both strict and
+provisional snapshots against the same pinned anchor, audits interval overlap and identity
+coverage, and commits only if every promotion condition passes. A rejected apply exits non-zero
+and rolls back the complete staged write.
 
 The 95% threshold is a pipeline-readiness floor, not permission to fill the remainder. A date is
 eligible for strict research only when all membership and identity boundaries affecting that

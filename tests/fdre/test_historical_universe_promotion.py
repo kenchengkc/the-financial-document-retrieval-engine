@@ -1,15 +1,42 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from scripts.historical_universe_promote import (
-    _identity_bounds,
+    AnchorExpectation,
+    CurrentIssuer,
+    _identity_claims,
     _load_current,
     _membership_verified,
+    materialize,
+    validate_materialized_state,
 )
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from apps.api.app.db import Base
+from apps.api.app.models.companies import Company
+from apps.api.app.models.historical_universe import (
+    Security,
+    SecurityIdentityPeriod,
+    UniverseMembership,
+)
 from fdre.research.historical_component_history import HistoricalComponentRecord
+
+_OBSERVED_AT = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
+
+
+def _engine() -> Engine:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    return engine
 
 
 def _record(
@@ -56,19 +83,35 @@ def test_approximate_source_dates_remain_provisional() -> None:
 
 
 def test_identity_remains_valid_on_removal_boundary_only() -> None:
-    start, end = _identity_bounds(
+    claims = _identity_claims(
         [_record(start=date(2012, 1, 2), end=date(2014, 5, 6))]
     )
-    assert start == date(2012, 1, 2)
-    assert end == date(2014, 5, 7)
+    assert len(claims) == 1
+    assert claims[0].effective_from == date(2012, 1, 2)
+    assert claims[0].effective_to == date(2014, 5, 7)
 
 
 def test_open_component_membership_produces_open_identity() -> None:
-    start, end = _identity_bounds(
+    claims = _identity_claims(
         [_record(start=date(2020, 1, 2), end=None)]
     )
-    assert start == date(2020, 1, 2)
-    assert end is None
+    assert len(claims) == 1
+    assert claims[0].effective_from == date(2020, 1, 2)
+    assert claims[0].effective_to is None
+
+
+def test_disjoint_index_tenures_do_not_create_unobserved_identity_bridge() -> None:
+    claims = _identity_claims(
+        [
+            _record(start=date(2010, 1, 1), end=date(2012, 1, 1)),
+            _record(start=date(2015, 1, 1), end=date(2018, 1, 1)),
+        ]
+    )
+
+    assert [(claim.effective_from, claim.effective_to) for claim in claims] == [
+        (date(2010, 1, 1), date(2012, 1, 2)),
+        (date(2015, 1, 1), date(2018, 1, 2)),
+    ]
 
 
 def test_current_company_primary_ticker_is_deterministic_for_share_classes(
@@ -83,3 +126,167 @@ def test_current_company_primary_ticker_is_deterministic_for_share_classes(
     )
     current = _load_current(path)
     assert current["0000000001"].symbol == "AAA"
+
+
+def _materialization_inputs(
+    *,
+    verified: bool = True,
+) -> tuple[
+    tuple[HistoricalComponentRecord, ...],
+    dict[str, CurrentIssuer],
+    set[tuple[str, date, date | None]],
+]:
+    start = date(2010, 1, 1)
+    record = _record(start=start, end=None)
+    intervals: set[tuple[str, date, date | None]] = (
+        {("ABC", start, None)} if verified else set()
+    )
+    return (
+        (record,),
+        {
+            record.cik: CurrentIssuer(
+                symbol="ABC",
+                cik=record.cik,
+                name=record.name,
+                sector=record.sector,
+            )
+        },
+        intervals,
+    )
+
+
+def _anchor(symbol: str = "ABC") -> AnchorExpectation:
+    return AnchorExpectation(
+        anchor_id="test-anchor",
+        universe_code="sp500",
+        effective_at=date(2020, 1, 1),
+        display_symbols=(symbol,),
+    )
+
+
+def test_staged_materialization_validates_and_is_idempotent() -> None:
+    records, current, intervals = _materialization_inputs()
+    engine = _engine()
+
+    with Session(engine) as session:
+        first = materialize(
+            session,
+            records=records,
+            current_by_cik=current,
+            verified_intervals=intervals,
+            observed_at=_OBSERVED_AT,
+            stage=True,
+        )
+        validation = validate_materialized_state(session, _anchor())
+        assert validation.commit_eligible is True
+        session.commit()
+
+        second = materialize(
+            session,
+            records=records,
+            current_by_cik=current,
+            verified_intervals=intervals,
+            observed_at=_OBSERVED_AT,
+            stage=True,
+        )
+        replay_validation = validate_materialized_state(session, _anchor())
+        session.commit()
+
+        assert first.membership_creates == 1
+        assert second.historical_company_creates == 0
+        assert second.current_company_creates == 0
+        assert second.security_creates == 0
+        assert second.identity_creates == 0
+        assert second.membership_creates == 0
+        assert replay_validation.commit_eligible is True
+        assert int(session.scalar(select(func.count()).select_from(Company)) or 0) == 1
+        assert int(session.scalar(select(func.count()).select_from(Security)) or 0) == 1
+        assert (
+            int(
+                session.scalar(
+                    select(func.count()).select_from(SecurityIdentityPeriod)
+                )
+                or 0
+            )
+            == 1
+        )
+        assert (
+            int(session.scalar(select(func.count()).select_from(UniverseMembership)) or 0)
+            == 1
+        )
+
+
+def test_failed_anchor_validation_rolls_back_every_staged_row() -> None:
+    records, current, intervals = _materialization_inputs()
+    engine = _engine()
+
+    with Session(engine) as session:
+        materialize(
+            session,
+            records=records,
+            current_by_cik=current,
+            verified_intervals=intervals,
+            observed_at=_OBSERVED_AT,
+            stage=True,
+        )
+        validation = validate_materialized_state(session, _anchor("XYZ"))
+        assert validation.commit_eligible is False
+        assert validation.missing_anchor_symbols == ("XYZ",)
+        assert validation.unexpected_snapshot_symbols == ("ABC",)
+        session.rollback()
+
+        assert int(session.scalar(select(func.count()).select_from(Company)) or 0) == 0
+        assert int(session.scalar(select(func.count()).select_from(Security)) or 0) == 0
+        assert (
+            int(session.scalar(select(func.count()).select_from(UniverseMembership)) or 0)
+            == 0
+        )
+
+
+def test_provisional_materialization_cannot_pass_strict_validation() -> None:
+    records, current, intervals = _materialization_inputs(verified=False)
+    engine = _engine()
+
+    with Session(engine) as session:
+        materialize(
+            session,
+            records=records,
+            current_by_cik=current,
+            verified_intervals=intervals,
+            observed_at=_OBSERVED_AT,
+            stage=True,
+        )
+        validation = validate_materialized_state(session, _anchor())
+        session.rollback()
+
+    assert validation.provisional_anchor_match is True
+    assert validation.strict_anchor_match is False
+    assert validation.strict_snapshot_error is not None
+    assert "active provisional membership" in validation.strict_snapshot_error
+    assert validation.commit_eligible is False
+
+
+def test_dry_run_planning_does_not_stage_rows() -> None:
+    records, current, intervals = _materialization_inputs()
+    engine = _engine()
+
+    with Session(engine) as session:
+        plan = materialize(
+            session,
+            records=records,
+            current_by_cik=current,
+            verified_intervals=intervals,
+            observed_at=_OBSERVED_AT,
+            stage=False,
+        )
+
+        assert plan.current_company_creates == 1
+        assert plan.security_creates == 1
+        assert plan.identity_creates == 1
+        assert plan.membership_creates == 1
+        assert int(session.scalar(select(func.count()).select_from(Company)) or 0) == 0
+        assert int(session.scalar(select(func.count()).select_from(Security)) or 0) == 0
+        assert (
+            int(session.scalar(select(func.count()).select_from(UniverseMembership)) or 0)
+            == 0
+        )
