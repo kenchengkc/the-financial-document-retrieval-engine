@@ -62,7 +62,16 @@ def _materialization() -> dict[str, object]:
 
 
 def _anchor_reconciliation() -> dict[str, object]:
-    return {"anchor_reconciled": True, "production_identity_ready": True}
+    return {
+        "anchor_reconciled": True,
+        "production_identity_ready": True,
+        "identity_safe_anchor": {
+            "anchor_id": "anchor-1",
+            "universe_code": "sp500",
+            "effective_at": "2009-12-30",
+            "constituent_count": 500,
+        },
+    }
 
 
 def _boundary_audit() -> dict[str, object]:

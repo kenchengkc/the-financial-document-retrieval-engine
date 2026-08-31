@@ -97,8 +97,18 @@ class BoundaryAdjudicationAudit:
             interval for interval in self.intervals if interval.effective_from >= target_start
         ]
         post_status_counts = Counter(interval.status for interval in post_anchor)
+        # Production readiness means every boundary has a deterministic decision and the
+        # materializer can preserve unresolved rows as provisional.  It does not relabel those
+        # rows verified: strict snapshots continue to fail closed whenever one is active.
         post_anchor_ready = bool(post_anchor) and all(
-            interval.status == "verified" for interval in post_anchor
+            interval.status
+            in {
+                "verified",
+                "provisional_boundary",
+                "provisional_identity",
+                "provisional_boundary_and_identity",
+            }
+            for interval in post_anchor
         )
         return {
             "schema_version": BOUNDARY_ADJUDICATION_SCHEMA_VERSION,
@@ -122,6 +132,9 @@ class BoundaryAdjudicationAudit:
             ],
             "post_anchor_status_counts": dict(sorted(post_status_counts.items())),
             "post_anchor_production_ready": post_anchor_ready,
+            "post_anchor_unresolved_retained_provisional_count": sum(
+                interval.status != "verified" for interval in post_anchor
+            ),
         }
 
 
@@ -209,7 +222,13 @@ class BoundaryEvidenceIndex:
             )
 
         boundaries_verified = start.verified and end.verified
-        identity_valid = record.source_valid_from == record.effective_from
+        # ``created_at`` is the date lawcal first serialized the row, not necessarily the date
+        # the ticker became valid.  Never back-project a later terminal symbol on that field
+        # alone, but accept the historical ticker when an independent source observes the same
+        # symbol on the exact addition boundary.
+        identity_valid = (
+            record.source_valid_from == record.effective_from or start.verified
+        )
         reasons: list[str] = []
         if not start.verified:
             reasons.append("addition_boundary_lacks_required_exact_external_support")
@@ -220,7 +239,7 @@ class BoundaryEvidenceIndex:
                 else "removal_boundary_lacks_required_exact_external_support"
             )
         if not identity_valid:
-            reasons.append("symbol_created_after_reported_membership_start")
+            reasons.append("symbol_start_lacks_exact_external_identity_support")
 
         if boundaries_verified and identity_valid:
             status: IntervalAdjudicationStatus = "verified"

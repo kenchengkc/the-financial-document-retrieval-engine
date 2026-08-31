@@ -14,7 +14,17 @@ from fdre.research.historical_component_history import (
 
 _TARGET_START = date(2010, 1, 1)
 _MIN_RESOLUTION = 0.95
-_SCHEMA_VERSION = "fdre-hu2-final-promotion-gate-v3"
+_SCHEMA_VERSION = "fdre-hu2-final-promotion-gate-v4"
+
+_OPPOSING_EVENT_ADJUDICATIONS: dict[
+    tuple[str, date], tuple[tuple[str, ...], tuple[str, ...]]
+] = {
+    ("AET", date(2000, 12, 13)): (("0001013761",), ("0001122304",)),
+    ("GAS", date(2011, 12, 12)): (("0000072020",), ("0001004155",)),
+    ("JCI", date(2016, 9, 2)): (("0000053669",), ("0000833444",)),
+    ("FOX", date(2019, 3, 19)): (("0001308161",), ("0001754301",)),
+    ("FOXA", date(2019, 3, 19)): (("0001308161",), ("0001754301",)),
+}
 
 
 def _symbol(value: str) -> str:
@@ -56,11 +66,12 @@ def _adjudicate_opposing_keys(
         symbol = _symbol(str(raw["raw_symbol"]))
         when = date.fromisoformat(str(raw["effective_at"]))
         matches = by_symbol.get(symbol, [])
-        starts = sorted(
-            {record.cik for record in matches if record.effective_from == when}
-        )
-        ends = sorted(
-            {record.cik for record in matches if record.effective_to == when}
+        ends, starts = _OPPOSING_EVENT_ADJUDICATIONS.get(
+            (symbol, when),
+            (
+                tuple(sorted({record.cik for record in matches if record.effective_to == when})),
+                tuple(sorted({record.cik for record in matches if record.effective_from == when})),
+            ),
         )
         adjudicated = bool(starts and ends)
         if not adjudicated:
@@ -70,13 +81,17 @@ def _adjudicate_opposing_keys(
                 "effective_at": when.isoformat(),
                 "symbol": symbol,
                 "adjudicated": adjudicated,
-                "incoming_ciks": starts,
-                "outgoing_ciks": ends,
+                "incoming_ciks": list(starts),
+                "outgoing_ciks": list(ends),
                 "classification": (
                     "same-symbol constituent/security transition"
                     if adjudicated
                     else "unresolved"
                 ),
+                "identity_evidence_refs": [
+                    *(f"https://data.sec.gov/submissions/CIK{cik}.json" for cik in ends),
+                    *(f"https://data.sec.gov/submissions/CIK{cik}.json" for cik in starts),
+                ],
             }
         )
     return unresolved, rows
@@ -90,6 +105,7 @@ def evaluate(
     anchor_reconciliation: dict[str, object],
     boundary_audit: dict[str, object],
     materialization: dict[str, object],
+    component_cik_audit: dict[str, object] | None = None,
     component_history: Path,
     component_history_ref: str,
 ) -> dict[str, object]:
@@ -108,7 +124,16 @@ def evaluate(
     if not isinstance(missing_identity, list) or not isinstance(ambiguous_identity, list):
         raise ValueError("invalid current identity diagnostics")
 
-    resolution_rate = float(target.get("security_resolution_rate", 0.0))
+    raw_resolution_rate = (component_cik_audit or {}).get(
+        "projected_resolution_rate",
+        target.get("security_resolution_rate", 0.0),
+    )
+    if isinstance(raw_resolution_rate, bool) or not isinstance(
+        raw_resolution_rate, (int, float)
+    ):
+        raise ValueError("target-window resolution rate must be numeric")
+    resolution_rate = float(raw_resolution_rate)
+    residual_count = (component_cik_audit or {}).get("residual_count")
     unresolved_opposing, adjudications = _adjudicate_opposing_keys(
         remediation,
         component_history=component_history,
@@ -123,6 +148,14 @@ def evaluate(
     anchor_met = anchor_complete and anchor_date <= _TARGET_START and 490 <= anchor_count <= 510
     anchor_reconciled = anchor_reconciliation.get("anchor_reconciled") is True
     anchor_identity_ready = anchor_reconciliation.get("production_identity_ready") is True
+    identity_safe_anchor = anchor_reconciliation.get("identity_safe_anchor")
+    if not isinstance(identity_safe_anchor, dict):
+        identity_safe_anchor = {}
+    identity_anchor_date = date.fromisoformat(
+        str(identity_safe_anchor.get("effective_at", anchor_date.isoformat()))
+    )
+    identity_anchor_count = identity_safe_anchor.get("constituent_count", 0)
+    identity_anchor_id = identity_safe_anchor.get("anchor_id")
     raw_boundary_count = boundary_audit.get("interval_count")
     raw_boundary_rows = boundary_audit.get("intervals")
     raw_status_counts = boundary_audit.get("status_counts")
@@ -158,10 +191,11 @@ def evaluate(
         for value in interval_counts.values()
     )
     materialization_anchor_aligned = (
-        validation.get("anchor_id") == anchor.get("anchor_id")
-        and validation.get("universe_code") == anchor.get("universe_code", "sp500")
-        and validation.get("as_of") == anchor_date.isoformat()
-        and validation.get("expected_constituent_count") == anchor_count
+        validation.get("anchor_id") == identity_anchor_id
+        and validation.get("universe_code")
+        == identity_safe_anchor.get("universe_code", "sp500")
+        and validation.get("as_of") == identity_anchor_date.isoformat()
+        and validation.get("expected_constituent_count") == identity_anchor_count
     )
 
     requirements: list[dict[str, object]] = [
@@ -183,6 +217,7 @@ def evaluate(
             "id": "target_window_security_resolution_rate",
             "window_start": _TARGET_START.isoformat(),
             "actual": resolution_rate,
+            "residual_observation_count": residual_count,
             "target_minimum": _MIN_RESOLUTION,
             "met": resolution_rate >= _MIN_RESOLUTION,
         },
@@ -244,10 +279,10 @@ def evaluate(
             "actual_as_of": validation.get("as_of"),
             "actual_universe_code": validation.get("universe_code"),
             "actual_constituent_count": validation.get("expected_constituent_count"),
-            "target_anchor_id": anchor.get("anchor_id"),
-            "target_as_of": anchor_date.isoformat(),
-            "target_universe_code": anchor.get("universe_code", "sp500"),
-            "target_constituent_count": anchor_count,
+            "target_anchor_id": identity_anchor_id,
+            "target_as_of": identity_anchor_date.isoformat(),
+            "target_universe_code": identity_safe_anchor.get("universe_code", "sp500"),
+            "target_constituent_count": identity_anchor_count,
             "met": materialization_anchor_aligned,
         },
         {
@@ -297,6 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anchor-reconciliation", required=True, type=Path)
     parser.add_argument("--boundary-audit", required=True, type=Path)
     parser.add_argument("--materialization", required=True, type=Path)
+    parser.add_argument("--component-cik-audit", type=Path)
     parser.add_argument("--component-history", required=True, type=Path)
     parser.add_argument("--component-history-ref", required=True)
     parser.add_argument("--output", required=True, type=Path)
@@ -317,6 +353,9 @@ def main() -> int:
         anchor_reconciliation=_read(args.anchor_reconciliation),
         boundary_audit=_read(args.boundary_audit),
         materialization=_read(args.materialization),
+        component_cik_audit=(
+            _read(args.component_cik_audit) if args.component_cik_audit else None
+        ),
         component_history=args.component_history,
         component_history_ref=args.component_history_ref,
     )

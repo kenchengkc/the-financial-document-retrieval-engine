@@ -100,6 +100,33 @@ def test_current_constituent_reconciliation_keeps_share_classes_distinct(
     assert report["current_security_identity_complete"] is False
 
 
+def test_current_catalog_gap_is_closed_by_a_production_company(tmp_path: Path) -> None:
+    path = tmp_path / "sp500.json"
+    path.write_text(
+        json.dumps(
+            {
+                "source": "test",
+                "generated_at": "2026-06-08T13:50:33+00:00",
+                "constituent_count": 1,
+                "primary_ticker_count": 0,
+                "missing_from_catalog": ["CBOE"],
+                "aliases": {},
+                "primary_tickers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = _current_constituent_reconciliation(
+        path,
+        production_tickers=("CBOE",),
+        identities=(),
+    )
+
+    assert report["mapped_constituent_symbol_count"] == 1
+    assert report["missing_catalog_symbols"] == []
+
+
 def test_raw_evidence_diagnostics_separates_agreement_from_opposing_events() -> None:
     observed_at = datetime(2026, 8, 30, tzinfo=UTC)
 

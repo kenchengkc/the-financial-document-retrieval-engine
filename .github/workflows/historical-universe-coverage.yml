@@ -177,7 +177,7 @@ jobs:
             --current-components "${SOURCE_DIR}/current-components.csv" \
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
             --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
-            --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
+            --anchor "${OUTPUT_DIR}/anchor-reconciliation.json" \
             --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" \
             --observed-at "${HU2_OBSERVED_AT}" \
             --output "${OUTPUT_DIR}/historical-universe-materialization-plan.json"
@@ -192,7 +192,7 @@ jobs:
             --current-components "${SOURCE_DIR}/current-components.csv" \
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
             --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
-            --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
+            --anchor "${OUTPUT_DIR}/anchor-reconciliation.json" \
             --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" \
             --observed-at "${HU2_OBSERVED_AT}" \
             --apply \
@@ -225,7 +225,7 @@ jobs:
 
       - name: Measure historical component CIK recovery
         run: |
-          python -m scripts.historical_component_cik_audit --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/component-cik-audit.json"
+          python -m scripts.historical_component_cik_audit --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/component-cik-audit.json" --residual-output "${OUTPUT_DIR}/residual-observation-queue.json"
 
       - name: Evaluate final HU-2 promotion gate
         run: |
@@ -233,17 +233,17 @@ jobs:
           if [ -f "${OUTPUT_DIR}/historical-universe-materialization-applied.json" ]; then
             MATERIALIZATION_REPORT="${OUTPUT_DIR}/historical-universe-materialization-applied.json"
           fi
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${MATERIALIZATION_REPORT}" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
+          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${MATERIALIZATION_REPORT}" --component-cik-audit "${OUTPUT_DIR}/component-cik-audit.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
 
       - name: Require HU-2 gate after explicit production apply
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
         run: |
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
+          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-cik-audit "${OUTPUT_DIR}/component-cik-audit.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
 
       - name: Publish summary
         if: always()
         run: |
-          for file in historical-universe-materialization-plan.json historical-universe-materialization-applied.json component-cik-audit.json complete-snapshot-anchor.json anchor-reconciliation.json coverage.json promotion-gate.json; do
+          for file in historical-universe-materialization-plan.json historical-universe-materialization-applied.json component-cik-audit.json residual-observation-queue.json complete-snapshot-anchor.json anchor-reconciliation.json coverage.json promotion-gate.json; do
             if [ -f "${OUTPUT_DIR}/${file}" ]; then
               {
                 echo "### ${file}"

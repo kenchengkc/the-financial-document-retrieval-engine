@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from scripts.historical_universe_promote import (
+    AnchorConstituentExpectation,
     AnchorExpectation,
     BoundaryVerification,
     CurrentIssuer,
@@ -84,7 +85,7 @@ def test_approximate_source_dates_remain_provisional() -> None:
     assert _membership_verified(record, intervals) is False
 
 
-def test_later_source_creation_prevents_backdated_membership_verification() -> None:
+def test_exact_independent_interval_supports_later_serialized_membership() -> None:
     record = _record(
         start=date(2012, 1, 2),
         end=date(2014, 5, 6),
@@ -94,12 +95,12 @@ def test_later_source_creation_prevents_backdated_membership_verification() -> N
         ("ABC", date(2012, 1, 2), date(2014, 5, 6))
     }
 
-    assert _membership_verified(record, intervals) is False
-    claims = _identity_claims([record])
-    assert claims[0].effective_from == date(2013, 2, 3)
+    assert _membership_verified(record, intervals) is True
+    claims = _identity_claims([record], frozenset({record.record_id}))
+    assert claims[0].effective_from == date(2012, 1, 2)
 
 
-def test_materialization_enforces_source_creation_boundary() -> None:
+def test_materialization_uses_exact_independent_identity_start() -> None:
     start = date(2010, 1, 1)
     created = date(2015, 6, 1)
     record = _record(start=start, end=None, created_at=created)
@@ -120,11 +121,11 @@ def test_materialization_enforces_source_creation_boundary() -> None:
         membership_start = membership.effective_from if membership is not None else None
         session.rollback()
 
-    assert plan.source_validity_adjusted_memberships == 1
-    assert plan.verified_memberships == 0
-    assert plan.provisional_memberships == 1
-    assert identity_start == created
-    assert membership_start == created
+    assert plan.source_validity_adjusted_memberships == 0
+    assert plan.verified_memberships == 1
+    assert plan.provisional_memberships == 0
+    assert identity_start == start
+    assert membership_start == start
 
 
 def test_cross_source_boundary_adjudication_can_verify_an_exact_identity_span() -> None:
@@ -242,7 +243,15 @@ def _anchor(symbol: str = "ABC") -> AnchorExpectation:
         anchor_id="test-anchor",
         universe_code="sp500",
         effective_at=date(2020, 1, 1),
-        display_symbols=(symbol,),
+        constituents=(
+            AnchorConstituentExpectation(
+                cik="0000000001",
+                symbol=symbol,
+                name="Alpha Corp",
+                membership_effective_to=None,
+                source_hash="e" * 64,
+            ),
+        ),
     )
 
 
@@ -313,8 +322,8 @@ def test_failed_anchor_validation_rolls_back_every_staged_row() -> None:
         )
         validation = validate_materialized_state(session, _anchor("XYZ"))
         assert validation.commit_eligible is False
-        assert validation.missing_anchor_symbols == ("XYZ",)
-        assert validation.unexpected_snapshot_symbols == ("ABC",)
+        assert validation.missing_anchor_symbols == ("0000000001/XYZ",)
+        assert validation.unexpected_snapshot_symbols == ("0000000001/ABC",)
         session.rollback()
 
         assert int(session.scalar(select(func.count()).select_from(Company)) or 0) == 0

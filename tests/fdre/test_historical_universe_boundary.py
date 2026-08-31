@@ -85,12 +85,30 @@ def test_approximate_lawcal_boundaries_need_two_external_sources() -> None:
     assert two_sources.status == "verified"
 
 
-def test_later_symbol_creation_remains_provisional_after_date_corroboration() -> None:
+def test_exact_external_addition_supports_a_later_serialized_symbol() -> None:
     result = BoundaryEvidenceIndex(evidence=(), lineages=(_lineage(),)).adjudicate(
         _record(created_at=date(2012, 3, 4))
     )
 
     assert result.membership_boundaries_verified is True
+    assert result.point_in_time_symbol_valid is True
+    assert result.status == "verified"
+    assert result.reasons == ()
+
+
+def test_later_serialized_symbol_without_external_start_support_is_provisional() -> None:
+    lineage = TickerMembershipLineage(
+        symbol="ABC",
+        effective_from=date(2010, 1, 2),
+        effective_to=date(2015, 1, 1),
+        source="fja05680/sp500-ticker-start-end",
+        source_ref="fja-ref",
+        source_hash="b" * 64,
+    )
+    result = BoundaryEvidenceIndex(evidence=(), lineages=(lineage,)).adjudicate(
+        _record(created_at=date(2012, 3, 4))
+    )
+
     assert result.point_in_time_symbol_valid is False
-    assert result.status == "provisional_identity"
-    assert result.reasons == ("symbol_created_after_reported_membership_start",)
+    assert result.status == "provisional_boundary_and_identity"
+    assert "symbol_start_lacks_exact_external_identity_support" in result.reasons

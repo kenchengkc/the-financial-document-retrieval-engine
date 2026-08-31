@@ -2,11 +2,13 @@
 
 The materializer is deliberately conservative:
 - historical-only issuers use ticker=NULL rather than a synthetic current ticker;
-- stable securities are keyed by exact CIK + normalized historical symbol;
+- the SEC-filed starting snapshot is materialized from 500 point-in-time CIK/symbol identities;
+- later exact CIK + normalized-symbol claims never rewrite that starting identity;
 - ticker identity is asserted only across periods where that exact CIK/symbol is observed as an
   S&P constituent (plus the removal boundary day needed to identify the departing security);
-- lawcal ``created_at`` is enforced as the symbol row's source-validity boundary, so later ticker
-  identities are never projected backward to ``date_added``;
+- lawcal ``created_at`` is the fallback symbol-validity boundary; an exact independent addition
+  observation may establish the earlier historical ticker, but terminal symbols cannot cross the
+  identity-safe starting snapshot;
 - membership is verified only when the independent pinned fja05680 interval exactly agrees with
   the lawcal component interval and the lawcal dates are not marked approximate;
 - all other source-backed membership is persisted as provisional;
@@ -39,7 +41,6 @@ from fdre.research.historical_component_history import (
     HistoricalComponentHistoryAdapter,
     HistoricalComponentRecord,
 )
-from fdre.research.historical_universe_anchor import normalize_display_symbol
 from fdre.research.historical_universe_boundary import (
     BOUNDARY_ADJUDICATION_SCHEMA_VERSION,
 )
@@ -47,7 +48,7 @@ from fdre.research.historical_universe_identity import normalize_cik
 from fdre.research.historical_universe_lineage import TickerMembershipLineageAdapter
 from fdre.universe import universe_from_session
 
-_SCHEMA_VERSION = "fdre-hu2-production-materialization-v3"
+_SCHEMA_VERSION = "fdre-hu2-production-materialization-v4"
 _SOURCE = "lawcal/sp500-components-history"
 
 
@@ -76,25 +77,45 @@ class IdentityClaim:
 
 
 @dataclass(frozen=True, slots=True)
+class AnchorConstituentExpectation:
+    cik: str
+    symbol: str
+    name: str
+    membership_effective_to: date | None
+    source_hash: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return self.cik, self.symbol
+
+
+@dataclass(frozen=True, slots=True)
 class AnchorExpectation:
     anchor_id: str
     universe_code: str
     effective_at: date
-    display_symbols: tuple[str, ...]
+    constituents: tuple[AnchorConstituentExpectation, ...]
 
     @property
     def constituent_count(self) -> int:
-        return len(self.display_symbols)
+        return len(self.constituents)
+
+    @property
+    def display_symbols(self) -> tuple[str, ...]:
+        return tuple(sorted(item.symbol for item in self.constituents))
 
 
 @dataclass(frozen=True, slots=True)
 class BoundaryVerification:
     audit_id: str
     verified_record_ids: frozenset[str]
+    membership_verified_record_ids: frozenset[str] = frozenset()
+    identity_verified_record_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
 class MaterializationPlan:
+    anchor_security_count: int
     historical_company_creates: int
     current_company_creates: int
     current_ticker_fills: int
@@ -112,6 +133,7 @@ class MaterializationPlan:
     def as_dict(self) -> dict[str, object]:
         return {
             "schema_version": _SCHEMA_VERSION,
+            "anchor_security_count": self.anchor_security_count,
             "historical_company_creates": self.historical_company_creates,
             "current_company_creates": self.current_company_creates,
             "current_ticker_fills": self.current_ticker_fills,
@@ -260,27 +282,38 @@ def _membership_verified(
     exact_interval_verified = (
         not record.added_approximate
         and not record.removed_approximate
-        and record.source_valid_from == record.effective_from
-        and (_symbol(record.symbol), record.source_valid_from, record.effective_to)
+        and (_symbol(record.symbol), record.effective_from, record.effective_to)
         in verified_intervals
     )
     return exact_interval_verified or record.record_id in verified_record_ids
 
 
-def _identity_claims(records: Sequence[HistoricalComponentRecord]) -> tuple[IdentityClaim, ...]:
+def _identity_claims(
+    records: Sequence[HistoricalComponentRecord],
+    verified_record_ids: frozenset[str] = frozenset(),
+) -> tuple[IdentityClaim, ...]:
     """Build only source-observed identity spans, preserving gaps between index tenures."""
 
     claims: list[IdentityClaim] = []
-    for record in sorted(records, key=lambda item: (item.source_valid_from, item.record_id)):
+    starts = {
+        record.record_id: (
+            record.effective_from
+            if record.record_id in verified_record_ids
+            else record.source_valid_from
+        )
+        for record in records
+    }
+    for record in sorted(records, key=lambda item: (starts[item.record_id], item.record_id)):
+        identity_start = starts[record.record_id]
         # The removal boundary is itself evidence about the departing security. Extending one day
         # makes that date queryable without claiming the identity beyond the boundary.
         claim_end = record.effective_to + timedelta(days=1) if record.effective_to else None
         if not claims:
-            claims.append(IdentityClaim(record.source_valid_from, claim_end, (record,)))
+            claims.append(IdentityClaim(identity_start, claim_end, (record,)))
             continue
         previous = claims[-1]
-        if previous.effective_to is not None and record.source_valid_from > previous.effective_to:
-            claims.append(IdentityClaim(record.source_valid_from, claim_end, (record,)))
+        if previous.effective_to is not None and identity_start > previous.effective_to:
+            claims.append(IdentityClaim(identity_start, claim_end, (record,)))
             continue
         merged_end = (
             None
@@ -339,33 +372,57 @@ def _load_anchor(path: Path) -> AnchorExpectation:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("materialization anchor must be a JSON object")
-    if payload.get("complete_target_window_anchor") is not True:
-        raise ValueError("materialization requires a complete target-window anchor")
-    raw_tokens = payload.get("lineage_tokens")
-    if not isinstance(raw_tokens, list) or not all(
-        isinstance(token, str) and token.strip() for token in raw_tokens
-    ):
-        raise ValueError("materialization anchor lineage_tokens must be non-empty strings")
-    raw_count = payload.get("constituent_count")
+    raw_anchor = payload.get("identity_safe_anchor", payload)
+    if not isinstance(raw_anchor, dict):
+        raise ValueError("materialization anchor lacks identity_safe_anchor")
+    raw_constituents = raw_anchor.get("constituents")
+    if not isinstance(raw_constituents, list):
+        raise ValueError("materialization anchor constituents must be a list")
+    constituents: list[AnchorConstituentExpectation] = []
+    for row in raw_constituents:
+        if not isinstance(row, dict):
+            raise ValueError("materialization anchor constituent must be an object")
+        cik = normalize_cik(str(row.get("cik", "")))
+        symbol = _symbol(str(row.get("symbol", "")))
+        name = str(row.get("name", "")).strip()
+        source_hash = str(row.get("source_hash", "")).strip()
+        if not symbol or not name or len(source_hash) != 64:
+            raise ValueError("materialization anchor constituent identity is incomplete")
+        raw_end = row.get("membership_effective_to")
+        effective_to = date.fromisoformat(str(raw_end)) if raw_end else None
+        constituents.append(
+            AnchorConstituentExpectation(
+                cik=cik,
+                symbol=symbol,
+                name=name,
+                membership_effective_to=effective_to,
+                source_hash=source_hash,
+            )
+        )
+    raw_count = raw_anchor.get("constituent_count")
     if isinstance(raw_count, bool) or not isinstance(raw_count, int):
         raise ValueError("materialization anchor constituent_count must be an integer")
-    if raw_count != len(raw_tokens):
+    if raw_count != len(constituents):
         raise ValueError("materialization anchor constituent_count is inconsistent")
-    if not 490 <= raw_count <= 510:
-        raise ValueError("materialization anchor constituent_count is implausible")
-    anchor_id = str(payload.get("anchor_id", "")).strip()
-    universe_code = str(payload.get("universe_code", "sp500")).strip().lower()
+    if raw_count != 500:
+        raise ValueError("materialization requires exactly 500 identity-safe securities")
+    keys = [item.key for item in constituents]
+    if len(set(keys)) != len(keys):
+        raise ValueError("materialization anchor contains duplicate security identities")
+    anchor_id = str(raw_anchor.get("anchor_id", "")).strip()
+    universe_code = str(raw_anchor.get("universe_code", "sp500")).strip().lower()
     if not anchor_id:
         raise ValueError("materialization anchor anchor_id is required")
+    canonical_anchor = {key: value for key, value in raw_anchor.items() if key != "anchor_id"}
+    if anchor_id != _hash(canonical_anchor):
+        raise ValueError("materialization anchor_id does not match its constituents")
     if not universe_code:
         raise ValueError("materialization anchor universe_code is required")
     return AnchorExpectation(
         anchor_id=anchor_id,
         universe_code=universe_code,
-        effective_at=date.fromisoformat(str(payload["effective_at"])),
-        display_symbols=tuple(
-            sorted(normalize_display_symbol(token) for token in raw_tokens)
-        ),
+        effective_at=date.fromisoformat(str(raw_anchor["effective_at"])),
+        constituents=tuple(sorted(constituents, key=lambda item: item.key)),
     )
 
 
@@ -388,24 +445,31 @@ def _load_boundary_verification(path: Path) -> BoundaryVerification:
     if audit_id != expected_audit_id:
         raise ValueError("boundary audit audit_id does not match its interval decisions")
     verified_ids: set[str] = set()
+    membership_verified_ids: set[str] = set()
+    identity_verified_ids: set[str] = set()
     for raw_interval in raw_intervals:
         if not isinstance(raw_interval, dict):
             raise ValueError("boundary audit interval must be an object")
         record_id = str(raw_interval.get("record_id", "")).strip()
         if len(record_id) != 64:
             raise ValueError("boundary audit record_id must be a SHA-256 digest")
+        membership_verified = (
+            raw_interval.get("membership_boundaries_verified") is True
+        )
+        identity_verified = raw_interval.get("point_in_time_symbol_valid") is True
+        if membership_verified:
+            membership_verified_ids.add(record_id)
+        if identity_verified:
+            identity_verified_ids.add(record_id)
         if raw_interval.get("status") == "verified":
-            if (
-                raw_interval.get("membership_boundaries_verified") is not True
-                or raw_interval.get("point_in_time_symbol_valid") is not True
-                or raw_interval.get("effective_from")
-                != raw_interval.get("source_valid_from")
-            ):
+            if not membership_verified or not identity_verified:
                 raise ValueError("verified boundary row is not point-in-time materializable")
             verified_ids.add(record_id)
     return BoundaryVerification(
         audit_id=audit_id,
         verified_record_ids=frozenset(verified_ids),
+        membership_verified_record_ids=frozenset(membership_verified_ids),
+        identity_verified_record_ids=frozenset(identity_verified_ids),
     )
 
 
@@ -523,13 +587,13 @@ def validate_materialized_state(
     """Audit the staged HU state before the caller decides whether to commit it."""
 
     session.flush()
-    expected = Counter(anchor.display_symbols)
+    expected = Counter(f"{item.cik}/{item.symbol}" for item in anchor.constituents)
     provisional_count: int | None = None
     strict_count: int | None = None
     provisional_id: str | None = None
     replay_id: str | None = None
     strict_id: str | None = None
-    missing: tuple[str, ...] = anchor.display_symbols
+    missing: tuple[str, ...] = tuple(sorted(expected.elements()))
     unexpected: tuple[str, ...] = ()
     provisional_error: str | None = None
     strict_error: str | None = None
@@ -551,7 +615,8 @@ def validate_materialized_state(
         provisional_id = provisional.snapshot_id
         replay_id = replay.snapshot_id
         actual = Counter(
-            normalize_display_symbol(row.symbol) for row in provisional.constituents
+            f"{normalize_cik(row.cik)}/{_symbol(row.symbol)}"
+            for row in provisional.constituents
         )
         missing = _counter_rows(expected - actual)
         unexpected = _counter_rows(actual - expected)
@@ -566,11 +631,12 @@ def validate_materialized_state(
         )
         strict_count = len(strict.constituents)
         strict_id = strict.snapshot_id
-        strict_symbols = Counter(
-            normalize_display_symbol(row.symbol) for row in strict.constituents
+        strict_securities = Counter(
+            f"{normalize_cik(row.cik)}/{_symbol(row.symbol)}"
+            for row in strict.constituents
         )
-        if strict_symbols != expected:
-            strict_error = "strict snapshot symbols do not match the complete anchor"
+        if strict_securities != expected:
+            strict_error = "strict snapshot securities do not match the identity-safe anchor"
     except ValueError as exc:
         strict_error = str(exc)
 
@@ -606,15 +672,34 @@ def materialize(
     observed_at: datetime,
     stage: bool,
     boundary_verification: BoundaryVerification | None = None,
+    anchor: AnchorExpectation | None = None,
 ) -> MaterializationPlan:
     companies = list(session.scalars(select(Company).order_by(Company.id)))
     companies_by_cik = {company.cik: company for company in companies}
     companies_by_id = {company.id: company for company in companies}
     existing_security_by_key = _existing_security_by_key(session, companies_by_id)
 
+    anchor_by_key = {item.key: item for item in anchor.constituents} if anchor else {}
+    anchor_keys = set(anchor_by_key)
     grouped: dict[tuple[str, str], list[HistoricalComponentRecord]] = defaultdict(list)
     latest_by_cik: dict[str, HistoricalComponentRecord] = {}
     for record in records:
+        if anchor is not None:
+            active_at_anchor = record.source_valid_from <= anchor.effective_at and (
+                record.effective_to is None or anchor.effective_at < record.effective_to
+            )
+            anchor_exact_backfill = (
+                _component_key(record) in anchor_keys
+                and (
+                    record.effective_from <= anchor.effective_at
+                    or record.effective_to
+                    == anchor_by_key[_component_key(record)].membership_effective_to
+                )
+            )
+            if active_at_anchor or anchor_exact_backfill:
+                # The independently reconciled starting snapshot owns this part of the interval.
+                # Later terminalized rows must not be projected back across it.
+                continue
         grouped[_component_key(record)].append(record)
         prior = latest_by_cik.get(record.cik)
         if prior is None or record.effective_from > prior.effective_from:
@@ -630,14 +715,17 @@ def materialize(
     provisional_memberships = 0
     source_validity_adjusted_memberships = 0
     cross_source_boundary_verified_memberships = 0
+    anchor_security_count = len(anchor.constituents) if anchor else 0
 
     # Create/fill issuer rows first so every Security continues to reference the canonical issuer
     # table while current-company APIs can exclude ticker=NULL rows.
-    all_ciks = sorted({record.cik for record in records})
+    anchor_by_cik = {item.cik: item for item in anchor.constituents} if anchor else {}
+    all_ciks = sorted({record.cik for record in records} | set(anchor_by_cik))
     for cik in all_ciks:
         company = companies_by_cik.get(cik)
         current = current_by_cik.get(cik)
-        latest = latest_by_cik[cik]
+        latest = latest_by_cik.get(cik)
+        anchor_item = anchor_by_cik.get(cik)
         if company is None:
             if current is not None:
                 current_company_creates += 1
@@ -647,8 +735,22 @@ def materialize(
                 company = Company(
                     ticker=current.symbol if current is not None else None,
                     cik=cik,
-                    name=current.name if current is not None else latest.name,
-                    sector=current.sector if current is not None else latest.sector,
+                    name=(
+                        current.name
+                        if current is not None
+                        else latest.name
+                        if latest is not None
+                        else anchor_item.name
+                        if anchor_item is not None
+                        else cik
+                    ),
+                    sector=(
+                        current.sector
+                        if current is not None
+                        else latest.sector
+                        if latest is not None
+                        else None
+                    ),
                 )
                 session.add(company)
                 session.flush()
@@ -665,6 +767,100 @@ def materialize(
                         f"current ticker {current.symbol} already belongs to another company"
                     )
                 company.ticker = current.symbol
+
+    # Stage the independently reconciled starting snapshot before applying later component rows.
+    # Every row is verified by the complete SEC-filed holdings schedule plus its dated identity
+    # decision.  End dates merely delimit when later (possibly provisional) evidence takes over.
+    if anchor is not None:
+        for item in anchor.constituents:
+            company = companies_by_cik.get(item.cik)
+            security = existing_security_by_key.get(item.key)
+            if security is None:
+                security_creates += 1
+                if stage:
+                    if company is None:
+                        raise RuntimeError(f"anchor issuer {item.cik} was not materialized")
+                    security = Security(company_id=company.id, security_type="common_stock")
+                    session.add(security)
+                    session.flush()
+                    existing_security_by_key[item.key] = security
+            if security is None:
+                identity_creates += 1
+                membership_creates += 1
+                verified_memberships += 1
+                continue
+
+            existing_identities = list(
+                session.scalars(
+                    select(SecurityIdentityPeriod)
+                    .where(SecurityIdentityPeriod.security_id == security.id)
+                    .order_by(SecurityIdentityPeriod.effective_from)
+                )
+            )
+            identity_end = item.membership_effective_to
+            future_starts = [
+                identity.effective_from
+                for identity in existing_identities
+                if anchor.effective_at < identity.effective_from
+                and (identity_end is None or identity.effective_from < identity_end)
+            ]
+            if future_starts:
+                boundary = min(future_starts)
+                identity_end = min(identity_end, boundary) if identity_end else boundary
+            identity_exists = any(
+                identity.symbol in {item.symbol, item.symbol.replace("-", ".")}
+                and identity.effective_from <= anchor.effective_at
+                and _interval_end_after(identity.effective_to, anchor.effective_at)
+                for identity in existing_identities
+            )
+            if not identity_exists:
+                identity_creates += 1
+                if stage:
+                    session.add(
+                        SecurityIdentityPeriod(
+                            security_id=security.id,
+                            symbol=item.symbol,
+                            name=item.name,
+                            exchange=None,
+                            effective_from=anchor.effective_at,
+                            effective_to=identity_end,
+                            source="sec-edgar-ishares-ivv-nq+identity-adjudication",
+                            source_url=None,
+                            source_observed_at=observed_at,
+                            source_hash=item.source_hash,
+                            verification_status="verified",
+                            confidence=1.0,
+                        )
+                    )
+            existing_membership = session.scalar(
+                select(UniverseMembership).where(
+                    UniverseMembership.universe_code == anchor.universe_code,
+                    UniverseMembership.security_id == security.id,
+                    UniverseMembership.effective_from == anchor.effective_at,
+                )
+            )
+            if existing_membership is None:
+                membership_creates += 1
+                verified_memberships += 1
+                if stage:
+                    session.add(
+                        UniverseMembership(
+                            universe_code=anchor.universe_code,
+                            security_id=security.id,
+                            effective_from=anchor.effective_at,
+                            effective_to=item.membership_effective_to,
+                            source="sec-edgar-ishares-ivv-nq+identity-adjudication",
+                            source_url=None,
+                            source_observed_at=observed_at,
+                            source_hash=item.source_hash,
+                            verification_status="verified",
+                            confidence=1.0,
+                        )
+                    )
+            elif existing_membership.effective_to != item.membership_effective_to:
+                raise ValueError(
+                    f"anchor membership boundary mismatch for {item.cik}/{item.symbol}"
+                )
 
     # Refresh exact identity→security mapping after potential issuer creation. Existing current
     # identities are reused; otherwise one conservative security is created per exact CIK/symbol.
@@ -699,7 +895,34 @@ def materialize(
             if security is not None
             else []
         )
-        for claim in _identity_claims(source_records):
+        identity_verified_ids = (
+            (
+                boundary_verification.identity_verified_record_ids
+                or boundary_verification.verified_record_ids
+            )
+            if boundary_verification is not None
+            else frozenset()
+        )
+        exact_identity_ids = frozenset(
+            record.record_id
+            for record in source_records
+            if not record.added_approximate
+            and not record.removed_approximate
+            and (_symbol(record.symbol), record.effective_from, record.effective_to)
+            in verified_intervals
+        )
+        supported_identity_ids = identity_verified_ids | exact_identity_ids
+        if anchor is not None and key not in anchor_keys:
+            supported_identity_ids = frozenset(
+                record_id
+                for record_id in supported_identity_ids
+                if not any(
+                    record.record_id == record_id
+                    and record.effective_from <= anchor.effective_at
+                    for record in source_records
+                )
+            )
+        for claim in _identity_claims(source_records, supported_identity_ids):
             identity_start = claim.effective_from
             identity_end = claim.effective_to
             identity_exists = any(
@@ -747,25 +970,49 @@ def materialize(
                         source_url=claim.records[-1].source_ref,
                         source_observed_at=observed_at,
                         source_hash=_source_hash_for_group(claim.records),
-                        verification_status="verified",
-                        confidence=0.98,
+                        verification_status=(
+                            "verified"
+                            if all(
+                                record.record_id in supported_identity_ids
+                                for record in claim.records
+                            )
+                            else "provisional"
+                        ),
+                        confidence=(
+                            0.98
+                            if all(
+                                record.record_id in supported_identity_ids
+                                for record in claim.records
+                            )
+                            else 0.85
+                        ),
                     )
                     session.add(identity)
                     existing_identities.append(identity)
 
         for record in source_records:
-            membership_start = record.source_valid_from
+            identity_supported = record.record_id in supported_identity_ids
+            membership_start = (
+                record.effective_from if identity_supported else record.source_valid_from
+            )
             if membership_start != record.effective_from:
                 source_validity_adjusted_memberships += 1
             boundary_verified = (
                 boundary_verification is not None
-                and record.record_id in boundary_verification.verified_record_ids
+                and record.record_id
+                in (
+                    boundary_verification.membership_verified_record_ids
+                    or boundary_verification.verified_record_ids
+                )
             )
             is_verified = _membership_verified(
                 record,
                 verified_intervals,
                 (
-                    boundary_verification.verified_record_ids
+                    (
+                        boundary_verification.membership_verified_record_ids
+                        or boundary_verification.verified_record_ids
+                    )
                     if boundary_verification is not None
                     else frozenset()
                 ),
@@ -826,6 +1073,7 @@ def materialize(
                 )
 
     plan_payload = {
+        "anchor_security_count": anchor_security_count,
         "historical_company_creates": historical_company_creates,
         "current_company_creates": current_company_creates,
         "current_ticker_fills": current_ticker_fills,
@@ -889,6 +1137,7 @@ def main() -> int:
                     observed_at=observed_at,
                     stage=args.apply,
                     boundary_verification=boundary_verification,
+                    anchor=anchor,
                 )
                 if args.apply:
                     validation = validate_materialized_state(session, anchor)
@@ -925,8 +1174,8 @@ def main() -> int:
     payload["interpretation"] = (
         "Historical-only issuers use ticker=null. Membership is verified only on exact interval "
         "agreement or the pinned cross-source boundary adjudication; other source-backed "
-        "intervals remain provisional. lawcal created_at is enforced as the earliest replayable "
-        "date for each symbol row. Dry-run planning performs no writes. An explicit apply is "
+        "intervals remain provisional. lawcal created_at is used only when no independent exact "
+        "ticker-start evidence exists. Dry-run planning performs no writes. An explicit apply is "
         "committed only when its strict and provisional anchor snapshots, interval audit, identity "
         "coverage, and deterministic replay all pass."
     )

@@ -90,9 +90,10 @@ def build_boundary_report(
         "interpretation": (
             "Every source interval and both of its boundaries received an explicit decision. "
             "Exact lawcal dates need one exact external source; lawcal dates marked approximate "
-            "need two. A later lawcal created_at keeps the interval provisional for point-in-time "
-            "identity even when its membership dates are corroborated. Unresolved rows are "
-            "retained, not guessed or silently omitted."
+            "need two. A later lawcal created_at is not treated as a ticker start: an exact "
+            "independent addition observation can establish the historical symbol, otherwise the "
+            "identity stays provisional. Unresolved rows are retained, not guessed or silently "
+            "omitted."
         ),
     }
 

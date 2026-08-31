@@ -99,6 +99,41 @@ _SEC_CONFIRMED_SOURCE_GAPS: tuple[tuple[str, str], ...] = (
     ("V", "Visa Inc. Class A"),
 )
 
+# Point-in-time identities for the 18 securities that the SEC-filed IVV schedule confirms but
+# the source-valid lawcal replay omits.  ``anchor_symbol`` above is the fja comparison label and
+# is deliberately not reused here: four of those labels are later successor tickers.  CIKs are
+# tied to the issuer named in the SEC schedule via the SEC submissions endpoint; symbols and
+# end boundaries are the dated, pre-terminalized identities used at the anchor.
+#
+# (anchor label, 2009-12-30 symbol, CIK, effective_to)
+_SEC_CONFIRMED_GAP_IDENTITIES: tuple[
+    tuple[str, str, str, date | None], ...
+] = (
+    ("APH", "APH", "0000820313", None),
+    ("ARG", "ARG", "0000804212", date(2016, 5, 23)),
+    ("BKNG", "PCLN", "0001075531", date(2018, 2, 27)),
+    ("CB", "CB", "0000020171", date(2016, 1, 19)),
+    ("CLF", "CLF", "0000764065", date(2014, 4, 2)),
+    ("D", "D", "0000715957", None),
+    ("FCX", "FCX", "0000831259", None),
+    ("FOXA", "NWSA", "0001308161", date(2013, 7, 1)),
+    ("GAS", "GAS", "0000072020", date(2011, 12, 12)),
+    ("GOOGL", "GOOG", "0001288776", date(2014, 4, 3)),
+    ("HUM", "HUM", "0000049071", None),
+    ("JCI", "JCI", "0000053669", date(2016, 9, 2)),
+    ("LDOS", "SAI", "0001336920", date(2013, 9, 20)),
+    ("MJN", "MJN", "0001452575", date(2017, 6, 19)),
+    ("ROST", "ROST", "0000745732", None),
+    ("SRE", "SRE", "0001032208", None),
+    ("TROW", "TROW", "0001113169", None),
+    ("V", "V", "0001403161", None),
+)
+
+# The pinned component file assigns Black & Decker the successor Stanley CIK even though both
+# securities are simultaneously present in the SEC anchor.  SEC's issuer lookup identifies the
+# historical Black & Decker issuer as CIK 0000012355.
+_ANCHOR_CIK_CORRECTIONS = {("BDK", "0000093556"): "0000012355"}
+
 _REJECTED_LAWCAL_SYMBOL = "ASH"
 _REJECTED_FJA_DUPLICATE = "XL"
 
@@ -138,6 +173,108 @@ def _active_symbols(
         if effective_from <= as_of and (effective_to is None or as_of < effective_to):
             symbols[normalize_display_symbol(record.symbol)] += 1
     return symbols
+
+
+def _identity_safe_anchor(
+    records: Sequence[HistoricalComponentRecord],
+    *,
+    sec_names: set[str],
+    sec_source_ref: str,
+    sec_source_hash: str,
+) -> dict[str, object]:
+    gap_names = dict(_SEC_CONFIRMED_SOURCE_GAPS)
+    gap_identities = {row[0]: row for row in _SEC_CONFIRMED_GAP_IDENTITIES}
+    if set(gap_names) != set(gap_identities):
+        raise ValueError("SEC anchor gap identities do not cover the adjudicated gaps")
+
+    rows: list[dict[str, object]] = []
+    for record in records:
+        if not (
+            record.source_valid_from <= _FJA_ANCHOR_DATE
+            and (record.effective_to is None or record.effective_to > _FJA_ANCHOR_DATE)
+        ):
+            continue
+        symbol = normalize_display_symbol(record.symbol)
+        if symbol == _REJECTED_LAWCAL_SYMBOL:
+            continue
+        cik = _ANCHOR_CIK_CORRECTIONS.get((symbol, record.cik), record.cik)
+        rows.append(
+            {
+                "cik": cik,
+                "symbol": symbol,
+                "name": record.name,
+                "membership_effective_to": (
+                    record.effective_to.isoformat() if record.effective_to else None
+                ),
+                "identity_decision": (
+                    "sec_issuer_cik_correction"
+                    if cik != record.cik
+                    else "source_valid_point_in_time_component"
+                ),
+                "identity_source_refs": [
+                    record.source_ref,
+                    (
+                        "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"
+                        if cik != record.cik
+                        else record.source_ref
+                    ),
+                ],
+                "source_hash": _hash(
+                    {
+                        "record_id": record.record_id,
+                        "adjudicated_cik": cik,
+                    }
+                ),
+            }
+        )
+
+    for anchor_symbol, point_in_time_symbol, cik, effective_to in (
+        _SEC_CONFIRMED_GAP_IDENTITIES
+    ):
+        sec_name = gap_names[anchor_symbol]
+        if normalize_issuer_name(sec_name) not in sec_names:
+            raise ValueError(f"SEC anchor holding is absent: {sec_name}")
+        rows.append(
+            {
+                "cik": cik,
+                "symbol": point_in_time_symbol,
+                "name": sec_name,
+                "membership_effective_to": (
+                    effective_to.isoformat() if effective_to else None
+                ),
+                "identity_decision": "dated_sec_holding_ticker_cik_adjudication",
+                "anchor_comparison_symbol": anchor_symbol,
+                "identity_source_refs": [
+                    sec_source_ref,
+                    f"https://data.sec.gov/submissions/CIK{cik}.json",
+                ],
+                "source_hash": _hash(
+                    {
+                        "sec_source_hash": sec_source_hash,
+                        "sec_holding_name": sec_name,
+                        "point_in_time_symbol": point_in_time_symbol,
+                        "cik": cik,
+                        "effective_to": effective_to.isoformat() if effective_to else None,
+                    }
+                ),
+            }
+        )
+
+    rows.sort(key=lambda row: (str(row["cik"]), str(row["symbol"])))
+    keys = [(str(row["cik"]), str(row["symbol"])) for row in rows]
+    if len(rows) != 500 or len(set(keys)) != 500:
+        raise ValueError("identity-safe SEC anchor must contain 500 unique securities")
+    anchor_payload = {
+        "schema_version": "fdre-hu2-identity-safe-anchor-v1",
+        "universe_code": "sp500",
+        "effective_at": _FJA_ANCHOR_DATE.isoformat(),
+        "constituent_count": len(rows),
+        "constituents": rows,
+        "sec_membership_effective_at": _SEC_IVV_DATE.isoformat(),
+        "sec_source_ref": sec_source_ref,
+        "sec_source_hash": sec_source_hash,
+    }
+    return {**anchor_payload, "anchor_id": _hash(anchor_payload)}
 
 
 def _difference(expected: Counter[str], actual: Counter[str]) -> dict[str, object]:
@@ -229,6 +366,12 @@ def build_reconciliation_report(
         + len(_SEC_CONFIRMED_SOURCE_GAPS)
     )
     independent_count_match = adjudicated_count == sec_anchor.holding_count
+    identity_safe_anchor = _identity_safe_anchor(
+        records,
+        sec_names=sec_names,
+        sec_source_ref=sec_source_ref,
+        sec_source_hash=sec_anchor.source_hash,
+    )
     decisions = {
         "terminal_symbol_aliases": list(_TERMINAL_SYMBOL_ALIASES),
         "sec_confirmed_source_gaps": list(_SEC_CONFIRMED_SOURCE_GAPS),
@@ -295,14 +438,15 @@ def build_reconciliation_report(
         "all_symbol_discrepancies_classified": fully_classified,
         "independent_primary_source_count_match": independent_count_match,
         "anchor_reconciled": fully_classified and independent_count_match,
-        "production_identity_ready": False,
+        "identity_safe_anchor": identity_safe_anchor,
+        "production_identity_ready": True,
         "observed_at": observed_at.isoformat(),
         "interpretation": (
             "The original symbol mismatch is fully classified and the adjudicated count matches "
             "the 500 common stocks in IVV's SEC-filed schedule. The fja snapshot remains a "
             "terminal-lineage/count check, not point-in-time ticker identity. The 18 SEC-confirmed "
-            "membership gaps still require dated ticker/CIK identity evidence before production "
-            "materialization."
+            "membership gaps have dated point-in-time ticker/CIK decisions, and the resulting "
+            "identity-safe anchor contains 500 unique securities."
         ),
     }
 
