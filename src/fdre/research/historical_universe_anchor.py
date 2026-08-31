@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import html
 import json
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 _LINEAGE_SUFFIX = re.compile(r"^(?P<symbol>.+)-(?P<end_yyyymm>\d{6})$")
 _ANCHOR_SCHEMA_VERSION = "fdre-hu2-complete-snapshot-anchor-v1"
+_SEC_HOLDINGS_SCHEMA_VERSION = "fdre-hu2-sec-fund-holdings-anchor-v1"
+_TRAILING_FOOTNOTES = re.compile(r"(?:\([a-z](?:,[a-z])?\))+$", re.IGNORECASE)
 
 
 def _sha256_json(payload: object) -> str:
@@ -75,6 +80,142 @@ class CompleteUniverseSnapshotAnchor:
                 "source_ref": self.source_ref,
                 "source_hash": self.source_hash,
             }
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialFundHolding:
+    """One security name exactly as reported in a filed fund schedule."""
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialFundHoldingsAnchor:
+    """A complete primary-source fund holding schedule used as an external check."""
+
+    fund_name: str
+    effective_at: date
+    holdings: tuple[OfficialFundHolding, ...]
+    source: str
+    source_url: str
+    source_ref: str
+    source_observed_at: datetime
+    source_hash: str
+
+    @property
+    def holding_count(self) -> int:
+        return len(self.holdings)
+
+    @property
+    def anchor_id(self) -> str:
+        return _sha256_json(
+            {
+                "schema_version": _SEC_HOLDINGS_SCHEMA_VERSION,
+                "fund_name": self.fund_name,
+                "effective_at": self.effective_at.isoformat(),
+                "holding_names": [holding.name for holding in self.holdings],
+                "source": self.source,
+                "source_ref": self.source_ref,
+                "source_hash": self.source_hash,
+            }
+        )
+
+
+class SecIvvHoldingsSnapshotAdapter:
+    """Parse IVV's common-stock schedule from one pinned SEC N-Q filing.
+
+    The 2009-12-31 iShares S&P 500 Index Fund schedule is a primary-source,
+    independently filed complete holdings check.  It contains issuer/security names but
+    no point-in-time tickers or CIKs, so it can adjudicate anchor membership and count
+    discrepancies without silently becoming identity evidence.
+    """
+
+    source_name = "sec-edgar-ishares-ivv-nq"
+    fund_name = "iShares S&P 500 Index Fund"
+    _fund_marker = "S&amp;P 500 INDEX FUND"
+
+    def __init__(self, *, source_ref: str, source_url: str) -> None:
+        if not source_ref.strip():
+            raise ValueError("source_ref is required for a pinned SEC filing")
+        if not source_url.strip():
+            raise ValueError("source_url is required")
+        self.source_ref = source_ref.strip()
+        self.source_url = source_url.strip()
+
+    @staticmethod
+    def _security_name(value: str) -> str:
+        normalized = " ".join(html.unescape(value).replace("\xa0", " ").split())
+        return _TRAILING_FOOTNOTES.sub("", normalized).strip()
+
+    def load(
+        self,
+        path: Path,
+        *,
+        observed_at: datetime,
+    ) -> OfficialFundHoldingsAnchor:
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise ValueError("observed_at must be timezone-aware")
+
+        source_bytes = path.read_bytes()
+        source_hash = hashlib.sha256(source_bytes).hexdigest()
+        raw_html = source_bytes.decode("utf-8", errors="replace")
+        marker_at = raw_html.find(self._fund_marker)
+        if marker_at < 0:
+            raise ValueError("could not find the IVV fund schedule in the SEC filing")
+        schedule_at = raw_html.rfind("Schedule of Investments", 0, marker_at)
+        common_stock_end = raw_html.find("TOTAL COMMON STOCKS", marker_at)
+        if schedule_at < 0 or common_stock_end < 0:
+            raise ValueError("could not bound IVV common-stock holdings in the SEC filing")
+
+        fragment = raw_html[schedule_at:common_stock_end]
+        fragment_text = " ".join(BeautifulSoup(fragment, "html.parser").stripped_strings)
+        date_match = re.search(
+            r"(January|February|March|April|May|June|July|August|September|October|"
+            r"November|December)\s+(\d{1,2}),\s+(\d{4})",
+            fragment_text,
+        )
+        if date_match is None:
+            raise ValueError("could not parse the IVV holdings effective date")
+        effective_at = datetime.strptime(date_match.group(0), "%B %d, %Y").date()
+
+        soup = BeautifulSoup(fragment, "html.parser")
+        holding_names: list[str] = []
+        for row in soup.find_all("tr"):
+            cells = row.find_all("td", recursive=False)
+            if not cells:
+                continue
+            name_cell = cells[0]
+            if name_cell.find("b") is not None:
+                continue
+            name = self._security_name(" ".join(name_cell.stripped_strings))
+            if not name:
+                continue
+            numeric_cells = 0
+            for cell in cells[1:]:
+                value = "".join(cell.stripped_strings)
+                value = value.replace(",", "").replace("$", "").replace("—", "")
+                if value.isdigit():
+                    numeric_cells += 1
+            if numeric_cells >= 2:
+                holding_names.append(name)
+
+        if len(holding_names) != len(set(holding_names)):
+            raise ValueError("IVV common-stock schedule contains duplicate holding names")
+        if not 490 <= len(holding_names) <= 510:
+            raise ValueError(
+                "IVV common-stock schedule has implausible holding count: "
+                f"{len(holding_names)}"
+            )
+        return OfficialFundHoldingsAnchor(
+            fund_name=self.fund_name,
+            effective_at=effective_at,
+            holdings=tuple(OfficialFundHolding(name=name) for name in holding_names),
+            source=self.source_name,
+            source_url=self.source_url,
+            source_ref=self.source_ref,
+            source_observed_at=observed_at,
+            source_hash=source_hash,
         )
 
 

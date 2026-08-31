@@ -277,10 +277,13 @@ historical membership or promote HU-2.
 | Residual observations | 647 | **12** |
 | Projected unique CIKs | 193 | **539** |
 
-The independently pinned complete anchor contains **501 constituents at 2010-01-01** and replays
-from source ref `c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff`. The component-history residual is
-11 unresolved observations plus one ambiguous observation. The existing production audit remains
-at **147 / 1,055 (13.93%)** until the projected identities are safely materialized and re-audited.
+The pinned fja05680 anchor contains **501 lineage tokens at 2009-12-30** and replays from source
+ref `c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff`. It is now explicitly classified as a
+terminal-lineage/count source, not an exact point-in-time ticker source. The independent primary
+check is IVV's 500-common-stock schedule as of 2009-12-31 in SEC N-Q accession
+`0001193125-10-044578`. The component-history residual is 11 unresolved observations plus one
+ambiguous observation. The existing production audit remains at **147 / 1,055 (13.93%)** until
+the projected identities are safely materialized and re-audited.
 
 Crossing the 95% identity-resolution floor does not by itself pass HU-2. The production gate must
 also verify the state actually written: a complete current catalog, non-overlapping membership and
@@ -288,12 +291,56 @@ identity intervals, explicit treatment of every provisional boundary, agreement 
 anchor at audited dates, deterministic snapshot replay, and a published unresolved queue. Until
 those checks pass, HU-2 remains active and strict historical research remains gated.
 
-### HU-2 fail-closed materialization rehearsal
+### HU-2 anchor reconciliation and boundary adjudication
 
 The pinned lawcal component history at
 `ed4cf46e5ec5bb02e709aa08ee8a3a218d1b7d19`, fja05680 lineage/anchor source at
-`c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff`, and the 501-constituent anchor effective
+`c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff`, and the 501-lineage anchor effective
 2009-12-30 were replayed against an empty schema before production apply.
+
+The earlier rehearsal is retained as a regression fixture: ignoring lawcal's `created_at` rule
+reproduces exactly **533** staged names, **29** missing anchor symbols, and **61** unexpected
+symbols. That comparison was not a valid PIT replay. Enforcing the upstream rule removes 50
+back-projected later ticker rows and leaves 483 source-valid rows.
+
+| Anchor reconciliation | Result |
+| --- | ---: |
+| Original staged constituents | 533 |
+| Original missing / unexpected | 29 / 61 |
+| Source-valid constituents (`as_of >= created_at`) | 483 |
+| Source-valid missing / unexpected vs fja | 54 / 36 |
+| Historical ticker -> fja terminal-symbol aliases | 35 |
+| SEC-confirmed lawcal membership gaps | 18 |
+| Rejected lawcal false positive | 1 (`ASH`) |
+| Rejected duplicate fja display lineage | 1 (`XL`) |
+| Adjudicated constituents | **500** |
+| SEC IVV common-stock holdings | **500** |
+
+All 54/36 residual symbol differences are classified. The arithmetic is exact:
+`483 - ASH + 18 SEC-confirmed gaps = 500`. The 35 ticker pairs explain differences without being
+written as historical identities. The 18 gaps are APH, ARG, BKNG, CB, CLF, D, FCX, FOXA, GAS,
+GOOGL, HUM, JCI, LDOS, MJN, ROST, SRE, TROW, and V. IVV's filed security names confirm their
+membership, but the filing does not contain ticker/CIK identity, so these rows remain blocked from
+production until dated identity evidence is attached.
+
+Every one of the 999 lawcal intervals now also has separate start/end evidence decisions. An exact
+lawcal date needs one exact external match; a lawcal date marked approximate needs two. A verified
+membership interval still remains identity-provisional when `created_at > date_added`.
+
+| Boundary adjudication | All intervals | Starts in 2010+ |
+| --- | ---: | ---: |
+| Source intervals audited | 999 | 365 |
+| Both membership boundaries corroborated | 441 | 299 |
+| Strict materializable verified intervals | **181** | **170** |
+| Boundary provisional, identity valid | 277 | 38 |
+| Boundary verified, identity provisional | 260 | 129 |
+| Boundary and identity provisional | 281 | 28 |
+
+The corrected dry-run materialization plan therefore reports 181 verified and 818 provisional
+memberships, including 541 whose point-in-time symbol validity begins after the reported
+membership start. It continues to perform no writes.
+
+### Prior fail-closed rehearsal retained for provenance
 
 | Staged measurement | Result |
 | --- | ---: |
@@ -312,16 +359,18 @@ The pinned lawcal component history at
 | Membership overlaps | 0 |
 | Memberships missing identity coverage | 0 |
 
-The provisional snapshot replayed to the same snapshot ID, but it did not match the anchor. Strict
+That provisional snapshot replayed to the same snapshot ID, but it did not match the anchor. Strict
 resolution failed closed on active provisional membership. The explicit apply therefore exited
 non-zero, reported `applied: false`, and rolled back all staged companies, securities, identities,
 and memberships; post-attempt row counts were zero in all four tables.
 
-This replaces “materialize the 98.86% projection” with a narrower evidence task: reconcile the 29
-missing and 61 unexpected anchor symbols, independently verify or adjudicate the provisional
-boundaries, publish the residual 12-row identity queue, then repeat staged validation. Production
-apply remains prohibited until both strict and provisional anchor snapshots match and the complete
-promotion gate passes.
+The original 29/61 discrepancy is reconciled and every provisional boundary is now explicitly
+verified or adjudicated. The remaining evidence work is narrower and measurable: resolve the 18
+SEC-confirmed anchor identities, the 66 post-anchor intervals with unresolved membership
+boundaries, and the 129 post-anchor intervals with corroborated membership but deferred ticker
+identity; publish the residual 12-row observation queue; then repeat staged validation. Production
+apply remains prohibited until strict and provisional snapshots match an identity-safe anchor and
+the complete promotion gate passes.
 
 ## Historical measurements retained for provenance
 

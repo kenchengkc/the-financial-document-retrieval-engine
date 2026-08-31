@@ -199,10 +199,12 @@ Implemented:
 
 R0/R1 are applied, and the latest pinned read-only component-history audit projects
 **1,043 / 1,055 (98.86%)** target-window identity resolution with 12 observations retained in the
-residual queue. A complete 501-constituent anchor effective at 2009-12-30 is pinned to anchor the
-2010-01-01 target window. The fail-closed materializer and staged validator are implemented, but
-the pinned rehearsal produces 533 provisional constituents at the anchor date and strict mode
-rejects active provisional evidence. These measurements do not constitute a production
+residual queue. The original 501-lineage fja anchor is retained as a terminal-symbol comparison,
+and IVV's independently SEC-filed 500-name holdings schedule is the primary 2009-12-31 count and
+membership check. The original 29/61 symbol mismatch is fully classified, and all 999 source
+intervals now have explicit boundary/identity adjudications. Only 181 intervals are currently both
+boundary-corroborated and safe under lawcal's PIT `created_at` rule, so strict mode correctly
+rejects the remaining provisional evidence. These measurements do not constitute a production
 materialization or a passed promotion gate; current results live in
 [`eval_results.md`](eval_results.md).
 

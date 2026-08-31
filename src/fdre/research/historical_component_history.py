@@ -68,6 +68,18 @@ class HistoricalComponentRecord:
     source_hash: str
 
     @property
+    def source_valid_from(self) -> date:
+        """First date the upstream source permits this symbol row to be replayed.
+
+        ``lawcal/sp500-components-history`` records a new ``created_at`` value when a
+        symbol is first observed.  Its own point-in-time helper requires both the
+        membership interval and ``as_of >= created_at``.  Treating ``date_added`` as
+        sufficient silently projects later ticker identities into the past.
+        """
+
+        return max(self.effective_from, self.created_at)
+
+    @property
     def record_id(self) -> str:
         return _sha256_json(
             {

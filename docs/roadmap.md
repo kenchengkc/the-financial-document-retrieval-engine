@@ -104,21 +104,29 @@ security prerequisite and evidence-scoped aliases. Subsequent pinned, read-only 
 an independent 2010 anchor, exact ticker lineage, and historical component CIK evidence. The latest
 component-history projection resolves **1,043 / 1,055 (98.86%)** target-window observations, but
 that is a projection rather than a production write or a passed materialization gate. An
-empty-schema rehearsal of the pinned materialization now proves that the write path is atomic, but
-also measures why it must not yet be applied: **411 / 999** intervals are verified, **588 / 999**
-remain provisional, and the provisional anchor-date snapshot contains **533** names versus the
-independent **501**-name anchor. Strict resolution rejects the active provisional evidence, and the
-failed gate leaves all production tables unchanged.
+empty-schema rehearsal of the pinned materialization proved that the write path is atomic. The
+follow-up audit found and fixed its source-validity error: lawcal `created_at` had been ignored,
+projecting later ticker identities backward. The original **29 missing / 61 unexpected** mismatch
+is now fully classified as 35 historical-to-terminal ticker aliases, 18 SEC-confirmed membership
+gaps, one lawcal false positive, and one duplicated fja display lineage. The adjudicated count is
+**500**, matching IVV's independently SEC-filed 2009-12-31 holdings schedule.
+
+All 999 interval boundaries now have explicit decisions. **441 / 999** membership intervals have
+corroborated start/end evidence, but only **181 / 999** are also safe under the point-in-time symbol
+validity rule; the corrected materializer retains the other **818 / 999** as provisional. For
+intervals starting in 2010+, the corresponding counts are **299 / 365** boundary-corroborated and
+**170 / 365** strict-materializable. Strict resolution therefore still fails closed and production
+tables remain unchanged.
 
 The remaining sequence is:
 
-1. reconcile the anchor-date difference: 29 expected symbols are missing and 61 staged symbols are
-   unexpected;
-2. independently verify or adjudicate the 588 provisional boundaries without guessing dates;
-3. publish the residual 12-row identity queue and retain every unresolved boundary as provisional;
-4. rerun the staged validation until strict and provisional snapshots both match the pinned anchor;
-   and
-5. explicitly apply the atomic write and rerun the canonical production promotion gate.
+1. attach dated ticker/CIK evidence to the 18 SEC-confirmed anchor membership gaps;
+2. remediate the 66 post-anchor intervals whose membership boundaries remain unresolved and the
+   129 whose membership is corroborated but point-in-time symbol identity is not;
+3. publish the residual 12-row observation queue and retain every unresolved row as provisional;
+4. replace the terminal-symbol comparison with an identity-safe 500-security starting snapshot;
+5. rerun staged validation until strict and provisional snapshots match that anchor; and
+6. explicitly apply the atomic write and rerun the canonical production promotion gate.
 
 Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
 definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
@@ -223,9 +231,10 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Reconcile and verify HU-2 before production materialization.**
+**Resolve the adjudicated HU-2 identity queue before production materialization.**
 
-Do not start the decade-scale filing backfill yet. First close the measured 533-versus-501 anchor
-difference, verify or adjudicate provisional boundaries, publish the residual queue, and satisfy
-the fail-closed staged promotion gate. HU-3 is implemented; once HU-2's written state is credible,
-HU-4 can safely spend compute/storage on longer history.
+Do not start the decade-scale filing backfill yet. The old 533-versus-501 mismatch is fully
+reconciled and every interval has a boundary/identity decision. Next resolve the 18 anchor
+identities, 66 post-anchor boundary gaps, 129 post-anchor ticker-lineage gaps, and the residual
+12-row observation queue, then satisfy the fail-closed staged promotion gate. HU-3 is implemented;
+once HU-2's written state is credible, HU-4 can safely spend compute/storage on longer history.

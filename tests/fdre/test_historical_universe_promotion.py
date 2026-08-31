@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.historical_universe_promote import (
     AnchorExpectation,
+    BoundaryVerification,
     CurrentIssuer,
     _identity_claims,
     _load_current,
@@ -45,6 +46,7 @@ def _record(
     end: date | None,
     added_approximate: bool = False,
     removed_approximate: bool = False,
+    created_at: date | None = None,
 ) -> HistoricalComponentRecord:
     return HistoricalComponentRecord(
         symbol="ABC",
@@ -53,7 +55,7 @@ def _record(
         sector="industrials",
         effective_from=start,
         effective_to=end,
-        created_at=start,
+        created_at=created_at or start,
         added_approximate=added_approximate,
         removed_approximate=removed_approximate,
         source_ref="a" * 40,
@@ -80,6 +82,86 @@ def test_approximate_source_dates_remain_provisional() -> None:
         ("ABC", date(2012, 1, 2), date(2014, 5, 6))
     }
     assert _membership_verified(record, intervals) is False
+
+
+def test_later_source_creation_prevents_backdated_membership_verification() -> None:
+    record = _record(
+        start=date(2012, 1, 2),
+        end=date(2014, 5, 6),
+        created_at=date(2013, 2, 3),
+    )
+    intervals: set[tuple[str, date, date | None]] = {
+        ("ABC", date(2012, 1, 2), date(2014, 5, 6))
+    }
+
+    assert _membership_verified(record, intervals) is False
+    claims = _identity_claims([record])
+    assert claims[0].effective_from == date(2013, 2, 3)
+
+
+def test_materialization_enforces_source_creation_boundary() -> None:
+    start = date(2010, 1, 1)
+    created = date(2015, 6, 1)
+    record = _record(start=start, end=None, created_at=created)
+    engine = _engine()
+
+    with Session(engine) as session:
+        plan = materialize(
+            session,
+            records=(record,),
+            current_by_cik={},
+            verified_intervals={("ABC", start, None)},
+            observed_at=_OBSERVED_AT,
+            stage=True,
+        )
+        identity = session.scalar(select(SecurityIdentityPeriod))
+        membership = session.scalar(select(UniverseMembership))
+        identity_start = identity.effective_from if identity is not None else None
+        membership_start = membership.effective_from if membership is not None else None
+        session.rollback()
+
+    assert plan.source_validity_adjusted_memberships == 1
+    assert plan.verified_memberships == 0
+    assert plan.provisional_memberships == 1
+    assert identity_start == created
+    assert membership_start == created
+
+
+def test_cross_source_boundary_adjudication_can_verify_an_exact_identity_span() -> None:
+    record = _record(
+        start=date(2012, 1, 2),
+        end=date(2014, 5, 6),
+        added_approximate=True,
+    )
+    verification = BoundaryVerification(
+        audit_id="d" * 64,
+        verified_record_ids=frozenset({record.record_id}),
+    )
+    engine = _engine()
+
+    with Session(engine) as session:
+        plan = materialize(
+            session,
+            records=(record,),
+            current_by_cik={},
+            verified_intervals=set(),
+            observed_at=_OBSERVED_AT,
+            stage=True,
+            boundary_verification=verification,
+        )
+        membership = session.scalar(select(UniverseMembership))
+        membership_status = (
+            membership.verification_status if membership is not None else None
+        )
+        membership_source = membership.source if membership is not None else None
+        session.rollback()
+
+    assert plan.verified_memberships == 1
+    assert plan.cross_source_boundary_verified_memberships == 1
+    assert membership_status == "verified"
+    assert membership_source == (
+        "lawcal/sp500-components-history+cross-source-boundary-adjudication"
+    )
 
 
 def test_identity_remains_valid_on_removal_boundary_only() -> None:

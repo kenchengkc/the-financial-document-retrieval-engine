@@ -61,6 +61,19 @@ def _materialization() -> dict[str, object]:
     }
 
 
+def _anchor_reconciliation() -> dict[str, object]:
+    return {"anchor_reconciled": True, "production_identity_ready": True}
+
+
+def _boundary_audit() -> dict[str, object]:
+    return {
+        "interval_count": 1,
+        "intervals": [{"record_id": "record-1", "status": "verified"}],
+        "status_counts": {"verified": 1},
+        "production_apply_eligible": True,
+    }
+
+
 def _requirements(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     raw_requirements = payload["requirements"]
     assert isinstance(raw_requirements, list)
@@ -76,6 +89,8 @@ def test_gate_requires_committed_validated_materialization(tmp_path: Path) -> No
         coverage=_coverage(),
         remediation=_remediation(),
         anchor=_anchor(),
+        anchor_reconciliation=_anchor_reconciliation(),
+        boundary_audit=_boundary_audit(),
         materialization=_materialization(),
         component_history=_component_history(tmp_path / "components.csv"),
         component_history_ref="a" * 40,
@@ -99,6 +114,8 @@ def test_gate_fails_for_nonmutating_plan_without_staged_validation(tmp_path: Pat
         coverage=_coverage(),
         remediation=_remediation(),
         anchor=_anchor(),
+        anchor_reconciliation=_anchor_reconciliation(),
+        boundary_audit=_boundary_audit(),
         materialization=materialization,
         component_history=_component_history(tmp_path / "components.csv"),
         component_history_ref="a" * 40,
@@ -122,6 +139,8 @@ def test_gate_rejects_materialization_validated_against_another_anchor(
         coverage=_coverage(),
         remediation=_remediation(),
         anchor=_anchor(),
+        anchor_reconciliation=_anchor_reconciliation(),
+        boundary_audit=_boundary_audit(),
         materialization=materialization,
         component_history=_component_history(tmp_path / "components.csv"),
         component_history_ref="a" * 40,
@@ -130,3 +149,30 @@ def test_gate_rejects_materialization_validated_against_another_anchor(
     requirements = _requirements(payload)
     assert payload["promotion_gate_met"] is False
     assert requirements["materialized_anchor_alignment"]["met"] is False
+
+
+def test_gate_retains_reconciled_but_unresolved_anchor_and_boundaries(
+    tmp_path: Path,
+) -> None:
+    anchor_reconciliation = _anchor_reconciliation()
+    anchor_reconciliation["production_identity_ready"] = False
+    boundary_audit = _boundary_audit()
+    boundary_audit["production_apply_eligible"] = False
+
+    payload = evaluate(
+        coverage=_coverage(),
+        remediation=_remediation(),
+        anchor=_anchor(),
+        anchor_reconciliation=anchor_reconciliation,
+        boundary_audit=boundary_audit,
+        materialization=_materialization(),
+        component_history=_component_history(tmp_path / "components.csv"),
+        component_history_ref="a" * 40,
+    )
+
+    requirements = _requirements(payload)
+    assert payload["promotion_gate_met"] is False
+    assert requirements["anchor_symbol_discrepancies_reconciled"]["met"] is True
+    assert requirements["anchor_identity_remediation_complete"]["met"] is False
+    assert requirements["provisional_boundaries_explicitly_adjudicated"]["met"] is True
+    assert requirements["post_anchor_boundaries_production_ready"]["met"] is False

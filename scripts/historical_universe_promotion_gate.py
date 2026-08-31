@@ -14,7 +14,7 @@ from fdre.research.historical_component_history import (
 
 _TARGET_START = date(2010, 1, 1)
 _MIN_RESOLUTION = 0.95
-_SCHEMA_VERSION = "fdre-hu2-final-promotion-gate-v2"
+_SCHEMA_VERSION = "fdre-hu2-final-promotion-gate-v3"
 
 
 def _symbol(value: str) -> str:
@@ -87,6 +87,8 @@ def evaluate(
     coverage: dict[str, object],
     remediation: dict[str, object],
     anchor: dict[str, object],
+    anchor_reconciliation: dict[str, object],
+    boundary_audit: dict[str, object],
     materialization: dict[str, object],
     component_history: Path,
     component_history_ref: str,
@@ -119,6 +121,24 @@ def evaluate(
         raise ValueError("anchor constituent_count must be an integer")
     anchor_count = raw_anchor_count
     anchor_met = anchor_complete and anchor_date <= _TARGET_START and 490 <= anchor_count <= 510
+    anchor_reconciled = anchor_reconciliation.get("anchor_reconciled") is True
+    anchor_identity_ready = anchor_reconciliation.get("production_identity_ready") is True
+    raw_boundary_count = boundary_audit.get("interval_count")
+    raw_boundary_rows = boundary_audit.get("intervals")
+    raw_status_counts = boundary_audit.get("status_counts")
+    if isinstance(raw_boundary_count, bool) or not isinstance(raw_boundary_count, int):
+        raise ValueError("boundary audit interval_count must be an integer")
+    if not isinstance(raw_boundary_rows, list) or not isinstance(raw_status_counts, dict):
+        raise ValueError("boundary audit lacks interval decisions/status counts")
+    classified_boundary_count = sum(
+        value
+        for value in raw_status_counts.values()
+        if isinstance(value, int) and not isinstance(value, bool)
+    )
+    boundary_adjudication_complete = (
+        raw_boundary_count == len(raw_boundary_rows) == classified_boundary_count
+    )
+    boundaries_production_ready = boundary_audit.get("production_apply_eligible") is True
     replay = coverage.get("deterministic_replay_match") is True
     validation = materialization.get("validation")
     if not isinstance(validation, dict):
@@ -179,6 +199,31 @@ def evaluate(
             "anchor_effective_at": anchor_date.isoformat(),
             "anchor_constituent_count": anchor_count,
             "met": anchor_met,
+        },
+        {
+            "id": "anchor_symbol_discrepancies_reconciled",
+            "actual": anchor_reconciled,
+            "target": True,
+            "met": anchor_reconciled,
+        },
+        {
+            "id": "anchor_identity_remediation_complete",
+            "actual": anchor_identity_ready,
+            "target": True,
+            "met": anchor_identity_ready,
+        },
+        {
+            "id": "provisional_boundaries_explicitly_adjudicated",
+            "actual_interval_count": raw_boundary_count,
+            "actual_classified_count": classified_boundary_count,
+            "target": raw_boundary_count,
+            "met": boundary_adjudication_complete,
+        },
+        {
+            "id": "post_anchor_boundaries_production_ready",
+            "actual": boundaries_production_ready,
+            "target": True,
+            "met": boundaries_production_ready,
         },
         {
             "id": "deterministic_replay",
@@ -249,6 +294,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--coverage", required=True, type=Path)
     parser.add_argument("--remediation", required=True, type=Path)
     parser.add_argument("--anchor", required=True, type=Path)
+    parser.add_argument("--anchor-reconciliation", required=True, type=Path)
+    parser.add_argument("--boundary-audit", required=True, type=Path)
     parser.add_argument("--materialization", required=True, type=Path)
     parser.add_argument("--component-history", required=True, type=Path)
     parser.add_argument("--component-history-ref", required=True)
@@ -267,6 +314,8 @@ def main() -> int:
         coverage=_read(args.coverage),
         remediation=_read(args.remediation),
         anchor=_read(args.anchor),
+        anchor_reconciliation=_read(args.anchor_reconciliation),
+        boundary_audit=_read(args.boundary_audit),
         materialization=_read(args.materialization),
         component_history=args.component_history,
         component_history_ref=args.component_history_ref,

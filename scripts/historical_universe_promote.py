@@ -5,6 +5,8 @@ The materializer is deliberately conservative:
 - stable securities are keyed by exact CIK + normalized historical symbol;
 - ticker identity is asserted only across periods where that exact CIK/symbol is observed as an
   S&P constituent (plus the removal boundary day needed to identify the departing security);
+- lawcal ``created_at`` is enforced as the symbol row's source-validity boundary, so later ticker
+  identities are never projected backward to ``date_added``;
 - membership is verified only when the independent pinned fja05680 interval exactly agrees with
   the lawcal component interval and the lawcal dates are not marked approximate;
 - all other source-backed membership is persisted as provisional;
@@ -38,11 +40,14 @@ from fdre.research.historical_component_history import (
     HistoricalComponentRecord,
 )
 from fdre.research.historical_universe_anchor import normalize_display_symbol
+from fdre.research.historical_universe_boundary import (
+    BOUNDARY_ADJUDICATION_SCHEMA_VERSION,
+)
 from fdre.research.historical_universe_identity import normalize_cik
 from fdre.research.historical_universe_lineage import TickerMembershipLineageAdapter
 from fdre.universe import universe_from_session
 
-_SCHEMA_VERSION = "fdre-hu2-production-materialization-v2"
+_SCHEMA_VERSION = "fdre-hu2-production-materialization-v3"
 _SOURCE = "lawcal/sp500-components-history"
 
 
@@ -83,6 +88,12 @@ class AnchorExpectation:
 
 
 @dataclass(frozen=True, slots=True)
+class BoundaryVerification:
+    audit_id: str
+    verified_record_ids: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
 class MaterializationPlan:
     historical_company_creates: int
     current_company_creates: int
@@ -92,6 +103,8 @@ class MaterializationPlan:
     membership_creates: int
     verified_memberships: int
     provisional_memberships: int
+    source_validity_adjusted_memberships: int
+    cross_source_boundary_verified_memberships: int
     source_interval_count: int
     exact_independent_interval_count: int
     plan_hash: str
@@ -107,6 +120,12 @@ class MaterializationPlan:
             "membership_creates": self.membership_creates,
             "verified_memberships": self.verified_memberships,
             "provisional_memberships": self.provisional_memberships,
+            "source_validity_adjusted_memberships": (
+                self.source_validity_adjusted_memberships
+            ),
+            "cross_source_boundary_verified_memberships": (
+                self.cross_source_boundary_verified_memberships
+            ),
             "source_interval_count": self.source_interval_count,
             "exact_independent_interval_count": self.exact_independent_interval_count,
             "plan_hash": self.plan_hash,
@@ -236,29 +255,32 @@ def _component_key(record: HistoricalComponentRecord) -> tuple[str, str]:
 def _membership_verified(
     record: HistoricalComponentRecord,
     verified_intervals: set[tuple[str, date, date | None]],
+    verified_record_ids: frozenset[str] = frozenset(),
 ) -> bool:
-    return (
+    exact_interval_verified = (
         not record.added_approximate
         and not record.removed_approximate
-        and (_symbol(record.symbol), record.effective_from, record.effective_to)
+        and record.source_valid_from == record.effective_from
+        and (_symbol(record.symbol), record.source_valid_from, record.effective_to)
         in verified_intervals
     )
+    return exact_interval_verified or record.record_id in verified_record_ids
 
 
 def _identity_claims(records: Sequence[HistoricalComponentRecord]) -> tuple[IdentityClaim, ...]:
     """Build only source-observed identity spans, preserving gaps between index tenures."""
 
     claims: list[IdentityClaim] = []
-    for record in sorted(records, key=lambda item: (item.effective_from, item.record_id)):
+    for record in sorted(records, key=lambda item: (item.source_valid_from, item.record_id)):
         # The removal boundary is itself evidence about the departing security. Extending one day
         # makes that date queryable without claiming the identity beyond the boundary.
         claim_end = record.effective_to + timedelta(days=1) if record.effective_to else None
         if not claims:
-            claims.append(IdentityClaim(record.effective_from, claim_end, (record,)))
+            claims.append(IdentityClaim(record.source_valid_from, claim_end, (record,)))
             continue
         previous = claims[-1]
-        if previous.effective_to is not None and record.effective_from > previous.effective_to:
-            claims.append(IdentityClaim(record.effective_from, claim_end, (record,)))
+        if previous.effective_to is not None and record.source_valid_from > previous.effective_to:
+            claims.append(IdentityClaim(record.source_valid_from, claim_end, (record,)))
             continue
         merged_end = (
             None
@@ -344,6 +366,46 @@ def _load_anchor(path: Path) -> AnchorExpectation:
         display_symbols=tuple(
             sorted(normalize_display_symbol(token) for token in raw_tokens)
         ),
+    )
+
+
+def _load_boundary_verification(path: Path) -> BoundaryVerification:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("boundary audit must be a JSON object")
+    audit_id = str(payload.get("audit_id", "")).strip()
+    if len(audit_id) != 64:
+        raise ValueError("boundary audit audit_id must be a SHA-256 digest")
+    raw_intervals = payload.get("intervals")
+    if not isinstance(raw_intervals, list):
+        raise ValueError("boundary audit intervals must be a list")
+    expected_audit_id = _hash(
+        {
+            "schema_version": BOUNDARY_ADJUDICATION_SCHEMA_VERSION,
+            "intervals": raw_intervals,
+        }
+    )
+    if audit_id != expected_audit_id:
+        raise ValueError("boundary audit audit_id does not match its interval decisions")
+    verified_ids: set[str] = set()
+    for raw_interval in raw_intervals:
+        if not isinstance(raw_interval, dict):
+            raise ValueError("boundary audit interval must be an object")
+        record_id = str(raw_interval.get("record_id", "")).strip()
+        if len(record_id) != 64:
+            raise ValueError("boundary audit record_id must be a SHA-256 digest")
+        if raw_interval.get("status") == "verified":
+            if (
+                raw_interval.get("membership_boundaries_verified") is not True
+                or raw_interval.get("point_in_time_symbol_valid") is not True
+                or raw_interval.get("effective_from")
+                != raw_interval.get("source_valid_from")
+            ):
+                raise ValueError("verified boundary row is not point-in-time materializable")
+            verified_ids.add(record_id)
+    return BoundaryVerification(
+        audit_id=audit_id,
+        verified_record_ids=frozenset(verified_ids),
     )
 
 
@@ -543,6 +605,7 @@ def materialize(
     verified_intervals: set[tuple[str, date, date | None]],
     observed_at: datetime,
     stage: bool,
+    boundary_verification: BoundaryVerification | None = None,
 ) -> MaterializationPlan:
     companies = list(session.scalars(select(Company).order_by(Company.id)))
     companies_by_cik = {company.cik: company for company in companies}
@@ -565,6 +628,8 @@ def materialize(
     membership_creates = 0
     verified_memberships = 0
     provisional_memberships = 0
+    source_validity_adjusted_memberships = 0
+    cross_source_boundary_verified_memberships = 0
 
     # Create/fill issuer rows first so every Security continues to reference the canonical issuer
     # table while current-company APIs can exclude ticker=NULL rows.
@@ -689,11 +754,28 @@ def materialize(
                     existing_identities.append(identity)
 
         for record in source_records:
-            is_verified = _membership_verified(record, verified_intervals)
+            membership_start = record.source_valid_from
+            if membership_start != record.effective_from:
+                source_validity_adjusted_memberships += 1
+            boundary_verified = (
+                boundary_verification is not None
+                and record.record_id in boundary_verification.verified_record_ids
+            )
+            is_verified = _membership_verified(
+                record,
+                verified_intervals,
+                (
+                    boundary_verification.verified_record_ids
+                    if boundary_verification is not None
+                    else frozenset()
+                ),
+            )
             if is_verified:
                 verified_memberships += 1
             else:
                 provisional_memberships += 1
+            if boundary_verified:
+                cross_source_boundary_verified_memberships += 1
             if security is None:
                 membership_creates += 1
                 continue
@@ -701,31 +783,43 @@ def materialize(
                 select(UniverseMembership).where(
                     UniverseMembership.universe_code == "sp500",
                     UniverseMembership.security_id == security.id,
-                    UniverseMembership.effective_from == record.effective_from,
+                    UniverseMembership.effective_from == membership_start,
                 )
             )
             if existing_membership is not None:
                 if existing_membership.effective_to != record.effective_to:
                     raise ValueError(
                         f"membership boundary mismatch for {cik}/{symbol} "
-                        f"at {record.effective_from}"
+                        f"at {membership_start}"
                     )
                 continue
             membership_creates += 1
             if stage:
                 source = _SOURCE
-                if is_verified:
+                if boundary_verified:
+                    source += "+cross-source-boundary-adjudication"
+                elif is_verified:
                     source += "+fja05680/sp500-ticker-start-end"
+                source_hash = record.record_id
+                if boundary_verified:
+                    if boundary_verification is None:
+                        raise RuntimeError("boundary verification unexpectedly missing")
+                    source_hash = _hash(
+                        {
+                            "record_id": record.record_id,
+                            "boundary_audit_id": boundary_verification.audit_id,
+                        }
+                    )
                 session.add(
                     UniverseMembership(
                         universe_code="sp500",
                         security_id=security.id,
-                        effective_from=record.effective_from,
+                        effective_from=membership_start,
                         effective_to=record.effective_to,
                         source=source,
                         source_url=record.source_ref,
                         source_observed_at=observed_at,
-                        source_hash=record.record_id,
+                        source_hash=source_hash,
                         verification_status="verified" if is_verified else "provisional",
                         confidence=1.0 if is_verified else 0.85,
                     )
@@ -740,6 +834,10 @@ def materialize(
         "membership_creates": membership_creates,
         "verified_memberships": verified_memberships,
         "provisional_memberships": provisional_memberships,
+        "source_validity_adjusted_memberships": source_validity_adjusted_memberships,
+        "cross_source_boundary_verified_memberships": (
+            cross_source_boundary_verified_memberships
+        ),
         "source_interval_count": len(records),
         "exact_independent_interval_count": len(verified_intervals),
     }
@@ -755,6 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ticker-lineages", required=True, type=Path)
     parser.add_argument("--ticker-lineages-ref", required=True)
     parser.add_argument("--anchor", required=True, type=Path)
+    parser.add_argument("--boundary-audit", required=True, type=Path)
     parser.add_argument("--observed-at")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
@@ -776,6 +875,7 @@ def main() -> int:
     current = _load_current(args.current_components)
     verified = _verified_interval_keys(args.ticker_lineages, args.ticker_lineages_ref)
     anchor = _load_anchor(args.anchor)
+    boundary_verification = _load_boundary_verification(args.boundary_audit)
 
     engine = create_db_engine(args.database_url)
     try:
@@ -788,6 +888,7 @@ def main() -> int:
                     verified_intervals=verified,
                     observed_at=observed_at,
                     stage=args.apply,
+                    boundary_verification=boundary_verification,
                 )
                 if args.apply:
                     validation = validate_materialized_state(session, anchor)
@@ -823,9 +924,10 @@ def main() -> int:
     payload["validation"] = validation_payload
     payload["interpretation"] = (
         "Historical-only issuers use ticker=null. Membership is verified only on exact interval "
-        "agreement between the pinned lawcal and fja05680 sources; other source-backed intervals "
-        "remain provisional. Dry-run planning performs no writes. An explicit apply is committed "
-        "only when its strict and provisional anchor snapshots, interval audit, identity "
+        "agreement or the pinned cross-source boundary adjudication; other source-backed "
+        "intervals remain provisional. lawcal created_at is enforced as the earliest replayable "
+        "date for each symbol row. Dry-run planning performs no writes. An explicit apply is "
+        "committed only when its strict and provisional anchor snapshots, interval audit, identity "
         "coverage, and deterministic replay all pass."
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -25,12 +25,15 @@ on:
       - "scripts/historical_security_seed_plan.py"
       - "scripts/historical_universe_alias_audit.py"
       - "scripts/historical_universe_anchor_audit.py"
+      - "scripts/historical_universe_anchor_reconciliation.py"
+      - "scripts/historical_universe_boundary_audit.py"
       - "scripts/historical_universe_coverage.py"
       - "scripts/historical_universe_lineage_audit.py"
       - "scripts/historical_universe_promote.py"
       - "scripts/historical_universe_promotion_gate.py"
       - "src/fdre/research/historical_component_history.py"
       - "src/fdre/research/historical_universe_anchor.py"
+      - "src/fdre/research/historical_universe_boundary.py"
       - "src/fdre/research/historical_universe_evidence.py"
       - "src/fdre/research/historical_universe_identity.py"
       - "src/fdre/research/historical_universe_lineage.py"
@@ -54,11 +57,14 @@ jobs:
     env:
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
-      GH_TOKEN: ${{ github.token }}
       OUTPUT_DIR: data/processed/historical-universe/coverage
       SOURCE_DIR: data/cache/historical-universe-sources
       PYTHONPATH: .
       HISTORICAL_ANCHOR_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
+      COMPONENT_HISTORY_REF: ed4cf46e5ec5bb02e709aa08ee8a3a218d1b7d19
+      SNP_HISTORY_REF: bbf5a18e8c4a5277ecc7a06ebdfc7b547537b8c5
+      WIKIPEDIA_REVISION: "1370891103"
+      SEC_IVV_ACCESSION: 0001193125-10-044578
 
     steps:
       - name: Check required database secret
@@ -107,23 +113,13 @@ jobs:
             --apply \
             --output "${OUTPUT_DIR}/security-master-bootstrap-applied.json"
 
-      - name: Resolve immutable source revisions
+      - name: Verify pinned source revisions
         run: |
-          SNP_HISTORY_REF="$(gh api repos/shawnlinxl/snp-history/commits/master --jq .sha)"
-          COMPONENT_HISTORY_REF="$(gh api repos/lawcal/sp500-components-history/commits/main --jq .sha)"
-          WIKIPEDIA_REVISION="$(curl --fail --location --retry 3 \
-            -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' \
-            'https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=Historical_components_of_the_S%26P_500&rvprop=ids&format=json' \
-            | python -c 'import json,sys; d=json.load(sys.stdin); print(next(iter(d["query"]["pages"].values()))["revisions"][0]["revid"])')"
           [[ "${SNP_HISTORY_REF}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${COMPONENT_HISTORY_REF}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${WIKIPEDIA_REVISION}" =~ ^[0-9]+$ ]]
           [[ "${HISTORICAL_ANCHOR_REF}" =~ ^[0-9a-f]{40}$ ]]
-          {
-            echo "SNP_HISTORY_REF=${SNP_HISTORY_REF}"
-            echo "COMPONENT_HISTORY_REF=${COMPONENT_HISTORY_REF}"
-            echo "WIKIPEDIA_REVISION=${WIKIPEDIA_REVISION}"
-          } >> "${GITHUB_ENV}"
+          [[ "${SEC_IVV_ACCESSION}" =~ ^[0-9]{10}-[0-9]{2}-[0-9]{6}$ ]]
 
       - name: Fetch pinned source copies
         run: |
@@ -135,6 +131,7 @@ jobs:
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/sp500_ticker_start_end.csv" --output "${SOURCE_DIR}/sp500-ticker-start-end.csv"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/lawcal/sp500-components-history/${COMPONENT_HISTORY_REF}/data/components_history.csv" --output "${SOURCE_DIR}/components-history.csv"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/lawcal/sp500-components-history/${COMPONENT_HISTORY_REF}/data/sp500_components.csv" --output "${SOURCE_DIR}/current-components.csv"
+          curl --fail --location --retry 3 -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' "https://www.sec.gov/Archives/edgar/data/1100663/000119312510044578/dnq.htm" --output "${SOURCE_DIR}/ivv-2009-12-31-nq.htm"
 
       - name: Set audit observation time
         run: echo "HU2_OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_ENV}"
@@ -143,6 +140,33 @@ jobs:
         run: |
           ANCHOR_URL="https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv"
           python -m scripts.historical_universe_anchor_audit --input "${SOURCE_DIR}/sp500-complete-history.csv" --source-ref "${HISTORICAL_ANCHOR_REF}" --source-url "${ANCHOR_URL}" --observed-at "${HU2_OBSERVED_AT}" --output "${OUTPUT_DIR}/complete-snapshot-anchor.json"
+
+      - name: Reconcile complete-anchor symbol differences
+        run: |
+          SEC_IVV_URL="https://www.sec.gov/Archives/edgar/data/1100663/000119312510044578/dnq.htm"
+          python -m scripts.historical_universe_anchor_reconciliation \
+            --component-history "${SOURCE_DIR}/components-history.csv" \
+            --component-history-ref "${COMPONENT_HISTORY_REF}" \
+            --fja-anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
+            --sec-filing "${SOURCE_DIR}/ivv-2009-12-31-nq.htm" \
+            --sec-source-ref "${SEC_IVV_ACCESSION}" \
+            --sec-source-url "${SEC_IVV_URL}" \
+            --observed-at "${HU2_OBSERVED_AT}" \
+            --output "${OUTPUT_DIR}/anchor-reconciliation.json"
+
+      - name: Adjudicate all provisional interval boundaries
+        run: |
+          python -m scripts.historical_universe_boundary_audit \
+            --component-history "${SOURCE_DIR}/components-history.csv" \
+            --component-history-ref "${COMPONENT_HISTORY_REF}" \
+            --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
+            --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
+            --snp-history "${SOURCE_DIR}/snp-history.csv" \
+            --snp-history-ref "${SNP_HISTORY_REF}" \
+            --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
+            --wikipedia-revision "${WIKIPEDIA_REVISION}" \
+            --observed-at "${HU2_OBSERVED_AT}" \
+            --output "${OUTPUT_DIR}/boundary-adjudication.json"
 
       - name: Plan HU-2 production materialization
         run: |
@@ -154,6 +178,7 @@ jobs:
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
             --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
             --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
+            --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" \
             --observed-at "${HU2_OBSERVED_AT}" \
             --output "${OUTPUT_DIR}/historical-universe-materialization-plan.json"
 
@@ -168,6 +193,7 @@ jobs:
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
             --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" \
             --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
+            --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" \
             --observed-at "${HU2_OBSERVED_AT}" \
             --apply \
             --output "${OUTPUT_DIR}/historical-universe-materialization-applied.json"
@@ -207,17 +233,17 @@ jobs:
           if [ -f "${OUTPUT_DIR}/historical-universe-materialization-applied.json" ]; then
             MATERIALIZATION_REPORT="${OUTPUT_DIR}/historical-universe-materialization-applied.json"
           fi
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --materialization "${MATERIALIZATION_REPORT}" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
+          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${MATERIALIZATION_REPORT}" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
 
       - name: Require HU-2 gate after explicit production apply
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
         run: |
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
+          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
 
       - name: Publish summary
         if: always()
         run: |
-          for file in historical-universe-materialization-plan.json historical-universe-materialization-applied.json component-cik-audit.json complete-snapshot-anchor.json coverage.json promotion-gate.json; do
+          for file in historical-universe-materialization-plan.json historical-universe-materialization-applied.json component-cik-audit.json complete-snapshot-anchor.json anchor-reconciliation.json coverage.json promotion-gate.json; do
             if [ -f "${OUTPUT_DIR}/${file}" ]; then
               {
                 echo "### ${file}"
@@ -227,6 +253,14 @@ jobs:
               } >> "${GITHUB_STEP_SUMMARY}"
             fi
           done
+          if [ -f "${OUTPUT_DIR}/boundary-adjudication.json" ]; then
+            {
+              echo "### boundary-adjudication.json (summary)"
+              echo '```json'
+              jq 'del(.intervals)' "${OUTPUT_DIR}/boundary-adjudication.json"
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       - name: Upload audit artifacts
         if: always()
