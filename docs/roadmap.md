@@ -49,6 +49,8 @@ Redis, Kafka, Elasticsearch/OpenSearch, Snowflake, a dedicated feature store, an
 - Flagship risk-churn acceleration study with precommitted walk-forward windows, purged unrealized outcomes, implementation-cost accounting, sector robustness, promotion gates, immutable artifacts, and honest `PROMOTE` / `REJECT` / `INSUFFICIENT` outcomes.
 - Market-data cache/retry/circuit-breaker hardening.
 - **Historical Universe HU-1:** stable security layer, time-varying identity/membership schema, provenance/confidence/verification state, deterministic PIT snapshot contract, Alembic migration, and tests.
+- **Historical Universe HU-2:** production membership reconstruction, identity-safe 500-security
+  starting anchor, explicit provisional queue, deterministic replay, and passed promotion gate.
 - **Historical Universe HU-3:** DB-backed PIT universe API, deterministic snapshot IDs,
   constituent provenance, strict/provisional modes, JSON/Parquet export, replay and leakage tests,
   and research-panel composition.
@@ -82,7 +84,7 @@ Implemented:
 
 ### HU-2 — Membership reconstruction
 
-**Status: ACTIVE / FAIL-CLOSED MATERIALIZATION IMPLEMENTED; PRODUCTION PROMOTION NOT COMPLETE.**
+**Status: COMPLETE (production promotion gate passed 2026-09-01).**
 
 Build a reproducible evidence-reconciliation pipeline for historical index membership.
 
@@ -99,34 +101,24 @@ Required outputs:
 
 **HU-2 promotion gate:** do not integrate historical membership into flagship research until the coverage audit can characterize where history is trustworthy and where it is provisional.
 
-The first production-backed audit now characterizes the blocking gaps. R0/R1 created the current
-security prerequisite and evidence-scoped aliases. Subsequent pinned, read-only measurements added
-an independent 2010 anchor, exact ticker lineage, and historical component CIK evidence. The latest
-component-history projection resolves **1,043 / 1,055 (98.86%)** target-window observations, but
-that is a projection rather than a production write or a passed materialization gate. An
-empty-schema rehearsal of the pinned materialization proved that the write path is atomic. The
-follow-up audit found and fixed its source-validity error: lawcal `created_at` had been ignored,
-projecting later ticker identities backward. The original **29 missing / 61 unexpected** mismatch
-is now fully classified as 35 historical-to-terminal ticker aliases, 18 SEC-confirmed membership
-gaps, one lawcal false positive, and one duplicated fja display lineage. The adjudicated count is
-**500**, matching IVV's independently SEC-filed 2009-12-31 holdings schedule.
+[Actions run `33462343599`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33462343599)
+applied and validated the production materialization. It created 396 historical-only issuers, 6
+current issuers, 483 securities, 1,004 identity periods, and 1,004 membership periods. Of the
+memberships, 809 are verified and 195 remain explicitly provisional. The resulting production
+state has 901 issuers, 985 common-stock securities, and 1,506 identity periods.
 
-All 999 interval boundaries now have explicit decisions. **441 / 999** membership intervals have
-corroborated start/end evidence, but only **181 / 999** are also safe under the point-in-time symbol
-validity rule; the corrected materializer retains the other **818 / 999** as provisional. For
-intervals starting in 2010+, the corresponding counts are **299 / 365** boundary-corroborated and
-**170 / 365** strict-materializable. Strict resolution therefore still fails closed and production
-tables remain unchanged.
+The original **29 missing / 61 unexpected** anchor mismatch is fully classified. The materializer
+now uses an identity-safe 500-security anchor backed by IVV's SEC-filed 2009-12-31 holdings,
+including dated ticker/CIK decisions for the 18 source gaps and the exact SEC-backed XOM CIK
+correction. Strict and provisional snapshots both contain the expected 500 identities; replay is
+deterministic; and identity overlaps, membership overlaps, and missing identity coverage are all
+zero.
 
-The remaining sequence is:
-
-1. attach dated ticker/CIK evidence to the 18 SEC-confirmed anchor membership gaps;
-2. remediate the 66 post-anchor intervals whose membership boundaries remain unresolved and the
-   129 whose membership is corroborated but point-in-time symbol identity is not;
-3. publish the residual 12-row observation queue and retain every unresolved row as provisional;
-4. replace the terminal-symbol comparison with an identity-safe 500-security starting snapshot;
-5. rerun staged validation until strict and provisional snapshots match that anchor; and
-6. explicitly apply the atomic write and rerun the canonical production promotion gate.
+The final audit resolves **1,044 / 1,055 (98.96%)** target-window observations and publishes the
+remaining 11 as unresolved/provisional. All 999 source intervals have explicit decisions. Of the
+365 intervals starting in 2010+, 299 have verified membership boundaries and 66 remain
+boundary-provisional. Completion means the production gate and fail-closed eligibility contract
+passed; it does not turn those 66 boundaries or 11 residual identities into guessed facts.
 
 Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
 definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
@@ -231,10 +223,10 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Resolve the adjudicated HU-2 identity queue before production materialization.**
+**Begin HU-4's measured 10–15 year research archive.**
 
-Do not start the decade-scale filing backfill yet. The old 533-versus-501 mismatch is fully
-reconciled and every interval has a boundary/identity decision. Next resolve the 18 anchor
-identities, 66 post-anchor boundary gaps, 129 post-anchor ticker-lineage gaps, and the residual
-12-row observation queue, then satisfy the fail-closed staged promotion gate. HU-3 is implemented;
-once HU-2's written state is credible, HU-4 can safely spend compute/storage on longer history.
+HU-2 and HU-3 are complete. Extend filing, feature, and market-outcome history without bulk
+embedding the archive; preserve accession/availability lineage, export reproducible Parquet
+panels, and measure storage/runtime/provider cost before scaling. The 66 provisional post-anchor
+boundaries and 11-row identity queue remain explicit follow-up evidence work and must continue to
+fail closed in strict snapshots.

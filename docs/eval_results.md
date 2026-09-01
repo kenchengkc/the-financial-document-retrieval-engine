@@ -193,8 +193,45 @@ is not a stable listed-security master and must not be backdated. The ordered re
 4. add an independently sourced complete constituent anchor at or before 2010; and
 5. rerun until the gate in [`historical_universe_v1.md`](historical_universe_v1.md) passes.
 
-No historical S&P membership performance/result is claimed yet. Historical research must continue
-to label the current-constituent limitation explicitly, and HU-3/HU-4 remain gated on HU-2.
+No historical S&P membership performance/result was claimed at this initial checkpoint. It is
+retained as provenance and superseded by the production-promotion measurement below.
+
+### HU-2 production promotion — complete
+
+The canonical explicit apply completed in [Actions run
+`33462343599`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33462343599)
+at commit `4958bf6e464563d0e72e958faa16603667a32df4`. The final
+`fdre-hu2-final-promotion-gate-v4` artifact reports `promotion_gate_met: true`.
+
+| Production measurement | Result |
+| --- | ---: |
+| Identity-safe anchor | **500** securities at 2009-12-30 |
+| Historical-only / current issuer creates | **396 / 6** |
+| Common-stock security creates | **483** |
+| Identity / membership periods created | **1,004 / 1,004** |
+| Verified / provisional memberships | **809 / 195** |
+| 2010+ identity resolution | **1,044 / 1,055 (98.96%)** |
+| Published residual identity queue | **11 unresolved** |
+| Post-anchor boundary decisions | **299 verified / 66 provisional** |
+| Identity overlaps / membership overlaps | **0 / 0** |
+| Memberships missing identity coverage | **0** |
+
+Both the strict and provisional snapshots match anchor ID
+`cf6022bafa00f007712089f80a9225df6b87284e400fd4fac0c81f2e71c5351f` at exactly 500
+constituents. Provisional replay reproduces snapshot ID
+`ca9f9b06aafeb2bbe9cfd75a3792256469d4824fe116830c6ee724ea1ca1da56`; the strict snapshot ID is
+`168bc0b972c8781f02d67d974522880233f32b38e2557c45d7f8b37e51805d7e`.
+
+The apply also closed the current CBOE catalog/identity gap. During live validation, the pinned
+component source's XOM row was found to reference ExxonMobil Holdings Corp (CIK `0002115436`)
+rather than the listed Exxon Mobil Corp issuer. The exact `(XOM, 0002115436)` source claim is now
+canonically corrected to SEC CIK `0000034088`, recorded in the reconciliation artifact, and guarded
+by a dry-run ticker-owner collision check.
+
+HU-2 completion does not promote uncertain evidence. All 11 residual observations remain in the
+immutable provisional queue, and the 66 unresolved post-anchor membership boundaries remain
+provisional. Strict research snapshots continue to reject any date/security affected by active
+provisional evidence.
 
 ### HU-2 remediation checkpoint — R0 security bootstrap and R1 issuer aliases
 
@@ -285,11 +322,10 @@ check is IVV's 500-common-stock schedule as of 2009-12-31 in SEC N-Q accession
 ambiguous observation. The existing production audit remains at **147 / 1,055 (13.93%)** until
 the projected identities are safely materialized and re-audited.
 
-Crossing the 95% identity-resolution floor does not by itself pass HU-2. The production gate must
-also verify the state actually written: a complete current catalog, non-overlapping membership and
-identity intervals, explicit treatment of every provisional boundary, agreement with the pinned
-anchor at audited dates, deterministic snapshot replay, and a published unresolved queue. Until
-those checks pass, HU-2 remains active and strict historical research remains gated.
+Crossing the 95% identity-resolution floor did not by itself pass HU-2. This pre-apply checkpoint
+remained gated until the later production run verified the written state, anchor alignment,
+interval integrity, deterministic replay, and published unresolved queue. Those checks have now
+passed in the production-promotion result above.
 
 ### HU-2 anchor reconciliation and boundary adjudication
 
@@ -364,13 +400,11 @@ resolution failed closed on active provisional membership. The explicit apply th
 non-zero, reported `applied: false`, and rolled back all staged companies, securities, identities,
 and memberships; post-attempt row counts were zero in all four tables.
 
-The original 29/61 discrepancy is reconciled and every provisional boundary is now explicitly
-verified or adjudicated. The remaining evidence work is narrower and measurable: resolve the 18
-SEC-confirmed anchor identities, the 66 post-anchor intervals with unresolved membership
-boundaries, and the 129 post-anchor intervals with corroborated membership but deferred ticker
-identity; publish the residual 12-row observation queue; then repeat staged validation. Production
-apply remains prohibited until strict and provisional snapshots match an identity-safe anchor and
-the complete promotion gate passes.
+This fail-closed rehearsal is retained as provenance. It was superseded by the identity-safe
+500-security anchor, dated decisions for all 18 SEC-confirmed gaps, independent identity evidence
+for the formerly deferred ticker rows, the 11-row residual queue, and the successful production
+promotion reported above. The 66 unresolved post-anchor membership boundaries remain provisional;
+they were retained rather than guessed.
 
 ## Historical measurements retained for provenance
 
