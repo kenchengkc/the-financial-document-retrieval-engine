@@ -12,6 +12,7 @@ from apps.api.app.models import Chunk, Company, Document, DocumentElement
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever, reciprocal_rank_fusion
+from fdre.retrieval.preprocess import load_company_references
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import FakeReranker, VoyageReranker, reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
@@ -58,6 +59,25 @@ def _seed_retrieval_data(session: Session) -> None:
         )
     session.add(company)
     session.commit()
+
+
+def test_company_references_exclude_historical_issuers_without_current_tickers() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Company(ticker="NVDA", cik="0001045810", name="NVIDIA Corporation"),
+                Company(ticker=None, cik="0000000001", name="Historical Issuer"),
+            ]
+        )
+        session.commit()
+
+        references = load_company_references(session)
+
+    assert [(row.ticker, row.name) for row in references] == [
+        ("NVDA", "NVIDIA Corporation")
+    ]
 
 
 def test_dense_sparse_hybrid_and_reranking() -> None:

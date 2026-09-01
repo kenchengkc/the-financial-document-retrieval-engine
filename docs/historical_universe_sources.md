@@ -37,11 +37,33 @@ HU-2 supports a local HTML copy of:
 
 `https://en.wikipedia.org/wiki/Historical_components_of_the_S%26P_500`
 
-The page provides a long-running historical changes table with effective date, added ticker/security, removed ticker/security, reason, and references. This overlaps the earlier `snp-history` period and is therefore useful as an independent source for cross-source comparison.
+The page provides a long-running historical changes table with effective date, added
+ticker/security, removed ticker/security, reason, and references. This overlaps the earlier
+`snp-history` period and is useful for exact cross-source comparison. It is not treated as a
+primary independent authority because public reconstructions can share upstream Wikipedia
+evidence.
 
 Wikipedia text is available under CC BY-SA 4.0. FDRE records Wikipedia attribution and the source page on every normalized observation and does not bundle a copy of the page. Anyone redistributing extracted Wikipedia-derived data should preserve attribution and comply with the applicable license terms.
 
 Rows explicitly describing a ticker or company-name change are skipped by the membership adapter. Such rows are identity events, not index entry/exit events, and treating them as membership replacement would create false add/remove signals.
+
+### `lawcal/sp500-components-history`
+
+The production materialization source is pinned to an immutable commit. Its `created_at` field is
+a required point-in-time validity condition, not optional metadata: a row is replayable only when
+`date_added <= as_of < date_removed` and `as_of >= created_at`. This prevents a newly observed
+ticker from being projected backward across the issuer's older membership history. When
+`created_at > date_added`, the row can support membership evidence but cannot by itself establish
+that the later symbol was valid at the reported membership start.
+
+### SEC-filed IVV 2009 holdings
+
+FDRE pins iShares S&P 500 Index Fund's N-Q accession `0001193125-10-044578` and parses its
+2009-12-31 Schedule of Investments. The filing contains exactly 500 common-stock security names
+and is used as the independent primary-source membership/count check for the target-window anchor.
+It does not contain point-in-time tickers or issuer CIKs, so it cannot by itself create historical
+identity periods. Exact filed names confirm 18 gaps in the lawcal snapshot; those memberships stay
+blocked until dated identity evidence resolves the ticker and stable security.
 
 ## Evidence hierarchy
 
@@ -78,6 +100,9 @@ Existing date-aware security identity periods always take priority over the SEC 
 
 - One membership source is provisional.
 - Two or more distinct agreeing sources can verify an event.
+- An exact lawcal interval boundary needs one exact external match; a lawcal date explicitly
+  marked approximate needs two external exact matches to adjudicate the day.
+- A boundary-corroborated interval remains identity-provisional when `created_at > date_added`.
 - Opposite add/remove events for the same security and effective date remain provisional with a conflict code.
 - Session-timing disagreement remains visible.
 - Ambiguous CIKs, multiple share classes, or missing stable securities fail closed.

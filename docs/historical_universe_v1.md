@@ -195,13 +195,16 @@ Implemented:
 
 ### HU-2 — Membership reconstruction
 
-**Status: ACTIVE.**
+**Status: COMPLETE (production promotion gate passed 2026-09-01).**
 
-R0/R1 are applied, and the latest pinned read-only component-history audit projects
-**1,043 / 1,055 (98.86%)** target-window identity resolution with 12 observations retained in the
-residual queue. A complete 501-constituent anchor is pinned at 2010-01-01. These measurements do not
-yet constitute a verified production materialization or a passed promotion gate; current results
-live in [`eval_results.md`](eval_results.md).
+The canonical production apply resolves **1,044 / 1,055 (98.96%)** target-window observations and
+retains all 11 residuals in the provisional queue. Its identity-safe starting snapshot contains
+500 exact CIK/symbol securities backed by IVV's SEC-filed 2009-12-31 schedule and dated identity
+decisions. All 999 source intervals have explicit decisions; 299 of the 365 post-anchor intervals
+have verified membership boundaries, while the remaining 66 stay provisional. Both strict and
+provisional anchor snapshots contain exactly 500 constituents, deterministic replay matches, and
+the interval audit reports zero identity overlaps, membership overlaps, or missing identity
+coverage. Current measurements and artifact IDs live in [`eval_results.md`](eval_results.md).
 
 Build a reproducible importer/reconciler for public constituent-change evidence.
 
@@ -261,6 +264,12 @@ window:
 - materialization has no unexplained overlaps, missing active identities, or unresolved event
   order; and
 - exact replay from the same code and source manifest produces the same audit and snapshot IDs.
+
+The materialization command is non-mutating by default. An explicit apply stages all issuer,
+security, identity, and membership changes in one transaction, evaluates both strict and
+provisional snapshots against the same pinned anchor, audits interval overlap and identity
+coverage, and commits only if every promotion condition passes. A rejected apply exits non-zero
+and rolls back the complete staged write.
 
 The 95% threshold is a pipeline-readiness floor, not permission to fill the remainder. A date is
 eligible for strict research only when all membership and identity boundaries affecting that

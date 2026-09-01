@@ -52,7 +52,12 @@ class CompanyReference:
 def load_company_references(session: Session) -> list[CompanyReference]:
     return [
         CompanyReference(ticker=company.ticker, name=company.name)
-        for company in session.scalars(select(Company).order_by(Company.ticker))
+        for company in session.scalars(
+            select(Company)
+            .where(Company.ticker.is_not(None))
+            .order_by(Company.ticker)
+        )
+        if company.ticker is not None
     ]
 
 

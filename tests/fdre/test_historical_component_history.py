@@ -101,6 +101,22 @@ def test_starred_source_dates_are_preserved_as_approximate(tmp_path: Path) -> No
     assert record.effective_to == date(2012, 1, 1)
     assert record.added_approximate is True
     assert record.removed_approximate is True
+    assert record.source_valid_from == date(2010, 1, 2)
+
+
+def test_source_validity_never_backdates_a_later_symbol_observation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "components_history.csv"
+    path.write_text(
+        "symbol,cik,name,sector,date_added,date_removed,created_at\n"
+        "NEW,0000000001,Renamed Corp,industrials,2000-01-01,,2015-06-01\n",
+        encoding="utf-8",
+    )
+    record = HistoricalComponentHistoryAdapter(source_ref="c" * 40).load(path)[0]
+
+    assert record.effective_from == date(2000, 1, 1)
+    assert record.source_valid_from == date(2015, 6, 1)
 
 
 def test_trailing_table_delimiter_is_syntax_cleanup_only(tmp_path: Path) -> None:
@@ -113,3 +129,16 @@ def test_trailing_table_delimiter_is_syntax_cleanup_only(tmp_path: Path) -> None
     )
     assert resolution.status == "resolved"
     assert resolution.cik == "0001579241"
+
+
+def test_exact_upstream_xom_holding_company_cik_is_corrected(tmp_path: Path) -> None:
+    index = _history(
+        tmp_path,
+        "XOM,0002115436,ExxonMobil,energy,1957-03-04,,2007-03-05\n",
+    )
+    resolution = resolve_component_identity(
+        _evidence(symbol="XOM", when=date(2020, 1, 2)), index
+    )
+
+    assert resolution.status == "resolved"
+    assert resolution.cik == "0000034088"

@@ -30,6 +30,15 @@ ComponentIdentityMethod = Literal[
 _SOURCE = "lawcal/sp500-components-history"
 _SCHEMA_VERSION = "fdre-hu2-historical-component-identity-v1"
 
+# The pinned upstream source maps XOM to ExxonMobil Holdings Corp (CIK 2115436), a distinct
+# holding company, instead of the listed issuer Exxon Mobil Corp (CIK 34088).  The correction is
+# exact and deliberately narrow: both the source symbol and source CIK must match.  SEC's pinned
+# CIK lookup maps Exxon Mobil Corp to CIK 34088, and FDRE's SEC-derived listed-company catalog
+# maps XOM to that same issuer.
+COMPONENT_CIK_CORRECTIONS: dict[tuple[str, str], str] = {
+    ("XOM", "0002115436"): "0000034088",
+}
+
 
 def _sha256_json(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -41,6 +50,14 @@ def normalize_symbol(value: str) -> str:
     # A small number of upstream change rows carry a trailing table delimiter. Removing the
     # delimiter is syntax cleanup, not an identifier similarity rule.
     return normalized.removesuffix("|").strip()
+
+
+def canonical_component_cik(symbol: str, cik: str) -> str:
+    normalized_symbol = normalize_symbol(symbol)
+    normalized_cik = normalize_cik(cik)
+    return COMPONENT_CIK_CORRECTIONS.get(
+        (normalized_symbol, normalized_cik), normalized_cik
+    )
 
 
 def _parse_source_date(value: str) -> tuple[date | None, bool]:
@@ -66,6 +83,18 @@ class HistoricalComponentRecord:
     removed_approximate: bool
     source_ref: str
     source_hash: str
+
+    @property
+    def source_valid_from(self) -> date:
+        """First date the upstream source permits this symbol row to be replayed.
+
+        ``lawcal/sp500-components-history`` records a new ``created_at`` value when a
+        symbol is first observed.  Its own point-in-time helper requires both the
+        membership interval and ``as_of >= created_at``.  Treating ``date_added`` as
+        sufficient silently projects later ticker identities into the past.
+        """
+
+        return max(self.effective_from, self.created_at)
 
     @property
     def record_id(self) -> str:
@@ -141,7 +170,7 @@ class HistoricalComponentHistoryAdapter:
                 rows.append(
                     HistoricalComponentRecord(
                         symbol=symbol,
-                        cik=normalize_cik(raw_cik),
+                        cik=canonical_component_cik(symbol, raw_cik),
                         name=name,
                         sector=(row["sector"] or "").strip() or None,
                         effective_from=effective_from,

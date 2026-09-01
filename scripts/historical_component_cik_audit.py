@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter
 from datetime import UTC, datetime
@@ -44,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--snp-history-ref")
     parser.add_argument("--wikipedia-revision")
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--residual-output", type=Path)
     return parser
 
 
@@ -155,6 +157,27 @@ def main() -> int:
         json.dumps(report, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if args.residual_output is not None:
+        queue_payload = {
+            "schema_version": "fdre-hu2-residual-observation-queue-v1",
+            "target_start": _TARGET_START.isoformat(),
+            "source_audit_schema_version": _SCHEMA_VERSION,
+            "residual_count": len(residual),
+            "retention_policy": (
+                "Every row remains provisional until exact dated identity evidence resolves it."
+            ),
+            "observations": residual,
+        }
+        queue_payload["queue_id"] = hashlib.sha256(
+            json.dumps(queue_payload, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        args.residual_output.parent.mkdir(parents=True, exist_ok=True)
+        args.residual_output.write_text(
+            json.dumps(queue_payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     summary = {key: value for key, value in report.items() if key != "residual"}
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

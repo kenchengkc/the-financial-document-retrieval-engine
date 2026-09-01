@@ -154,6 +154,9 @@ def diff_documents(
     *,
     comparison_basis: str,
 ) -> FilingDifference:
+    company_ticker = current.company.ticker
+    if company_ticker is None:
+        raise ValueError("filing differences require a current company ticker")
     previous_sections = _passages_by_section(session, previous.id)
     current_sections = _passages_by_section(session, current.id)
     changes: list[PassageChange] = []
@@ -170,7 +173,7 @@ def diff_documents(
         for change_type in ("added", "removed", "materially_changed")
     }
     return FilingDifference(
-        company_ticker=current.company.ticker,
+        company_ticker=company_ticker,
         current_accession=current.accession_number,
         previous_accession=previous.accession_number,
         current_available_at=current.available_at,

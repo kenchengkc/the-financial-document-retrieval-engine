@@ -64,9 +64,14 @@ def test_ingestion_manifest_and_quality_report() -> None:
             available_at=now - timedelta(days=300),
         )
     )
+    historical = Company(
+        ticker=None,
+        cik="0000000003",
+        name="Historical Issuer",
+    )
 
     with Session(engine) as session:
-        session.add_all([current, stale])
+        session.add_all([current, stale, historical])
         session.commit()
         start_ingestion_run(
             session,
@@ -91,6 +96,9 @@ def test_ingestion_manifest_and_quality_report() -> None:
 
     assert finished.status == "completed"
     assert finished.retry_count == 1
+    assert report.company_count == 2
+    assert None not in report.stale_tickers
+    assert all("None:" not in value for value in report.missing_expected_filings)
     assert report.embedding_coverage == 1.0
     assert report.documents_without_chunks == 1
     assert len(report.unchunked_documents) == 1

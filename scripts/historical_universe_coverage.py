@@ -131,13 +131,15 @@ def _current_constituent_reconciliation(
         symbol for symbol in constituent_symbols if not active_security_ids_by_symbol[symbol]
     )
     production = {_normalize_symbol(symbol) for symbol in production_tickers}
+    unresolved_catalog_symbols = missing_symbols - production
     return {
         "snapshot_source": payload.get("source"),
         "snapshot_generated_at": generated_at.isoformat(),
         "snapshot_sha256": _sha256_file(path),
         "constituent_symbol_count": len(constituent_symbols),
-        "mapped_constituent_symbol_count": len(alias_symbols),
-        "missing_catalog_symbols": sorted(missing_symbols),
+        "mapped_constituent_symbol_count": len(alias_symbols)
+        + len(missing_symbols - unresolved_catalog_symbols),
+        "missing_catalog_symbols": sorted(unresolved_catalog_symbols),
         "primary_ticker_count": len(primary_tickers),
         "production_company_ticker_count": len(production),
         "matched_primary_ticker_count": len(primary_tickers & production),
@@ -566,7 +568,12 @@ def main() -> int:
             company_count = int(session.scalar(select(func.count(Company.id))) or 0)
             production_tickers = tuple(
                 str(ticker)
-                for ticker in session.scalars(select(Company.ticker).order_by(Company.ticker))
+                for ticker in session.scalars(
+                    select(Company.ticker)
+                    .where(Company.ticker.is_not(None))
+                    .order_by(Company.ticker)
+                )
+                if ticker is not None
             )
             identities = _load_identity_records(session)
             securities = load_stable_securities(session)
