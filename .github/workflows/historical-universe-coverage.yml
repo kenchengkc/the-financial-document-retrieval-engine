@@ -182,6 +182,11 @@ jobs:
             --observed-at "${HU2_OBSERVED_AT}" \
             --output "${OUTPUT_DIR}/historical-universe-materialization-plan.json"
 
+      - name: Apply historical-issuer schema migration
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
+        run: |
+          alembic -c alembic.ini upgrade a7c9e1f3b205
+
       - name: Apply HU-2 production materialization
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
         run: |
