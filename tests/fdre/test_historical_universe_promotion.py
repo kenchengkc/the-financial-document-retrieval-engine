@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pytest
 from scripts.historical_universe_promote import (
     AnchorConstituentExpectation,
     AnchorExpectation,
@@ -209,6 +210,52 @@ def test_current_company_primary_ticker_is_deterministic_for_share_classes(
     )
     current = _load_current(path)
     assert current["0000000001"].symbol == "AAA"
+
+
+def test_current_xom_holding_company_cik_is_corrected(tmp_path: Path) -> None:
+    path = tmp_path / "current.csv"
+    path.write_text(
+        "symbol,cik,name,sector\n"
+        "XOM,0002115436,ExxonMobil,energy\n",
+        encoding="utf-8",
+    )
+
+    current = _load_current(path)
+
+    assert current["0000034088"].symbol == "XOM"
+    assert "0002115436" not in current
+
+
+def test_dry_run_rejects_current_ticker_owned_by_another_cik() -> None:
+    records, _, intervals = _materialization_inputs()
+    engine = _engine()
+
+    with Session(engine) as session:
+        session.add(
+            Company(
+                ticker="ABC",
+                cik="0000000002",
+                name="Existing Ticker Owner",
+            )
+        )
+        session.commit()
+
+        with pytest.raises(ValueError, match="already belongs to production CIK"):
+            materialize(
+                session,
+                records=records,
+                current_by_cik={
+                    records[0].cik: CurrentIssuer(
+                        symbol="ABC",
+                        cik=records[0].cik,
+                        name=records[0].name,
+                        sector=records[0].sector,
+                    )
+                },
+                verified_intervals=intervals,
+                observed_at=_OBSERVED_AT,
+                stage=False,
+            )
 
 
 def _materialization_inputs(

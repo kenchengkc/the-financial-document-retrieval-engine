@@ -40,6 +40,7 @@ from apps.api.app.models.historical_universe import (
 from fdre.research.historical_component_history import (
     HistoricalComponentHistoryAdapter,
     HistoricalComponentRecord,
+    canonical_component_cik,
 )
 from fdre.research.historical_universe_boundary import (
     BOUNDARY_ADJUDICATION_SCHEMA_VERSION,
@@ -240,9 +241,10 @@ def _load_current(path: Path) -> dict[str, CurrentIssuer]:
         if not required.issubset(reader.fieldnames or ()):
             raise ValueError("current component CSV is missing required columns")
         for row in reader:
-            cik = normalize_cik(row["cik"] or "")
+            symbol = (row["symbol"] or "").strip().upper()
+            cik = canonical_component_cik(symbol, row["cik"] or "")
             issuer = CurrentIssuer(
-                symbol=(row["symbol"] or "").strip().upper(),
+                symbol=symbol,
                 cik=cik,
                 name=(row["name"] or "").strip(),
                 sector=(row["sector"] or "").strip() or None,
@@ -677,6 +679,9 @@ def materialize(
     companies = list(session.scalars(select(Company).order_by(Company.id)))
     companies_by_cik = {company.cik: company for company in companies}
     companies_by_id = {company.id: company for company in companies}
+    companies_by_ticker = {
+        _symbol(company.ticker): company for company in companies if company.ticker
+    }
     existing_security_by_key = _existing_security_by_key(session, companies_by_id)
 
     anchor_by_key = {item.key: item for item in anchor.constituents} if anchor else {}
@@ -727,6 +732,16 @@ def materialize(
         latest = latest_by_cik.get(cik)
         anchor_item = anchor_by_cik.get(cik)
         if company is None:
+            ticker_owner = (
+                companies_by_ticker.get(_symbol(current.symbol))
+                if current is not None
+                else None
+            )
+            if ticker_owner is not None and current is not None:
+                raise ValueError(
+                    f"current ticker {current.symbol} maps to source CIK {cik} but already "
+                    f"belongs to production CIK {ticker_owner.cik}"
+                )
             if current is not None:
                 current_company_creates += 1
             else:
@@ -756,17 +771,18 @@ def materialize(
                 session.flush()
                 companies_by_cik[cik] = company
                 companies_by_id[company.id] = company
+                if company.ticker:
+                    companies_by_ticker[_symbol(company.ticker)] = company
         elif current is not None and company.ticker is None:
             current_ticker_fills += 1
-            if stage:
-                ticker_owner = session.scalar(
-                    select(Company).where(Company.ticker == current.symbol)
+            ticker_owner = companies_by_ticker.get(_symbol(current.symbol))
+            if ticker_owner is not None and ticker_owner.id != company.id:
+                raise ValueError(
+                    f"current ticker {current.symbol} already belongs to another company"
                 )
-                if ticker_owner is not None and ticker_owner.id != company.id:
-                    raise ValueError(
-                        f"current ticker {current.symbol} already belongs to another company"
-                    )
+            if stage:
                 company.ticker = current.symbol
+                companies_by_ticker[_symbol(current.symbol)] = company
 
     # Stage the independently reconciled starting snapshot before applying later component rows.
     # Every row is verified by the complete SEC-filed holdings schedule plus its dated identity

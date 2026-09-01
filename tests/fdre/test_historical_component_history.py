@@ -129,3 +129,16 @@ def test_trailing_table_delimiter_is_syntax_cleanup_only(tmp_path: Path) -> None
     )
     assert resolution.status == "resolved"
     assert resolution.cik == "0001579241"
+
+
+def test_exact_upstream_xom_holding_company_cik_is_corrected(tmp_path: Path) -> None:
+    index = _history(
+        tmp_path,
+        "XOM,0002115436,ExxonMobil,energy,1957-03-04,,2007-03-05\n",
+    )
+    resolution = resolve_component_identity(
+        _evidence(symbol="XOM", when=date(2020, 1, 2)), index
+    )
+
+    assert resolution.status == "resolved"
+    assert resolution.cik == "0000034088"

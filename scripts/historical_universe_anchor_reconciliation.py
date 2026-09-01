@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fdre.research.historical_component_history import (
+    COMPONENT_CIK_CORRECTIONS,
     HistoricalComponentHistoryAdapter,
     HistoricalComponentRecord,
 )
@@ -375,6 +376,12 @@ def build_reconciliation_report(
     decisions = {
         "terminal_symbol_aliases": list(_TERMINAL_SYMBOL_ALIASES),
         "sec_confirmed_source_gaps": list(_SEC_CONFIRMED_SOURCE_GAPS),
+        "component_cik_corrections": [
+            [symbol, source_cik, canonical_cik]
+            for (symbol, source_cik), canonical_cik in sorted(
+                COMPONENT_CIK_CORRECTIONS.items()
+            )
+        ],
         "rejected_lawcal_symbol": _REJECTED_LAWCAL_SYMBOL,
         "rejected_fja_duplicate": _REJECTED_FJA_DUPLICATE,
     }
@@ -402,6 +409,18 @@ def build_reconciliation_report(
         "component_history_sha256": hashlib.sha256(
             component_history.read_bytes()
         ).hexdigest(),
+        "component_cik_correction_count": len(COMPONENT_CIK_CORRECTIONS),
+        "component_cik_corrections": [
+            {
+                "symbol": symbol,
+                "source_cik": source_cik,
+                "canonical_cik": canonical_cik,
+                "decision": "exact_sec_listed_issuer_correction",
+            }
+            for (symbol, source_cik), canonical_cik in sorted(
+                COMPONENT_CIK_CORRECTIONS.items()
+            )
+        ],
         "sec_ivv_anchor_id": sec_anchor.anchor_id,
         "sec_ivv_holding_count": sec_anchor.holding_count,
         "sec_ivv_source": sec_anchor.source,
