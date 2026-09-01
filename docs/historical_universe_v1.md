@@ -299,6 +299,9 @@ Implemented:
 
 ### HU-4 — 10–15 year research archive
 
+Implementation and production measurement details live in
+[`research_archive.md`](research_archive.md).
+
 Extend research history without proportionally expanding embeddings.
 
 Acceptance criteria:

@@ -9,10 +9,12 @@ the repo data policy).
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import re
 import time as time_module
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time
 from pathlib import Path
 
@@ -33,6 +35,30 @@ _HEADERS = {
         "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     )
 }
+_CACHE_FILE_PATTERN = re.compile(
+    r"^(?:(?P<tiingo>tiingo)_)?(?P<ticker>.+)_(?P<start>\d{8})_(?P<end>\d{8})\.json$"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MarketCacheEntry:
+    filename: str
+    provider: str
+    ticker: str
+    requested_start: str
+    requested_end: str
+    first_bar_date: str | None
+    last_bar_date: str | None
+    bar_count: int
+    size_bytes: int
+    sha256_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class MarketCacheManifest:
+    schema_version: str
+    manifest_id: str
+    entries: tuple[MarketCacheEntry, ...]
 
 
 class MarketDataRateLimitError(requests.HTTPError):
@@ -342,6 +368,92 @@ def fetch_market_bars(
         if not cached:
             time_module.sleep(pause)
     return bars, missing
+
+
+def build_market_cache_manifest(cache_dir: Path) -> MarketCacheManifest:
+    """Hash every recognized market cache file into a deterministic replay manifest."""
+
+    entries: list[MarketCacheEntry] = []
+    if cache_dir.exists():
+        for path in sorted(cache_dir.glob("*.json")):
+            match = _CACHE_FILE_PATTERN.fullmatch(path.name)
+            if match is None:
+                continue
+            provider = "tiingo" if match.group("tiingo") else "yahoo"
+            ticker = match.group("ticker").upper()
+            content = path.read_bytes()
+            payload = json.loads(content)
+            if provider == "tiingo":
+                if not isinstance(payload, list):
+                    raise ValueError(f"invalid Tiingo cache payload: {path}")
+                bars = _parse_tiingo(ticker, payload)
+            else:
+                if not isinstance(payload, dict):
+                    raise ValueError(f"invalid Yahoo cache payload: {path}")
+                bars = _parse_chart(ticker, payload)
+            bar_dates = sorted(bar.date for bar in bars)
+            entries.append(
+                MarketCacheEntry(
+                    filename=path.name,
+                    provider=provider,
+                    ticker=ticker,
+                    requested_start=datetime.strptime(
+                        match.group("start"), "%Y%m%d"
+                    ).date().isoformat(),
+                    requested_end=datetime.strptime(
+                        match.group("end"), "%Y%m%d"
+                    ).date().isoformat(),
+                    first_bar_date=bar_dates[0].isoformat() if bar_dates else None,
+                    last_bar_date=bar_dates[-1].isoformat() if bar_dates else None,
+                    bar_count=len(bars),
+                    size_bytes=len(content),
+                    sha256_hash=hashlib.sha256(content).hexdigest(),
+                )
+            )
+    canonical_entries = tuple(entries)
+    manifest_payload = [asdict(entry) for entry in canonical_entries]
+    manifest_id = hashlib.sha256(
+        json.dumps(manifest_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return MarketCacheManifest(
+        schema_version="fdre-market-cache-manifest-v1",
+        manifest_id=manifest_id,
+        entries=canonical_entries,
+    )
+
+
+def write_market_cache_manifest(cache_dir: Path, output_path: Path) -> MarketCacheManifest:
+    manifest = build_market_cache_manifest(cache_dir)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(
+            {
+                "schema_version": manifest.schema_version,
+                "manifest_id": manifest.manifest_id,
+                "entry_count": len(manifest.entries),
+                "entries": [asdict(entry) for entry in manifest.entries],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def verify_market_cache_manifest(cache_dir: Path, manifest_path: Path) -> MarketCacheManifest:
+    expected = json.loads(manifest_path.read_text(encoding="utf-8"))
+    actual = build_market_cache_manifest(cache_dir)
+    actual_payload = {
+        "schema_version": actual.schema_version,
+        "manifest_id": actual.manifest_id,
+        "entry_count": len(actual.entries),
+        "entries": [asdict(entry) for entry in actual.entries],
+    }
+    if expected != actual_payload:
+        raise ValueError("market cache does not match its reproducibility manifest")
+    return actual
 
 
 def _parse_chart(ticker: str, payload: dict) -> list[MarketBar]:

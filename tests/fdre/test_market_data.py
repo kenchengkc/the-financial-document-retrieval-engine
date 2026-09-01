@@ -11,9 +11,12 @@ from fdre.research.event_study import MarketBar
 from fdre.research.market_data import (
     MarketDataRateLimitError,
     _covering_tiingo_path,
+    build_market_cache_manifest,
     fetch_market_bars,
     fetch_ticker_bars,
     fetch_ticker_bars_tiingo,
+    verify_market_cache_manifest,
+    write_market_cache_manifest,
 )
 
 
@@ -183,3 +186,25 @@ def test_yahoo_429_retries_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert len(calls) == 4
     assert sleeps == [2.0, 2.0]
+
+
+def test_market_cache_manifest_is_deterministic_and_detects_corruption(tmp_path: Path) -> None:
+    rows = [
+        {"date": "2010-01-04", "adjClose": 100.0},
+        {"date": "2025-12-31", "adjClose": 200.0},
+    ]
+    _write_cache(tmp_path, "SPY", "20100101", "20251231", rows)
+    _write_cache(tmp_path, "MSFT", "20100101", "20251231", rows)
+    manifest_path = tmp_path.parent / "manifest.json"
+
+    first = write_market_cache_manifest(tmp_path, manifest_path)
+    second = build_market_cache_manifest(tmp_path)
+    verified = verify_market_cache_manifest(tmp_path, manifest_path)
+
+    assert first.manifest_id == second.manifest_id == verified.manifest_id
+    assert [entry.ticker for entry in first.entries] == ["MSFT", "SPY"]
+    assert all(entry.bar_count == 2 for entry in first.entries)
+
+    (tmp_path / "tiingo_SPY_20100101_20251231.json").write_text("[]")
+    with pytest.raises(ValueError, match="does not match"):
+        verify_market_cache_manifest(tmp_path, manifest_path)

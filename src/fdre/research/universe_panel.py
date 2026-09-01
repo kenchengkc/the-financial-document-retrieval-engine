@@ -5,10 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.api.app.models.companies import Company
 from fdre.research.historical_universe import UniverseSnapshot
 from fdre.research.panel import (
     ResearchPanel,
@@ -37,10 +35,10 @@ def build_research_panel_for_universe(
 ) -> UniverseResearchPanel:
     """Build a filing panel from the issuer CIKs selected by a PIT universe.
 
-    The existing panel contract filters on ingestion tickers, so this adapter first maps every
-    snapshot CIK to its current ingestion-catalog ticker. Missing mappings fail closed instead of
-    silently shrinking the historical universe. The exact universe snapshot remains attached to
-    the result so downstream experiments can persist its ``snapshot_id``.
+    Filings are issuer disclosures, so selection is keyed by the snapshot's stable SEC CIKs rather
+    than present-day ticker aliases. This admits historical-only issuers without inventing a
+    current ticker. The exact universe snapshot remains attached to the result so downstream
+    experiments can persist its ``snapshot_id``.
     """
 
     snapshot = universe_from_session(
@@ -50,27 +48,12 @@ def build_research_panel_for_universe(
         include_provisional=include_provisional,
     )
     ciks = tuple(sorted({row.cik for row in snapshot.constituents}))
-    rows = session.execute(
-        select(Company.cik, Company.ticker)
-        .where(Company.cik.in_(ciks))
-        .order_by(Company.cik)
-    ).all() if ciks else []
-    ticker_by_cik = {
-        str(row.cik): str(row.ticker)
-        for row in rows
-        if row.ticker is not None and str(row.ticker).strip()
-    }
-    missing_ciks = tuple(sorted(set(ciks) - set(ticker_by_cik)))
-    if missing_ciks:
-        raise ValueError(
-            "universe constituents lack ingestion ticker mappings: " + ", ".join(missing_ciks)
-        )
-
     base_query = query or ResearchPanelQuery()
     panel_as_of = datetime.combine(snapshot.as_of, time.max, tzinfo=UTC)
     composed_query = base_query.model_copy(
         update={
-            "tickers": sorted(set(ticker_by_cik.values())),
+            "tickers": [],
+            "ciks": list(ciks),
             "as_of": panel_as_of,
         }
     )
