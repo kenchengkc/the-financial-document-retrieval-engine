@@ -126,12 +126,12 @@ jobs:
           mkdir -p "${SOURCE_DIR}"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/shawnlinxl/snp-history/${SNP_HISTORY_REF}/data/history.csv" --output "${SOURCE_DIR}/snp-history.csv"
           curl --fail --location --retry 3 -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' "https://en.wikipedia.org/w/index.php?title=Historical_components_of_the_S%26P_500&oldid=${WIKIPEDIA_REVISION}" --output "${SOURCE_DIR}/wikipedia-historical-components.html"
-          curl --fail --location --retry 3 -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' https://www.sec.gov/Archives/edgar/cik-lookup-data.txt --output "${SOURCE_DIR}/sec-cik-lookup-data.txt"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 15 -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' https://www.sec.gov/Archives/edgar/cik-lookup-data.txt --output "${SOURCE_DIR}/sec-cik-lookup-data.txt"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv" --output "${SOURCE_DIR}/sp500-complete-history.csv"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/sp500_ticker_start_end.csv" --output "${SOURCE_DIR}/sp500-ticker-start-end.csv"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/lawcal/sp500-components-history/${COMPONENT_HISTORY_REF}/data/components_history.csv" --output "${SOURCE_DIR}/components-history.csv"
           curl --fail --location --retry 3 "https://raw.githubusercontent.com/lawcal/sp500-components-history/${COMPONENT_HISTORY_REF}/data/sp500_components.csv" --output "${SOURCE_DIR}/current-components.csv"
-          curl --fail --location --retry 3 -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' "https://www.sec.gov/Archives/edgar/data/1100663/000119312510044578/dnq.htm" --output "${SOURCE_DIR}/ivv-2009-12-31-nq.htm"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 15 -H 'User-Agent: FDRE historical-universe audit kencheng.kc8@gmail.com' "https://www.sec.gov/Archives/edgar/data/1100663/000119312510044578/dnq.htm" --output "${SOURCE_DIR}/ivv-2009-12-31-nq.htm"
 
       - name: Set audit observation time
         run: echo "HU2_OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_ENV}"
