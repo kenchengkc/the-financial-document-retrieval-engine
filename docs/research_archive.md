@@ -32,7 +32,8 @@ silently mislabeled as Item 1A.
 ## Bounded production workflow
 
 The existing **S&P 500 batch ingestion** workflow has two modes, preserving the seven-workflow
-operational surface:
+operational surface. A blank `archive_spec` selects current-vector ingestion; a value such as
+`2010-01-01:2026-09-01:false` selects the HU-4 window and provisional-cache policy:
 
 - `current_vector`: the existing current-constituent parse/chunk/embed path;
 - `research_archive`: the HU-4 annual-filing path.
