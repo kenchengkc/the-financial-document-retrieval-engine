@@ -120,6 +120,13 @@ jobs:
             sleep $((attempt * 15))
           done
 
+      - name: Manifest reproducible market cache
+        if: always()
+        run: |
+          python -m scripts.market_cache_manifest \
+            --cache-dir data/cache/market \
+            --manifest data/processed/flagship/risk-churn-acceleration/market-cache-manifest.json
+
       - name: Upload flagship research artifact
         if: always()
         uses: actions/upload-artifact@v4

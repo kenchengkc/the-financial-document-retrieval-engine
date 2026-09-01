@@ -152,6 +152,7 @@ class FeatureLineage(BaseModel):
 
 class ResearchPanelQuery(BaseModel):
     tickers: list[str] = Field(default_factory=list)
+    ciks: list[str] = Field(default_factory=list)
     period_end_from: date | None = None
     period_end_to: date | None = None
     as_of: datetime | None = None
@@ -234,7 +235,6 @@ def build_research_panel(
         .options(contains_eager(Document.company))
         .join(Company, Company.id == Document.company_id)
         .where(
-            Company.ticker.is_not(None),
             Document.available_at.is_not(None),
             Document.period_end_date.is_not(None),
         )
@@ -244,6 +244,10 @@ def build_research_panel(
         statement = statement.where(
             Company.ticker.in_([ticker.upper() for ticker in query.tickers])
         )
+    if query.ciks:
+        statement = statement.where(Company.cik.in_(query.ciks))
+    if not query.tickers and not query.ciks:
+        statement = statement.where(Company.ticker.is_not(None))
     if query.form_types:
         statement = statement.where(
             Document.form_type.in_([form.upper() for form in query.form_types])
@@ -361,20 +365,19 @@ def _latest_documents_with_priors(
     The full eligible document set is still used for corpus snapshot identity and
     prior selection. This only prunes expensive feature loading and row construction.
     """
-    latest_by_ticker: dict[str, Document] = {}
+    latest_by_company: dict[int, Document] = {}
     for document in documents:
-        ticker = _required_company_ticker(document)
-        incumbent = latest_by_ticker.get(ticker)
+        incumbent = latest_by_company.get(document.company_id)
         if (
             incumbent is None
             or _document_filing_sort_key(document)
             > _document_filing_sort_key(incumbent)
         ):
-            latest_by_ticker[ticker] = document
+            latest_by_company[document.company_id] = document
 
     selected_document_ids = {document.id for document in documents}
     materialized_ids: set[int] = set()
-    for document in latest_by_ticker.values():
+    for document in latest_by_company.values():
         materialized_ids.add(document.id)
         prior = prior_by_document[document.id]
         if prior is not None and prior.id in selected_document_ids:
@@ -971,9 +974,7 @@ def _required_datetime(value: datetime | None) -> datetime:
 
 def _required_company_ticker(document: Document) -> str:
     ticker = document.company.ticker
-    if ticker is None:
-        raise ValueError("research panels require a current company ticker")
-    return ticker
+    return ticker if ticker is not None else f"CIK:{document.company.cik}"
 
 
 def _export_record(row: ResearchPanelRow) -> dict[str, Any]:

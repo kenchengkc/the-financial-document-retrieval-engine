@@ -70,7 +70,8 @@ def test_panel_composition_uses_pit_universe_and_persists_snapshot_identity() ->
         )
 
         assert result.universe_snapshot.constituents[0].symbol == "OLDABC"
-        assert result.panel.query.tickers == ["ABC"]
+        assert result.panel.query.tickers == []
+        assert result.panel.query.ciks == ["0000000001"]
         assert result.panel.query.as_of is not None
         assert result.panel.query.as_of.date() == date(2012, 6, 30)
         assert len(result.universe_snapshot.snapshot_id) == 64

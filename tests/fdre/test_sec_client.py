@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -13,9 +14,11 @@ from fdre.ingestion.sec_client import (
     build_primary_document_url,
     company_facts_url,
     company_submissions_url,
+    extract_filings,
     extract_recent_filings,
     normalize_accession,
     normalize_cik,
+    submissions_history_file_url,
 )
 
 
@@ -123,3 +126,94 @@ def test_extract_recent_filings_supports_form_specific_depth() -> None:
         {"10-K": 1, "10-Q": 2},
     )
     assert [filing["form_type"] for filing in results] == ["10-K", "10-Q", "10-Q"]
+
+
+def test_extract_filings_merges_paginated_history_and_filters_dates() -> None:
+    historical = {
+        "accessionNumber": ["0000320193-12-000001", "0000320193-11-000001"],
+        "filingDate": ["2012-10-31", "2011-10-31"],
+        "reportDate": ["2012-09-30", "2011-09-30"],
+        "acceptanceDateTime": ["2012-10-31T16:00:00Z", "2011-10-31T16:00:00Z"],
+        "form": ["10-K", "10-K"],
+        "primaryDocument": ["aapl-20120930.htm", "aapl-20110930.htm"],
+    }
+
+    results = extract_filings(
+        [submissions_payload(), historical],
+        ["10-K"],
+        filed_from=date(2012, 1, 1),
+        filed_to=date(2024, 12, 31),
+    )
+
+    assert [filing["accession_number"] for filing in results] == [
+        "0000320193-24-000123",
+        "0000320193-12-000001",
+    ]
+
+
+@respx.mock
+def test_company_filing_history_loads_declared_sec_pages(tmp_path: Path) -> None:
+    root = submissions_payload()
+    root["filings"]["files"] = [{"name": "CIK0000320193-submissions-001.json"}]  # type: ignore[index]
+    historical = {
+        "accessionNumber": ["0000320193-12-000001"],
+        "filingDate": ["2012-10-31"],
+        "reportDate": ["2012-09-30"],
+        "form": ["10-K"],
+        "primaryDocument": ["aapl-20120930.htm"],
+    }
+    root_route = respx.get(company_submissions_url("320193")).mock(
+        return_value=httpx.Response(200, json=root)
+    )
+    history_route = respx.get(
+        submissions_history_file_url("CIK0000320193-submissions-001.json")
+    ).mock(return_value=httpx.Response(200, json=historical))
+    client = SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path,
+        requests_per_second=10,
+    )
+
+    results = client.list_filings(
+        "320193",
+        ["10-K"],
+        filed_from=date(2012, 1, 1),
+        filed_to=date(2012, 12, 31),
+    )
+    client.close()
+
+    assert [filing["accession_number"] for filing in results] == [
+        "0000320193-12-000001"
+    ]
+    assert root_route.call_count == 1
+    assert history_route.call_count == 1
+
+
+def test_submissions_history_file_url_rejects_paths() -> None:
+    with pytest.raises(ValueError):
+        submissions_history_file_url("../history.json")
+
+
+@respx.mock
+def test_sec_client_retries_transient_forbidden_response(tmp_path: Path) -> None:
+    sleeps: list[float] = []
+    route = respx.get(company_submissions_url("320193")).mock(
+        side_effect=[
+            httpx.Response(403),
+            httpx.Response(200, json=submissions_payload()),
+        ]
+    )
+    client = SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path,
+        requests_per_second=10,
+        retry_backoff_seconds=0.25,
+        retry_sleep=sleeps.append,
+    )
+
+    payload = client.get_company_submissions("320193")
+    client.close()
+
+    assert payload["name"] == "Apple Inc."
+    assert route.call_count == 2
+    assert sleeps == [0.25]

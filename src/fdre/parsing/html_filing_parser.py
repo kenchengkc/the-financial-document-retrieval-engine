@@ -183,6 +183,12 @@ def _detect_section(text: str) -> str | None:
     for pattern, section in SECTION_PATTERNS:
         if pattern.search(normalized):
             return section
+    generic_item = re.match(r"^item\s+(\d+[a-z]?)\b", normalized, re.I)
+    if generic_item is not None:
+        # Unknown item headings still terminate the preceding named section. This is
+        # especially important for a section-scoped archive: Item 2 must not remain
+        # mislabeled as Item 1A merely because FDRE does not compute an Item 2 feature.
+        return f"Item {generic_item.group(1).upper()}"
     return None
 
 

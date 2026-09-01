@@ -6,6 +6,7 @@ import re
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,14 @@ def company_submissions_url(cik: str) -> str:
     return f"{SEC_SUBMISSIONS_BASE_URL}/CIK{normalize_cik(cik)}.json"
 
 
+def submissions_history_file_url(filename: str) -> str:
+    """Return the canonical URL for one SEC submissions history file."""
+
+    if Path(filename).name != filename or re.fullmatch(r"[A-Za-z0-9._-]+\.json", filename) is None:
+        raise ValueError(f"Invalid SEC submissions history filename: {filename!r}")
+    return f"{SEC_SUBMISSIONS_BASE_URL}/{filename}"
+
+
 def company_facts_url(cik: str) -> str:
     return f"{SEC_COMPANY_FACTS_BASE_URL}/CIK{normalize_cik(cik)}.json"
 
@@ -101,12 +110,19 @@ class SECClient:
         requests_per_second: int = 5,
         http_client: httpx.Client | None = None,
         rate_limiter: RateLimiter | None = None,
+        retry_attempts: int = 3,
+        retry_backoff_seconds: float = 5.0,
+        retry_sleep: Sleep = time.sleep,
     ) -> None:
         cleaned_user_agent = user_agent.strip()
         if not cleaned_user_agent:
             raise ValueError("SEC_USER_AGENT must identify the application and a contact")
         if "contact@example.com" in cleaned_user_agent.casefold():
             raise ValueError("Replace the placeholder SEC_USER_AGENT with a real contact")
+        if retry_attempts < 1:
+            raise ValueError("retry_attempts must be positive")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be non-negative")
         self.cache_dir = Path(cache_dir)
         self._request_headers = {
             "User-Agent": cleaned_user_agent,
@@ -118,6 +134,9 @@ class SECClient:
             follow_redirects=True,
         )
         self._rate_limiter = rate_limiter or RateLimiter(requests_per_second)
+        self._retry_attempts = retry_attempts
+        self._retry_backoff_seconds = retry_backoff_seconds
+        self._retry_sleep = retry_sleep
 
     @classmethod
     def from_settings(cls) -> SECClient:
@@ -150,8 +169,22 @@ class SECClient:
         if use_cache and cache_path.is_file():
             return cache_path.read_bytes()
 
-        self._rate_limiter.wait()
-        response = self._http_client.get(url, headers=self._request_headers)
+        response: httpx.Response | None = None
+        for attempt in range(self._retry_attempts):
+            self._rate_limiter.wait()
+            response = self._http_client.get(url, headers=self._request_headers)
+            if response.status_code not in {403, 429, 500, 502, 503, 504}:
+                break
+            if attempt + 1 < self._retry_attempts:
+                retry_after = response.headers.get("Retry-After")
+                delay = (
+                    float(retry_after)
+                    if retry_after is not None and retry_after.isdigit()
+                    else self._retry_backoff_seconds * (2**attempt)
+                )
+                self._retry_sleep(min(delay, 60.0))
+        if response is None:  # pragma: no cover - constructor rejects zero attempts
+            raise RuntimeError("SEC request did not execute")
         response.raise_for_status()
         content = response.content
 
@@ -183,6 +216,43 @@ class SECClient:
         submissions = self.get_company_submissions(cik)
         return extract_recent_filings(submissions, form_types, limit)
 
+    def get_company_filing_history(self, cik: str) -> list[JSONDict]:
+        """Load the recent and paginated historical SEC submission records for one issuer."""
+
+        submissions = self.get_company_submissions(cik)
+        payloads = [submissions]
+        filings = submissions.get("filings")
+        files = filings.get("files") if isinstance(filings, dict) else None
+        if not isinstance(files, list):
+            return payloads
+        for entry in files:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            payloads.append(self.get_json(submissions_history_file_url(name)))
+        return payloads
+
+    def list_filings(
+        self,
+        cik: str,
+        form_types: list[str],
+        *,
+        filed_from: date | None = None,
+        filed_to: date | None = None,
+        limit: int | Mapping[str, int] | None = None,
+    ) -> list[JSONDict]:
+        """Select filings across the issuer's complete SEC submissions history."""
+
+        return extract_filings(
+            self.get_company_filing_history(cik),
+            form_types,
+            filed_from=filed_from,
+            filed_to=filed_to,
+            limit=limit,
+        )
+
 
 def extract_recent_filings(
     submissions: JSONDict,
@@ -191,63 +261,100 @@ def extract_recent_filings(
 ) -> list[JSONDict]:
     """Select the latest filings, applying the limit independently per form."""
 
+    return extract_filings([submissions], form_types, limit=limit)
+
+
+def extract_filings(
+    submissions_history: Iterable[JSONDict],
+    form_types: Iterable[str],
+    *,
+    filed_from: date | None = None,
+    filed_to: date | None = None,
+    limit: int | Mapping[str, int] | None = None,
+) -> list[JSONDict]:
+    """Select deterministic filing rows from recent and paginated SEC submissions data."""
+
     requested_forms = {form_type.upper() for form_type in form_types}
-    limits = _form_limits(requested_forms, limit)
-    filings = submissions.get("filings")
-    if not isinstance(filings, dict):
+    if not requested_forms:
         return []
-    recent = filings.get("recent", {})
-    if not isinstance(recent, dict):
-        return []
-
-    accessions = recent.get("accessionNumber", [])
-    if not isinstance(accessions, list):
-        return []
-
-    counts = dict.fromkeys(requested_forms, 0)
-    selected: list[JSONDict] = []
-    for index, accession in enumerate(accessions):
-        form_type = _value_at(recent, "form", index)
-        if not isinstance(form_type, str):
+    limits = _form_limits(requested_forms, limit) if limit is not None else None
+    by_accession: dict[str, JSONDict] = {}
+    for submissions in submissions_history:
+        rows = _submission_rows(submissions)
+        accessions = rows.get("accessionNumber", [])
+        if not isinstance(accessions, list):
             continue
-        normalized_form = form_type.upper()
-        if (
-            normalized_form not in requested_forms
-            or counts[normalized_form] >= limits[normalized_form]
-        ):
-            continue
-
-        primary_document = _value_at(recent, "primaryDocument", index)
-        if not isinstance(accession, str) or not isinstance(primary_document, str):
-            continue
-
-        selected.append(
-            {
+        for index, accession in enumerate(accessions):
+            form_type = _value_at(rows, "form", index)
+            if not isinstance(form_type, str):
+                continue
+            normalized_form = form_type.upper()
+            primary_document = _value_at(rows, "primaryDocument", index)
+            filing_date = _value_at(rows, "filingDate", index)
+            if (
+                normalized_form not in requested_forms
+                or not isinstance(accession, str)
+                or not isinstance(primary_document, str)
+                or not isinstance(filing_date, str)
+            ):
+                continue
+            try:
+                parsed_filing_date = date.fromisoformat(filing_date)
+            except ValueError:
+                continue
+            if filed_from is not None and parsed_filing_date < filed_from:
+                continue
+            if filed_to is not None and parsed_filing_date > filed_to:
+                continue
+            by_accession[accession] = {
                 "accession_number": accession,
                 "form_type": normalized_form,
-                "filing_date": _value_at(recent, "filingDate", index),
-                "report_date": _value_at(recent, "reportDate", index),
-                "acceptance_datetime": _value_at(recent, "acceptanceDateTime", index),
+                "filing_date": filing_date,
+                "report_date": _value_at(rows, "reportDate", index),
+                "acceptance_datetime": _value_at(rows, "acceptanceDateTime", index),
                 "primary_document": primary_document,
                 "primary_document_description": _value_at(
-                    recent,
+                    rows,
                     "primaryDocDescription",
                     index,
                 ),
-                "file_number": _value_at(recent, "fileNumber", index),
-                "film_number": _value_at(recent, "filmNumber", index),
-                "items": _value_at(recent, "items", index),
-                "size": _value_at(recent, "size", index),
-                "is_xbrl": _value_at(recent, "isXBRL", index),
-                "is_inline_xbrl": _value_at(recent, "isInlineXBRL", index),
+                "file_number": _value_at(rows, "fileNumber", index),
+                "film_number": _value_at(rows, "filmNumber", index),
+                "items": _value_at(rows, "items", index),
+                "size": _value_at(rows, "size", index),
+                "is_xbrl": _value_at(rows, "isXBRL", index),
+                "is_inline_xbrl": _value_at(rows, "isInlineXBRL", index),
             }
-        )
+
+    ordered = sorted(
+        by_accession.values(),
+        key=lambda filing: (
+            str(filing["filing_date"]),
+            str(filing.get("acceptance_datetime") or ""),
+            str(filing["accession_number"]),
+        ),
+        reverse=True,
+    )
+    if limits is None:
+        return ordered
+    counts = dict.fromkeys(requested_forms, 0)
+    selected: list[JSONDict] = []
+    for filing in ordered:
+        normalized_form = str(filing["form_type"])
+        if counts[normalized_form] >= limits[normalized_form]:
+            continue
+        selected.append(filing)
         counts[normalized_form] += 1
-
-        if counts and all(count >= limits[form] for form, count in counts.items()):
-            break
-
     return selected
+
+
+def _submission_rows(submissions: JSONDict) -> JSONDict:
+    filings = submissions.get("filings")
+    if isinstance(filings, dict):
+        recent = filings.get("recent")
+        if isinstance(recent, dict):
+            return recent
+    return submissions
 
 
 def _value_at(payload: JSONDict, key: str, index: int) -> Any:

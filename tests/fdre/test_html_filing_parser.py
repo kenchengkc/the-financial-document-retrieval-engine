@@ -94,6 +94,26 @@ def test_detects_sections_encoded_as_layout_tables() -> None:
     assert risk_text.section == "Risk Factors"
 
 
+def test_unknown_item_heading_terminates_risk_factors_section() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html><body>
+          <h2>Item 1A. Risk Factors</h2>
+          <p>Competition may reduce sales.</p>
+          <h2>Item 1B. Unresolved Staff Comments</h2>
+          <p>There are no unresolved staff comments.</p>
+          <h2>Item 2. Properties</h2>
+          <p>We lease our headquarters.</p>
+        </body></html>
+        """
+    )
+
+    by_text = {element.text: element.section for element in elements}
+    assert by_text["Competition may reduce sales."] == "Risk Factors"
+    assert by_text["There are no unresolved staff comments."] == "Item 1B"
+    assert by_text["We lease our headquarters."] == "Item 2"
+
+
 def test_financial_statement_notes_reset_section_after_legal_proceedings() -> None:
     elements = HtmlFilingParser().parse(
         """
