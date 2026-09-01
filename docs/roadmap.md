@@ -164,10 +164,12 @@ historical filing
 Acceptance criteria include reproducible market outcomes, Parquet panel export, measured before/after storage and runtime, and total recurring spend below the $20 ceiling.
 
 The bounded CIK-keyed archive path, Risk Factors-only parser, zero-embedding invariant,
-lineage-preserving Parquet export, and market-cache manifests are implemented on the HU-4 branch.
-Production dry-run measurements and the promotion checklist are recorded in
-[`research_archive.md`](research_archive.md). Full production cohort coverage and measured replay
-remain before HU-4 can be marked complete.
+lineage-preserving Parquet export, and market-cache manifests are implemented. A three-issuer
+production gate passed with 24 missing filings materialized, 1.31 MB of retained section text,
+32 lineage-bearing feature rows, and zero embedding growth or paid model calls. Measurements and
+the promotion checklist are recorded in [`research_archive.md`](research_archive.md). Full
+822-issuer production cohort coverage and measured replay remain before HU-4 can be marked
+complete.
 
 ### HU-5 — Institutional flagship rerun
 

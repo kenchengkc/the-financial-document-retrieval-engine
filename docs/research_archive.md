@@ -96,6 +96,23 @@ text characters, 17,967 chunks, and 17,967 embeddings. The HU-4 path reuses thos
 only missing older annual filing metadata and scoped elements. This is a baseline, not a projected
 whole-archive size claim.
 
+The subsequent bounded apply used the first three of 822 eligible issuer CIKs. It completed in
+2 minutes 28 seconds including runner setup and the production data-quality audit; archive
+materialization itself took 42.2 seconds. The run selected 34 annual filings, protected 10 existing
+filings, downloaded and parsed 24 missing filings (53,441,013 transfer bytes), and retained 3,120
+Risk Factors elements containing 1,306,013 text bytes. It exported 32 feature rows with complete
+accession and availability fields and no future lineage. One historical-only issuer in the cohort
+had no selected 10-K in the SEC window, which is recorded rather than substituted with another
+identity. Scoped chunk and embedding counts remained exactly 10,696 before and after. Paid
+embedding, reranking, and generation calls and estimated provider cost were all zero. The source
+artifact is GitHub Actions run `33561265364`.
+
+The measured full archive cohort contains 822 issuer CIKs with verified or provisional overlapping
+membership evidence (785 have at least one verified membership). Full rollout is split into two
+disjoint, resumable lanes capped at five SEC requests per second each, preserving the SEC-wide
+ten-request-per-second ceiling. These measurements are operational evidence for scaling; final
+storage and runtime are reported only from completed production batches.
+
 Do not mark HU-4 complete until production reports establish:
 
 1. full reconstructed-issuer batch coverage for the target window;
