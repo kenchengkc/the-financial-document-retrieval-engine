@@ -70,6 +70,47 @@ def test_archive_issuer_selection_uses_membership_overlap_not_current_ticker() -
 
 
 @respx.mock
+def test_archive_records_missing_root_submissions_without_guessing(tmp_path: Path) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    route = respx.get(company_submissions_url("0000320193")).mock(
+        return_value=httpx.Response(404)
+    )
+    client = SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path / "cache",
+        requests_per_second=10,
+    )
+
+    with Session(engine) as session:
+        _seed_archive_universe(session)
+        issuers = select_archive_issuers(
+            session,
+            universe_code="sp500",
+            period_from=date(2010, 1, 1),
+            period_to=date(2025, 12, 31),
+        )
+        metadata = ingest_archive_metadata(
+            session,
+            client=client,
+            issuers=issuers,
+            form_types=["10-K"],
+            filed_from=date(2010, 1, 1),
+            filed_to=date(2025, 12, 31),
+        )
+
+        assert route.called
+        assert metadata.filings_selected == 0
+        assert metadata.documents_created == 0
+        assert metadata.issuers_without_submissions == 1
+        assert metadata.missing_submission_ciks == ("0000320193",)
+        assert session.scalar(select(func.count()).select_from(Document)) == 0
+
+    client.close()
+    engine.dispose()
+
+
+@respx.mock
 def test_archive_materializes_only_research_sections_without_embeddings(tmp_path: Path) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

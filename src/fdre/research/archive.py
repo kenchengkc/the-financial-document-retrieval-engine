@@ -9,6 +9,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+import httpx
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -54,6 +55,8 @@ class ArchiveMetadataSummary:
     filings_selected: int
     documents_created: int
     documents_updated: int
+    issuers_without_submissions: int
+    missing_submission_ciks: tuple[str, ...]
     latency_ms: int
 
 
@@ -189,17 +192,31 @@ def ingest_archive_metadata(
 
     started = perf_counter()
     selected = created = updated = 0
+    missing_submission_ciks: list[str] = []
     for issuer in issuers:
         company = session.get(Company, issuer.company_id)
         if company is None or company.cik != issuer.cik:
             raise ValueError(f"archive issuer changed during run: {issuer.cik}")
-        filings = client.list_filings(
-            issuer.cik,
-            form_types,
-            filed_from=filed_from,
-            filed_to=filed_to,
-            limit=limit_per_form,
-        )
+        try:
+            filings = client.list_filings(
+                issuer.cik,
+                form_types,
+                filed_from=filed_from,
+                filed_to=filed_to,
+                limit=limit_per_form,
+            )
+        except httpx.HTTPStatusError as error:
+            is_missing_root = (
+                error.response.status_code == 404
+                and str(error.request.url) == company_submissions_url(issuer.cik)
+            )
+            if not is_missing_root:
+                raise
+            # Historical-universe evidence can legitimately refer to an obsolete or otherwise
+            # unavailable SEC issuer record. Preserve that exact gap in the batch report instead
+            # of substituting another CIK or aborting every later issuer in the resumable batch.
+            missing_submission_ciks.append(issuer.cik)
+            continue
         selected += len(filings)
         for filing in filings:
             accession = str(filing["accession_number"])
@@ -229,6 +246,8 @@ def ingest_archive_metadata(
         filings_selected=selected,
         documents_created=created,
         documents_updated=updated,
+        issuers_without_submissions=len(missing_submission_ciks),
+        missing_submission_ciks=tuple(missing_submission_ciks),
         latency_ms=round((perf_counter() - started) * 1000),
     )
 
