@@ -74,12 +74,14 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           path = Path("data/processed/historical-universe/strict-coverage/strict-coverage.json")
           report = json.loads(path.read_text())
           top = report["greedy_cover"][:10]
-          with Path("${GITHUB_STEP_SUMMARY}").open("a", encoding="utf-8") as handle:
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary_path.open("a", encoding="utf-8") as handle:
               handle.write("### Historical Universe strict coverage\n\n")
               handle.write(f"- Audit ID: `{report['audit_id']}`\n")
               handle.write(f"- Provisional memberships: **{report['provisional_membership_count']}**\n")
