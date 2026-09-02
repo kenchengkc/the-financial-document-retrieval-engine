@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from scripts.research.historical_universe.historical_security_seed_plan import build_historical_security_seed_plan
+from scripts.research.historical_universe.historical_security_seed_plan import (
+    build_historical_security_seed_plan,
+)
 
 from fdre.research.historical_universe_evidence import (
     MembershipEventType,
@@ -139,12 +141,8 @@ def test_planner_excludes_existing_stable_common_stock_security() -> None:
         evidence,
         sec_index=_sec_index(),
         existing_company_ciks={"0000000007"},
-        stable_securities=(
-            StableSecurityRecord(security_id=11, cik="0000000007"),
-        ),
+        stable_securities=(StableSecurityRecord(security_id=11, cik="0000000007"),),
     )
 
     assert report["candidate_cik_count"] == 0
-    assert report["exclusion_cik_counts"] == {
-        "existing_stable_common_stock_security": 1
-    }
+    assert report["exclusion_cik_counts"] == {"existing_stable_common_stock_security": 1}

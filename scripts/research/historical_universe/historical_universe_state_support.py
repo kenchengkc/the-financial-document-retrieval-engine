@@ -42,7 +42,9 @@ from fdre.research.hu5_universe import (
     build_hu5_universe_gate,
     load_hu5_universe_records,
 )
-from scripts.research.historical_universe.historical_universe_strict_coverage import load_provisional_membership_blockers
+from scripts.research.historical_universe.historical_universe_strict_coverage import (
+    load_provisional_membership_blockers,
+)
 
 
 def _date(value: str) -> date:
@@ -167,9 +169,7 @@ def _residual_membership_evidence(
     universe_code: str,
 ) -> dict[str, list[dict[str, object]]]:
     symbols = {
-        item.symbol
-        for item in decisions
-        if item.row_kind == "membership" and not item.promotable
+        item.symbol for item in decisions if item.row_kind == "membership" and not item.promotable
     }
     if not symbols:
         return {}
@@ -333,9 +333,7 @@ def main() -> int:
                 window_start=args.window_start,
                 window_end=args.window_end,
             )
-            membership_intervals, excluded_memberships = _membership_intervals(
-                membership_blockers
-            )
+            membership_intervals, excluded_memberships = _membership_intervals(membership_blockers)
             identity_intervals = _provisional_identity_intervals(
                 session,
                 universe_code=universe_code,

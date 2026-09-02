@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import respx
 from scripts.ingestion.download_filings import process_documents
+from scripts.ingestion.seed_demo import seed_demo_document
 from scripts.pipelines.retrieval_pipeline import chunk_selected_documents
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -20,7 +21,6 @@ from apps.api.app.models import (
     DocumentElement,
     Embedding,
 )
-from scripts.ingestion.seed_demo import seed_demo_document
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader, sha256_bytes
@@ -41,8 +41,7 @@ def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
         filing_date=date(2025, 10, 31),
         accession_number="0000320193-25-000079",
         primary_document_url=(
-            "https://www.sec.gov/Archives/edgar/data/320193/"
-            "000032019325000079/aapl-20250927.htm"
+            "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"
         ),
         metadata_json={"primary_document": "aapl-20250927.htm"},
     )
@@ -82,11 +81,14 @@ def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
         assert session.scalar(select(func.count()).select_from(DocumentElement)) == (
             summary.parsed_elements
         )
-        assert session.scalar(
-            select(func.count())
-            .select_from(DocumentElement)
-            .where(DocumentElement.element_type == "table")
-        ) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(DocumentElement)
+                .where(DocumentElement.element_type == "table")
+            )
+            == 1
+        )
 
     client.close()
     assert route.call_count == 1
@@ -119,8 +121,7 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
     Base.metadata.create_all(engine)
     filing_html = FIXTURE_PATH.read_bytes()
     document_url = (
-        "https://www.sec.gov/Archives/edgar/data/320193/"
-        "000032019325000079/aapl-20250927.htm"
+        "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"
     )
     company = Company(ticker="AAPL", cik="0000320193", name="Apple Inc.")
     document = Document(
@@ -154,9 +155,7 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
         citation_text=chunk.chunk_text,
         section=chunk.section,
     )
-    route = respx.get(document_url).mock(
-        return_value=httpx.Response(200, content=filing_html)
-    )
+    route = respx.get(document_url).mock(return_value=httpx.Response(200, content=filing_html))
     client = SECClient(
         user_agent="FDRE tests test@example.com",
         cache_dir=tmp_path / "cache",
@@ -209,8 +208,7 @@ def test_force_rechunk_rebuilds_existing_chunks() -> None:
         filing_date=date(2025, 10, 31),
         accession_number="0000320193-25-000079",
         primary_document_url=(
-            "https://www.sec.gov/Archives/edgar/data/320193/"
-            "000032019325000079/aapl-20250927.htm"
+            "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"
         ),
     )
     element = DocumentElement(
