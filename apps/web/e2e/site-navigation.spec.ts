@@ -42,6 +42,12 @@ test("keeps navigation and source actions consistent across pages", async ({ pag
   await expect(page).toHaveURL(/\/#research$/);
   await expect(page.locator(".home-research")).toBeInViewport();
 
+  const homeNav = page.getByRole("navigation", { name: "Site" });
+  await expect(homeNav.getByRole("link", { name: "Research" })).toHaveClass(/\bon\b/);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(homeNav.getByRole("link", { name: "Home" })).toHaveClass(/\bon\b/);
+  await expect(homeNav.getByRole("link", { name: "Research" })).not.toHaveClass(/\bon\b/);
+
   await page.goto("/contact");
   await expectSharedNavigation(page);
 });

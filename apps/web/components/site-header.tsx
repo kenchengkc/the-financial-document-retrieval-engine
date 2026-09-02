@@ -10,6 +10,7 @@ import styles from "./site-header.module.css";
 type ActivePage = "home" | "about" | "contact";
 
 const SOURCE_URL = "https://github.com/kenchengkc/the-financial-document-retrieval-engine";
+const HOME_VISIBLE_RATIO = 0.15;
 
 export function SiteHeader({
   tone = "light",
@@ -24,12 +25,32 @@ export function SiteHeader({
   const onHome = active === "home";
 
   useEffect(() => {
-    if (!onHome || window.location.hash !== "#research") return;
-    const frame = window.requestAnimationFrame(() => {
-      setResearchActive(true);
-      document.querySelector(".home-research")?.scrollIntoView({ block: "start" });
-    });
-    return () => window.cancelAnimationFrame(frame);
+    if (!onHome) return;
+
+    const hero = document.getElementById("top");
+    const research = document.querySelector<HTMLElement>(".home-research");
+    if (!hero || !research) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setResearchActive(entry.intersectionRatio < HOME_VISIBLE_RATIO);
+      },
+      { threshold: [HOME_VISIBLE_RATIO] },
+    );
+    observer.observe(hero);
+
+    let frame: number | null = null;
+    if (window.location.hash === "#research") {
+      frame = window.requestAnimationFrame(() => {
+        setResearchActive(true);
+        research.scrollIntoView({ block: "start" });
+      });
+    }
+
+    return () => {
+      observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [onHome]);
 
   return (
