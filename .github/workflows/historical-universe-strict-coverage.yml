@@ -9,7 +9,11 @@ on:
     paths:
       - ".github/workflows/historical-universe-strict-coverage.yml"
       - "scripts/historical_universe_strict_coverage.py"
+      - "scripts/historical_universe_state_support.py"
       - "src/fdre/research/historical_universe_strict_coverage.py"
+      - "src/fdre/research/historical_universe_state_support.py"
+      - "src/fdre/research/historical_universe_lineage.py"
+      - "src/fdre/research/hu5_universe.py"
       - "apps/api/app/models/historical_universe.py"
 
 permissions:
@@ -29,6 +33,7 @@ jobs:
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
       PYTHONPATH: .
       OUTPUT_DIR: data/processed/historical-universe/strict-coverage
+      TICKER_LINEAGES_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
 
     steps:
       - name: Check required database secret
@@ -60,6 +65,15 @@ jobs:
             echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
           fi
 
+      - name: Download pinned independent ticker history
+        run: |
+          mkdir -p data/raw/historical-universe
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/fja05680/sp500/${TICKER_LINEAGES_REF}/sp500_ticker_start_end.csv" \
+            --output data/raw/historical-universe/sp500_ticker_start_end.csv
+          test -s data/raw/historical-universe/sp500_ticker_start_end.csv
+
       - name: Audit provisional membership blockers
         run: |
           mkdir -p "${OUTPUT_DIR}"
@@ -70,6 +84,17 @@ jobs:
             --window-end 2026-09-01 \
             --output "${OUTPUT_DIR}/strict-coverage.json"
 
+      - name: Project independent state corroboration
+        run: |
+          python -m scripts.historical_universe_state_support \
+            --database-url "${DATABASE_URL}" \
+            --ticker-lineages data/raw/historical-universe/sp500_ticker_start_end.csv \
+            --ticker-lineages-ref "${TICKER_LINEAGES_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/state-support-projection.json"
+
       - name: Summarize strict coverage
         run: |
           python - <<'PY'
@@ -77,26 +102,31 @@ jobs:
           import os
           from pathlib import Path
 
-          path = Path("data/processed/historical-universe/strict-coverage/strict-coverage.json")
-          report = json.loads(path.read_text())
-          top = report["greedy_cover"][:10]
+          root = Path("data/processed/historical-universe/strict-coverage")
+          report = json.loads((root / "strict-coverage.json").read_text())
+          projection = json.loads((root / "state-support-projection.json").read_text())
+          gate = projection["projected_gate"]
           summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
           with summary_path.open("a", encoding="utf-8") as handle:
               handle.write("### Historical Universe strict coverage\n\n")
               handle.write(f"- Audit ID: `{report['audit_id']}`\n")
-              handle.write(f"- Provisional memberships: **{report['provisional_membership_count']}**\n")
-              handle.write(f"- Blocked days: **{report['blocked_day_count']} / {report['day_count']}**\n")
+              handle.write(f"- Live provisional memberships: **{report['provisional_membership_count']}**\n")
+              handle.write(f"- Live blocked days: **{report['blocked_day_count']} / {report['day_count']}**\n")
+              handle.write(f"- State-support plan ID: `{projection['plan_id']}`\n")
               handle.write(
-                  f"- Membership-provisional-free days: **{report['strict_eligible_day_count']}**\n\n"
+                  f"- Fully supported membership updates: **{projection['projected_membership_updates']}**\n"
               )
-              handle.write("#### Highest-leverage blockers\n\n")
-              handle.write("| Rank | Membership ID | Newly covered days | Remaining blocked days |\n")
-              handle.write("|---:|---:|---:|---:|\n")
-              for row in top:
-                  handle.write(
-                      f"| {row['rank']} | {row['membership_id']} | "
-                      f"{row['newly_covered_days']} | {row['remaining_blocked_days']} |\n"
-                  )
+              handle.write(
+                  f"- Fully supported identity updates: **{projection['projected_identity_updates']}**\n"
+              )
+              handle.write(
+                  f"- Projected strict-eligible days: **{gate['strict_eligible_day_count']} / {gate['day_count']}**\n\n"
+              )
+              handle.write("#### Longest projected strict spans\n\n")
+              handle.write("| Start | End | Days |\n")
+              handle.write("|---|---|---:|\n")
+              for row in gate["eligible_spans"][:10]:
+                  handle.write(f"| {row['start']} | {row['end']} | {row['day_count']} |\n")
           PY
 
       - name: Upload strict coverage artifact
