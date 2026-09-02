@@ -7,12 +7,12 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from scripts import retrieval_pipeline
 from sqlalchemy.orm import Session
 
 from fdre.evals.datasets import EvalQuestion
 from fdre.evals.runner import evaluate_variants_at_ks, write_multi_k_eval_report
 from fdre.retrieval.query import RetrievalCandidate
+from scripts.pipelines import retrieval_pipeline
 
 
 class FakeSearchRetriever:
