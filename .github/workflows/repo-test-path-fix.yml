@@ -1,0 +1,63 @@
+name: Repository test path fix
+
+on:
+  push:
+    branches:
+      - refactor/repo-architecture-cleanup
+    paths:
+      - ".github/workflows/repo-test-path-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+        with:
+          ref: refactor/repo-architecture-cleanup
+
+      - name: Correct moved test repository roots
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path("tests/unit/fdre/test_html_filing_parser.py"),
+              Path("tests/unit/fdre/test_research_archive.py"),
+              Path("tests/unit/fdre/test_cross_sectional_benchmark.py"),
+              Path("tests/unit/fdre/test_cross_sectional_v2_holdout.py"),
+              Path("tests/unit/fdre/test_cross_sectional_v2_freeze.py"),
+              Path("tests/unit/fdre/test_document_processing.py"),
+          ]
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              count = text.count("Path(__file__).resolve().parents[2]")
+              if count != 1:
+                  raise SystemExit(f"expected one old repository-root expression in {path}, found {count}")
+              path.write_text(
+                  text.replace(
+                      "Path(__file__).resolve().parents[2]",
+                      "Path(__file__).resolve().parents[3]",
+                  ),
+                  encoding="utf-8",
+              )
+          PY
+
+      - name: Verify no stale moved-test root expressions remain
+        run: |
+          if grep -R "Path(__file__).resolve().parents\[2\]" tests/unit/fdre; then
+            echo "::error::stale moved-test repository-root expression remains"
+            exit 1
+          fi
+
+      - name: Commit path corrections
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/unit/fdre
+          git commit -m "test: preserve repository roots after test move"
+          git push origin HEAD:refactor/repo-architecture-cleanup
