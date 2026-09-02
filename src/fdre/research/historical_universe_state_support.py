@@ -139,6 +139,7 @@ def plan_state_support(
         candidates = tuple(by_symbol.get(symbol, ()))
         containing = tuple(item for item in candidates if _contains(item, interval))
         overlapping = tuple(item for item in candidates if _overlaps(item, interval))
+        lineage: TickerMembershipLineage | None
         if len(containing) == 1:
             status: StateSupportStatus = "fully_supported"
             lineage = containing[0]
