@@ -97,9 +97,7 @@ def _contains(lineage: TickerMembershipLineage, interval: ProvisionalStateInterv
 def _overlaps(lineage: TickerMembershipLineage, interval: ProvisionalStateInterval) -> bool:
     if lineage.effective_to is not None and lineage.effective_to <= interval.effective_from:
         return False
-    if interval.effective_to is not None and interval.effective_to <= lineage.effective_from:
-        return False
-    return True
+    return interval.effective_to is None or interval.effective_to > lineage.effective_from
 
 
 def plan_state_support(
@@ -217,7 +215,11 @@ def corroborated_source(source: str) -> str:
 
 
 def corroborated_source_hash(decision: StateSupportDecision, *, plan_id: str) -> str:
-    if not decision.promotable or decision.lineage_id is None or decision.lineage_source_hash is None:
+    if (
+        not decision.promotable
+        or decision.lineage_id is None
+        or decision.lineage_source_hash is None
+    ):
         raise ValueError("only fully supported membership decisions have corroborated provenance")
     return _digest(
         {
