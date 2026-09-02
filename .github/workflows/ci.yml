@@ -36,17 +36,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Bundle temporary repository snapshot
-        run: git archive HEAD -o /tmp/fdre-repo.zip
-
-      - name: Upload temporary repository snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: fdre-repo-snapshot-${{ github.run_id }}
-          path: /tmp/fdre-repo.zip
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:

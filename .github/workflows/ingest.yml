@@ -38,7 +38,7 @@ permissions:
 
 concurrency:
   # Keep scheduled/manual incremental checks from evicting queued S&P batches.
-  # scripts/ingest_ticker_batch.py serializes database ingestion across workflows.
+  # scripts/ingestion/ingest_ticker_batch.py serializes database ingestion across workflows.
   group: fdre-scheduled-ingestion
   cancel-in-progress: false
 
@@ -165,7 +165,7 @@ jobs:
           else
             selection_args=(--universe sp500 --offset 0 --limit 500)
           fi
-          python scripts/ingest_ticker_batch.py \
+          python scripts/ingestion/ingest_ticker_batch.py \
             "${selection_args[@]}" \
             --forms "${form_args[@]}" \
             "${history_args[@]}" \
@@ -174,4 +174,4 @@ jobs:
 
       - name: Publish data-quality audit
         if: always()
-        run: python -m scripts.retrieval_pipeline audit
+        run: python -m scripts.pipelines.retrieval_pipeline audit
