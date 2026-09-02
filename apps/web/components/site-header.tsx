@@ -23,7 +23,6 @@ export function SiteHeader({
 
   useEffect(() => {
     if (!onHome || window.location.hash !== "#research") return;
-    setResearchActive(true);
     window.requestAnimationFrame(() => {
       document.querySelector(".home-research")?.scrollIntoView({ block: "start" });
     });
