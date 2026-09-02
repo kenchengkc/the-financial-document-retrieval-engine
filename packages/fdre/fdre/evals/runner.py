@@ -106,6 +106,73 @@ def write_eval_report(
     return json_path, markdown_path
 
 
+def write_multi_k_eval_report(
+    output_dir: str | Path,
+    metrics_by_k: dict[int, list[VariantMetrics]],
+    *,
+    benchmark_metadata: dict[str, Any] | None = None,
+) -> tuple[Path, Path]:
+    """Write a single evaluation report covering multiple K cutoffs.
+
+    MRR, latency, and cost are K-independent — taken from ``max(ks)``.
+    """
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    json_path = directory / "retrieval_eval.json"
+    markdown_path = directory / "retrieval_eval.md"
+
+    ks = sorted(metrics_by_k.keys())
+    max_k = max(ks)
+
+    # JSON payload: flat list with a "k" field added to each entry
+    flat_metrics: list[dict[str, Any]] = []
+    for k in ks:
+        for metric in metrics_by_k[k]:
+            entry = asdict(metric)
+            entry["k"] = k
+            flat_metrics.append(entry)
+    payload = {
+        "benchmark": benchmark_metadata or {},
+        "ks": ks,
+        "metrics": flat_metrics,
+    }
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+    # Markdown table: one row per variant, R@k and nDCG@k columns for each K
+    header = "| Variant |"
+    separator = "| --- |"
+    for k in ks:
+        header += f" R@{k} |"
+        separator += " ---: |"
+    header += " MRR |"
+    separator += " ---: |"
+    for k in ks:
+        header += f" nDCG@{k} |"
+        separator += " ---: |"
+    header += " Abstention F1 | Entity acc | p95 ms | Cost/query |"
+    separator += " ---: | ---: | ---: | ---: |"
+
+    lines = [header, separator]
+    # Build rows: one per variant, using max_k for K-independent columns
+    variant_names = [m.variant for m in metrics_by_k[max_k]]
+    for idx, variant in enumerate(variant_names):
+        row = f"| {variant} |"
+        for k in ks:
+            row += f" {metrics_by_k[k][idx].recall_at_k:.3f} |"
+        row += f" {metrics_by_k[max_k][idx].mrr:.3f} |"
+        for k in ks:
+            row += f" {metrics_by_k[k][idx].ndcg_at_k:.3f} |"
+        m = metrics_by_k[max_k][idx]
+        row += (
+            f" {m.abstention_macro_f1:.3f} |"
+            f" {m.entity_resolution_accuracy:.3f} |"
+            f" {m.latency_p95_ms:.1f} |"
+            f" ${m.average_provider_cost_usd:.6f} |"
+        )
+        lines.append(row)
+    markdown_path.write_text("\n".join(lines) + "\n")
+    return json_path, markdown_path
+
 def evaluate_variants_at_ks(
     questions: list[EvalQuestion],
     variants: dict[str, RetrieverVariant],
