@@ -289,15 +289,15 @@ test("keeps the earnings result within a mobile viewport", async ({ page }) => {
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
 });
 
-test("shows measured research artifacts on the About page", async ({ page }) => {
+test("shows visual-first research artifacts on the About page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/about");
 
-  await expect(page.getByRole("heading", { name: "SEC filing research with sources you can inspect" }))
+  await expect(page.getByRole("heading", { name: "Watch SEC filings become inspectable evidence" }))
     .toBeVisible();
   // The corpus counts are read live (ISR), so assert the stable labels, not values.
   await expect(page.locator(".proof-metrics").getByText("S&P 500 primary tickers indexed")).toBeVisible();
-  await expect(page.getByText("Six public examples")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "From filing to evidence" })).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -318,6 +318,6 @@ test("keeps the evidence-led landing hero and About navigation", async ({ page }
 
   await aboutLink.click();
   await expect(
-    page.getByRole("heading", { name: "SEC filing research with sources you can inspect" }),
+    page.getByRole("heading", { name: "Watch SEC filings become inspectable evidence" }),
   ).toBeVisible();
 });
