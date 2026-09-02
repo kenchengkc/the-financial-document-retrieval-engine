@@ -18,7 +18,7 @@ from fdre.evals.datasets import (
 )
 from fdre.research.screen import ResearchScreenPlan
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 EVAL_DIR = REPO_ROOT / "data/evals"
 DEVELOPMENT = EVAL_DIR / "cross_sectional_benchmark.v2.development.jsonl"
 HOLDOUT = EVAL_DIR / "cross_sectional_benchmark.v2.holdout.jsonl"

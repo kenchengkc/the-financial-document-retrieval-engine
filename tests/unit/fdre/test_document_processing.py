@@ -26,7 +26,7 @@ from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader, sha256_bytes
 from fdre.parsing.html_filing_parser import HtmlFilingParser
 
-FIXTURE_PATH = Path(__file__).resolve().parents[2] / "data/sample/sec_filing.html"
+FIXTURE_PATH = Path(__file__).resolve().parents[3] / "data/sample/sec_filing.html"
 
 
 @respx.mock
