@@ -218,7 +218,7 @@ def _residual_membership_evidence(
                 "source_record_hash": str(row.source_record_hash),
             }
         )
-    return {key: value for key, value in sorted(grouped.items())}
+    return dict(sorted(grouped.items()))
 
 
 def _assert_row_matches(
