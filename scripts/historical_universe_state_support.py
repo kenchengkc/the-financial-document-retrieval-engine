@@ -1,6 +1,6 @@
 """Project strict HU coverage after exact independent state corroboration.
 
-The command is intentionally non-mutating.  It stages only fully-supported verification upgrades
+The command is intentionally non-mutating. It stages only fully-supported verification upgrades
 inside one transaction, runs the existing HU-5 strict daily gate, writes an audit artifact, and
 rolls the entire transaction back.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -22,6 +22,7 @@ from apps.api.app.models.historical_universe import (
     Security,
     SecurityIdentityPeriod,
     UniverseMembership,
+    UniverseMembershipEvidence,
 )
 from fdre.research.historical_universe_lineage import (
     TickerMembershipLineageAdapter,
@@ -35,7 +36,12 @@ from fdre.research.historical_universe_state_support import (
     plan_state_support,
     state_support_plan_id,
 )
-from fdre.research.hu5_universe import build_hu5_universe_gate, load_hu5_universe_records
+from fdre.research.historical_universe_strict_coverage import ProvisionalMembershipBlocker
+from fdre.research.hu5_universe import (
+    HU5UniverseGate,
+    build_hu5_universe_gate,
+    load_hu5_universe_records,
+)
 from scripts.historical_universe_strict_coverage import load_provisional_membership_blockers
 
 
@@ -43,15 +49,14 @@ def _date(value: str) -> date:
     return date.fromisoformat(value)
 
 
-def _membership_symbol(blocker: object) -> str | None:
-    identities = getattr(blocker, "identities")
-    symbols = {normalize_symbol(item.symbol) for item in identities}
+def _membership_symbol(blocker: ProvisionalMembershipBlocker) -> str | None:
+    symbols = {normalize_symbol(item.symbol) for item in blocker.identities}
     return next(iter(symbols)) if len(symbols) == 1 else None
 
 
-def _membership_intervals(blockers: tuple[object, ...]) -> tuple[
-    tuple[ProvisionalStateInterval, ...], tuple[dict[str, object], ...]
-]:
+def _membership_intervals(
+    blockers: tuple[ProvisionalMembershipBlocker, ...],
+) -> tuple[tuple[ProvisionalStateInterval, ...], tuple[dict[str, object], ...]]:
     intervals: list[ProvisionalStateInterval] = []
     excluded: list[dict[str, object]] = []
     for blocker in blockers:
@@ -155,16 +160,80 @@ def _provisional_identity_intervals(
     )
 
 
-def _assert_row_matches(decision: StateSupportDecision, row: object) -> None:
-    if getattr(row, "security_id") != decision.security_id:
+def _residual_membership_evidence(
+    session: Session,
+    decisions: tuple[StateSupportDecision, ...],
+    *,
+    universe_code: str,
+) -> dict[str, list[dict[str, object]]]:
+    symbols = {
+        item.symbol
+        for item in decisions
+        if item.row_kind == "membership" and not item.promotable
+    }
+    if not symbols:
+        return {}
+    rows = session.execute(
+        select(
+            UniverseMembershipEvidence.evidence_id,
+            UniverseMembershipEvidence.event_type,
+            UniverseMembershipEvidence.effective_at,
+            UniverseMembershipEvidence.announced_at,
+            UniverseMembershipEvidence.effective_session,
+            UniverseMembershipEvidence.raw_symbol,
+            UniverseMembershipEvidence.raw_name,
+            UniverseMembershipEvidence.raw_cik,
+            UniverseMembershipEvidence.source,
+            UniverseMembershipEvidence.source_url,
+            UniverseMembershipEvidence.source_record_id,
+            UniverseMembershipEvidence.source_record_hash,
+        )
+        .where(UniverseMembershipEvidence.universe_code == universe_code)
+        .order_by(
+            UniverseMembershipEvidence.effective_at,
+            UniverseMembershipEvidence.source,
+            UniverseMembershipEvidence.evidence_id,
+        )
+    ).all()
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        symbol = normalize_symbol(str(row.raw_symbol))
+        if symbol not in symbols:
+            continue
+        grouped[symbol].append(
+            {
+                "evidence_id": str(row.evidence_id),
+                "event_type": str(row.event_type),
+                "effective_at": row.effective_at.isoformat(),
+                "announced_at": row.announced_at.isoformat() if row.announced_at else None,
+                "effective_session": str(row.effective_session),
+                "raw_symbol": str(row.raw_symbol),
+                "raw_name": str(row.raw_name) if row.raw_name is not None else None,
+                "raw_cik": str(row.raw_cik) if row.raw_cik is not None else None,
+                "source": str(row.source),
+                "source_url": str(row.source_url) if row.source_url is not None else None,
+                "source_record_id": (
+                    str(row.source_record_id) if row.source_record_id is not None else None
+                ),
+                "source_record_hash": str(row.source_record_hash),
+            }
+        )
+    return {key: value for key, value in sorted(grouped.items())}
+
+
+def _assert_row_matches(
+    decision: StateSupportDecision,
+    row: UniverseMembership | SecurityIdentityPeriod,
+) -> None:
+    if row.security_id != decision.security_id:
         raise RuntimeError(f"stale {decision.row_kind} security_id for row {decision.row_id}")
-    if getattr(row, "effective_from") != decision.effective_from:
+    if row.effective_from != decision.effective_from:
         raise RuntimeError(f"stale {decision.row_kind} start for row {decision.row_id}")
-    if getattr(row, "effective_to") != decision.effective_to:
+    if row.effective_to != decision.effective_to:
         raise RuntimeError(f"stale {decision.row_kind} end for row {decision.row_id}")
-    if getattr(row, "source_hash") != decision.source_hash:
+    if row.source_hash != decision.source_hash:
         raise RuntimeError(f"stale {decision.row_kind} provenance for row {decision.row_id}")
-    if getattr(row, "verification_status") != "provisional":
+    if row.verification_status != "provisional":
         raise RuntimeError(f"row {decision.row_kind}/{decision.row_id} is no longer provisional")
 
 
@@ -179,29 +248,35 @@ def _stage_decisions(
     for decision in decisions:
         if not decision.promotable:
             continue
-        model = UniverseMembership if decision.row_kind == "membership" else SecurityIdentityPeriod
-        row = session.get(model, decision.row_id)
-        if row is None:
-            raise RuntimeError(f"missing {decision.row_kind} row {decision.row_id}")
-        _assert_row_matches(decision, row)
-        row.verification_status = "verified"
-        row.confidence = max(float(row.confidence), 0.98)
-        row.source = corroborated_source(str(row.source))
-        row.source_hash = corroborated_source_hash(decision, plan_id=plan_id)
         if decision.row_kind == "membership":
+            membership = session.get(UniverseMembership, decision.row_id)
+            if membership is None:
+                raise RuntimeError(f"missing membership row {decision.row_id}")
+            _assert_row_matches(decision, membership)
+            membership.verification_status = "verified"
+            membership.confidence = max(float(membership.confidence), 0.98)
+            membership.source = corroborated_source(str(membership.source))
+            membership.source_hash = corroborated_source_hash(decision, plan_id=plan_id)
             membership_updates += 1
         else:
+            identity = session.get(SecurityIdentityPeriod, decision.row_id)
+            if identity is None:
+                raise RuntimeError(f"missing identity row {decision.row_id}")
+            _assert_row_matches(decision, identity)
+            identity.verification_status = "verified"
+            identity.confidence = max(float(identity.confidence), 0.98)
+            identity.source = corroborated_source(str(identity.source))
+            identity.source_hash = corroborated_source_hash(decision, plan_id=plan_id)
             identity_updates += 1
     session.flush()
     return membership_updates, identity_updates
 
 
-def _eligible_spans(gate: object) -> list[dict[str, object]]:
-    dates = gate.dates
-    spans: list[dict[str, object]] = []
+def _eligible_spans(gate: HU5UniverseGate) -> list[dict[str, str | int]]:
+    spans: list[dict[str, str | int]] = []
     start: date | None = None
     previous: date | None = None
-    for item in dates:
+    for item in gate.dates:
         current = date.fromisoformat(item.as_of)
         if item.eligible:
             if start is None:
@@ -225,7 +300,10 @@ def _eligible_spans(gate: object) -> list[dict[str, object]]:
                 "day_count": (previous - start).days + 1,
             }
         )
-    return sorted(spans, key=lambda item: (-int(item["day_count"]), str(item["start"])))
+    return sorted(
+        spans,
+        key=lambda item: (-int(item["day_count"]), str(item["start"])),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -243,9 +321,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     universe_code = args.universe_code.strip().lower()
-    lineages = TickerMembershipLineageAdapter(
-        source_ref=args.ticker_lineages_ref
-    ).load(args.ticker_lineages)
+    lineages = TickerMembershipLineageAdapter(source_ref=args.ticker_lineages_ref).load(
+        args.ticker_lineages
+    )
     engine = create_db_engine(args.database_url)
     try:
         with Session(engine) as session:
@@ -267,6 +345,11 @@ def main() -> int:
             decisions = plan_state_support(
                 membership_intervals + identity_intervals,
                 lineages,
+            )
+            residual_evidence = _residual_membership_evidence(
+                session,
+                decisions,
+                universe_code=universe_code,
             )
             plan_id = state_support_plan_id(decisions)
             membership_updates, identity_updates = _stage_decisions(
@@ -323,8 +406,11 @@ def main() -> int:
             "strict_eligible_day_count": gate.strict_eligible_day_count,
             "invalid_day_count": gate.invalid_day_count,
             "eligible_spans": _eligible_spans(gate),
-            "error_counts": dict(sorted(error_counts.items(), key=lambda item: (-item[1], item[0]))),
+            "error_counts": dict(
+                sorted(error_counts.items(), key=lambda item: (-item[1], item[0]))
+            ),
         },
+        "residual_membership_evidence": residual_evidence,
         "decisions": [item.as_dict() for item in decisions],
         "interpretation": (
             "Projection only. Fully-supported rows are staged in one transaction using exact "
@@ -333,7 +419,10 @@ def main() -> int:
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
