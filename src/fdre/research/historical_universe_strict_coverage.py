@@ -8,6 +8,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
+from itertools import pairwise
 
 STRICT_COVERAGE_SCHEMA_VERSION = "fdre-hu-strict-coverage-v1"
 
@@ -172,7 +173,7 @@ def _build_segments(
         boundaries.update((start, end))
     ordered = sorted(boundaries)
     segments: list[StrictCoverageSegment] = []
-    for start, end in zip(ordered, ordered[1:]):
+    for start, end in pairwise(ordered):
         if end <= start:
             continue
         active = tuple(
