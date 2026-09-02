@@ -1,102 +1,142 @@
 # Financial Document Retrieval Engine
 
-FDRE converts SEC filings into auditable retrieval results, structured financial facts,
-point-in-time research features, and reproducible event-study inputs.
+FDRE turns SEC filings into source-linked answers, structured financial data, and point-in-time
+research datasets. It is built for research and data engineering workflows where provenance,
+availability time, and reproducibility matter.
 
 [Live service](https://thefdre.com) ·
-[API](https://api.thefdre.com/health) ·
+[API health](https://api.thefdre.com/health) ·
 [Architecture](docs/architecture.md) ·
 [Roadmap](docs/roadmap.md) ·
-[Benchmark](docs/eval_plan.md) ·
-[Eval results](docs/eval_results.md)
+[Evaluation plan](docs/eval_plan.md) ·
+[Evaluation results](docs/eval_results.md)
 
-FDRE is research infrastructure for Research/Data Engineering and Quant Research Engineering. It
-is not a trading strategy, portfolio optimizer, execution simulator, or low-latency system.
+FDRE is research infrastructure. It is not a trading strategy, portfolio optimizer, execution
+simulator, or low-latency trading system.
 
-## Highlights
+## Production snapshot
 
-- **2.7M chunks, one database.** 498 S&P 500 issuers × ~5 years of 10-K/10-Q annual and quarterly filings (2,762 filings, 2.71M parsed chunks, 2.71M embeddings) served from a single PostgreSQL for lexical, vector, typed facts, and traces, with no separate search, vector, or queue service.
-- **Measured, not assumed.** A labeled 33-query benchmark sets the retrieval defaults: multi-query expansion lifts recall@5 from 0.152 → 0.212 (**+40%**); RRF (Reciprocal Rank Fusion) and BM25 (Best Matching 25 lexical ranking) were implemented, measured, and rejected for underperforming on this corpus.
-- **−27% storage, zero quality loss.** Migrating embeddings to `halfvec` (16-bit half-precision vectors) cut the database from **15 GB → 11 GB**, proven safe by byte-identical top-10 ANN (Approximate Nearest Neighbor) results before and after.
-- **~44 ms cached answers.** Point-in-time-aware caching returns an identical question from a verified stored result instead of re-running retrieval; abstentions are never cached.
-- **Honest research.** Four point-in-time signal studies (disclosure similarity, risk-factor churn, filing-delay surprise, and cash-conversion earnings quality) with real information coefficients, multiple-testing adjustments, and bootstrap inference, reporting genuine null results, not manufactured alpha.
+Latest documented production measurements from August 25–27, 2026:
 
-## Production Corpus
-
-Measured from production:
-
-| Metric | Value |
+| Metric | Current snapshot |
 | --- | ---: |
-| S&P 500 primary tickers indexed | 498 / 499 |
-| SEC filings (10-K annual / 10-Q quarterly) | 2,762 |
-| Parsed chunks | 2,712,277 |
-| Embedded chunks | 2,712,277 |
-| Embeddings | Voyage `voyage-4-large`, 512-dim, stored as `halfvec` |
+| Live usage | ~75 monthly active users |
+| S&P 500 primary tickers indexed | 499 / 499 |
+| 10-K / 10-Q filings indexed | 3,204 |
+| Parsed and embedded chunks | 3,039,403 |
+| Embeddings | Voyage `voyage-4-large`, 512 dimensions, `halfvec` |
+| PostgreSQL database size after `halfvec` migration | ~11 GB |
 
-The corpus spans roughly five years of 10-K/10-Q history per issuer (2021–2026, via
-chained `sp500-ingest` runs), enabling multi-year point-in-time retrieval and event
-studies. The constituent list is current and therefore survivorship-biased. The one company
-without indexed data is FedEx Freight (`FDXF`), a June 2026 spin-off from FedEx whose EDGAR
-(Electronic Data Gathering, Analysis, and Retrieval) history is still only registration, `8-K` (material
-event), and insider filings, with no 10-K or 10-Q yet, so there is nothing to retrieve until its first
-quarterly report. Vectors are stored at half precision (`halfvec`); the HNSW (Hierarchical Navigable
-Small World) index already ranks on the half-precision cast, so this halves vector storage with no
-change to retrieval results.
+The indexed filing history spans roughly five years per issuer. The production constituent list is
+current, so it is useful for live retrieval but is **not** a historical-membership universe. Research
+workflows that require historical membership use separate point-in-time lineage and archived
+universe artifacts.
 
-## What It Does
+## Capabilities
 
-- Hybrid PostgreSQL full-text and pgvector retrieval with exact company resolution,
-  multi-query expansion, and neighbor-chunk context (all behind a labeled benchmark).
-- Citation-verified answers with deliberate abstention for unsupported requests.
-- Point-in-time-aware answer caching: identical questions serve a stored response
-  (`X-Cache: HIT`) instead of re-running retrieval; abstentions are never cached.
-- SEC acceptance-time filtering, amendments, comparable filings, and filing differences.
-- Typed Company Facts queries for a restrained canonical metric set.
-- Point-in-time issuer-period panels in JSON, CSV, or Parquet.
-- Provider-neutral filing event studies with leakage checks and persisted experiment manifests.
-- Point-in-time disclosure and fundamental signal studies: a "Lazy Prices" disclosure-similarity
-  replication, a risk-factor churn study, an issuer filing-delay surprise study, and a cash-conversion
-  earnings quality study, with quantile portfolios, information coefficients, and bootstrap inference
-  (`GET /research/signal-studies`). The honest finding: the signals are genuinely
-  uncorrelated but individually weak, so naive combination is no free lunch.
-- Incremental ingestion, provider backoff, run manifests, and corpus quality audits.
+- Hybrid PostgreSQL full-text + pgvector retrieval with company/date filters, multi-query
+  expansion, reranking, and neighbor-chunk context.
+- Citation-verified answers that abstain when the retrieved filing evidence is insufficient.
+- SEC acceptance-time filtering for point-in-time queries, comparable filings, amendments, and
+  filing differences.
+- Typed Company Facts access for a restrained canonical metric set.
+- Point-in-time issuer-period panels exported as JSON, CSV, or Parquet.
+- Cross-sectional screens and provider-neutral filing event studies with lineage and leakage checks.
+- Persisted experiment manifests, market-data caching, and reproducible signal-study workflows.
+- Incremental ingestion with provider backoff, resumable manifests, and corpus-quality audits.
+
+Repeated verified questions can be served from a point-in-time-aware answer cache (`X-Cache: HIT`);
+abstentions are never cached.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  sec[SEC filings and Company Facts] --> ingest[Cached incremental ingest]
+  sec[SEC filings + Company Facts] --> ingest[Incremental ingest]
   ingest --> pg[(PostgreSQL + pgvector)]
   pg --> sparse[GIN full-text]
   pg --> dense[HNSW vector search]
-  sparse --> workflow[Bounded LangGraph workflow]
+  sparse --> workflow[Bounded answer workflow]
   dense --> workflow
-  pg --> facts[Typed facts and research panels]
+  pg --> facts[Typed facts + PIT panels]
   workflow --> verify[Citation verification]
   verify --> api[FastAPI]
   facts --> api
   api --> web[Next.js research UI]
 ```
 
-PostgreSQL owns metadata, lexical and vector retrieval, facts, traces, ingestion manifests, and
-research experiments. This avoids separate search, vector, queue, and analytics services.
+PostgreSQL is the system of record for filing metadata, lexical/vector retrieval, facts, traces,
+ingestion manifests, and research experiments. FDRE intentionally avoids separate search, vector,
+queue, and analytics services.
 
-The answer workflow is fixed and inspectable:
+The answer path is fail-closed: resolve the issuer and time scope, retrieve evidence, rerank it,
+apply an evidence gate, extract supported claims, verify citations, and otherwise abstain. See
+[`docs/architecture.md`](docs/architecture.md) for the detailed component and data-flow design.
 
-```mermaid
-flowchart LR
-  q[Question] --> resolve[Resolve entities and filters]
-  resolve --> retrieve[Retrieve text tables facts]
-  retrieve --> rerank[Rerank]
-  rerank --> gate{Evidence gate}
-  gate -->|pass| extract[Extract supported claims]
-  gate -->|weak or unsupported| abstain[Abstain]
-  extract --> cite{Verify citations}
-  cite -->|valid| answer[Cited answer]
-  cite -->|invalid| abstain
-```
+## Point-in-time contract
 
-## Local Development
+Research data is filtered by when information was actually available, using SEC acceptance
+timestamps (`accepted_at`) rather than only fiscal-period labels. The system preserves source and
+availability lineage through panels, screens, event studies, and persisted experiment artifacts.
+
+This distinction matters because a current-index S&P 500 corpus is survivorship-biased. Live search
+coverage and historically valid research universes are therefore treated as separate concepts.
+
+## Evaluation
+
+### Retrieval
+
+The labeled retrieval benchmark uses semantic/paraphrased questions and content-grounded target
+evidence. A hit must match the issuer/section and contain the labeled quote.
+
+| Variant | Recall@5 | MRR | nDCG@5 |
+| --- | ---: | ---: | ---: |
+| Baseline: single query, weighted fusion | 0.152 | 0.086 | 0.102 |
+| **Multi-query expansion (default)** | **0.212** | **0.134** | **0.153** |
+| Multi-query + neighbor context | **0.242 context recall** | — | — |
+
+Multi-query expansion improves Recall@5 by about 40%. RRF and BM25-over-pool underperformed on this
+corpus and remain opt-in rather than defaults.
+
+The reviewed 120-question holdout reports Hybrid Recall@10 of **0.375**. Exact-versus-HNSW ANN
+Recall@10 is **1.00** with **0.00** maximum observed delta, validating approximate retrieval for the
+current index configuration. The generic holdout remains below the aspirational 0.85 gate and is an
+explicit open quality target rather than a hidden success claim.
+
+### Production cross-sectional screen
+
+The frozen 28-case development suite runs through the deployed HTTPS screen route, including panel
+construction, optional semantic retrieval/reranking, evidence restriction, and lineage validation.
+
+| Metric | Production result |
+| --- | ---: |
+| Successful requests | 28 / 28 |
+| Issuer Recall@1 / @3 / @5 | 0.929 / 1.000 / 1.000 |
+| Evidence Recall@1 / @3 / @5 | 0.833 / 0.944 / 0.944 |
+| Condition correctness | 1.000 |
+| Exact condition-lineage replay | 1.000 |
+| Strict condition grounding | 1.000 |
+| PIT leakage rate | 0.000 |
+| End-to-end HTTPS p95 | 1.860 s |
+
+These are August 27, 2026 measurements, not a permanent SLO. A separate semantic stage profile on
+the same deployed revision measured HTTPS p95 of **3.137 s**, so semantic tail latency remains an
+active optimization target.
+
+Full methodology, latency breakdowns, holdout definitions, and reproduction commands live in
+[`docs/eval_results.md`](docs/eval_results.md).
+
+## Research status
+
+FDRE includes four point-in-time signal studies covering disclosure similarity, risk-factor churn,
+filing-delay surprise, and cash-conversion earnings quality. Their current results are null or weak;
+the repository reports those outcomes directly rather than presenting them as alpha.
+
+The flagship risk-churn acceleration workflow adds a precommitted expanding walk-forward design,
+purged unrealized development outcomes, multiple-testing-aware selection gates, 5/10/25/50 bp cost
+accounting, sector robustness checks, immutable manifests, and reproducible market-data caching.
+
+## Local development
 
 Requirements: Python 3.11+, Node.js 22+, Docker.
 
@@ -123,9 +163,7 @@ npm run dev
 Set a descriptive `SEC_USER_AGENT` before live SEC requests. Paid providers are optional for tests
 and the sample demo. `.env.example` and `apps/web/.env.example` are the configuration references.
 
-## Pipeline
-
-The main CLI owns retrieval artifacts and research outputs:
+## Data and research CLI
 
 ```bash
 python3 -m scripts.retrieval_pipeline --help
@@ -137,12 +175,17 @@ python3 -m scripts.retrieval_pipeline panel --tickers AAPL MSFT \
 python3 -m scripts.retrieval_pipeline audit
 ```
 
-Batch ingestion remains a separate operational command because GitHub Actions uses its resumable
-stage manifests:
+Batch ingestion is separate because automation relies on resumable stage manifests:
 
 ```bash
 python3 scripts/ingest_ticker_batch.py \
   --universe research50 --limit 50 --annual-limit 3 --quarterly-limit 8
+```
+
+Reproduce the retrieval ablation with:
+
+```bash
+python3 -m scripts.benchmark_retrieval
 ```
 
 ## API
@@ -150,13 +193,15 @@ python3 scripts/ingest_ticker_batch.py \
 Core endpoints:
 
 - `GET /health`, `/coverage`, `/companies`
-- `POST /search`, `/answer` (point-in-time-aware cache; responses carry `X-Cache: HIT|MISS`)
+- `POST /search`, `/answer`
 - `GET /research/facts`
 - `GET /research/filing-differences/{accession_number}`
 - `POST /research/thematic-scan`
 - `GET /research/panel`, `/research/panel/export`
 - `GET /research/signal-studies`
 - `GET /operations/quality`
+
+`POST /answer` responses expose point-in-time-aware cache state through `X-Cache: HIT|MISS`.
 
 ## Verification
 
@@ -174,56 +219,10 @@ npm run build
 npm run test:e2e
 ```
 
-CI also runs PostgreSQL pgvector migration and query-plan tests. Railway runs Alembic as a
-pre-deploy command before starting uvicorn; Vercel serves the frontend.
+CI also validates PostgreSQL/pgvector migrations, retrieval indexes, Docker Compose, and workflow
+configuration. Railway runs Alembic before starting the FastAPI service; Vercel serves the frontend.
 
-## Retrieval evaluation
-
-A labeled, content-grounded benchmark drives the fusion defaults rather than assumption:
-`data/evals/retrieval_benchmark.jsonl` (33 semantic / paraphrased queries; a hit counts only if it
-shares the issuer + section and contains the labeled quote). The ablation is honest about what
-actually helps on this corpus:
-
-| Variant | Recall@5 | MRR | nDCG@5 |
-| --- | ---: | ---: | ---: |
-| Baseline (single query, weighted fusion) | 0.152 | 0.086 | 0.102 |
-| **Multi-query expansion (shipped default)** | **0.212** | **0.125** | **0.146** |
-
-- **Recall@5**: Proportion of labeled target evidence chunks retrieved within the top 5 candidates.
-- **MRR (Mean Reciprocal Rank)**: The average reciprocal rank ($1/\text{rank}$) of the first relevant chunk found.
-- **nDCG@5 (Normalized Discounted Cumulative Gain)**: Graded ranking quality metric penalizing relevant results appearing further down the list.
-
-RRF (Reciprocal Rank Fusion) and BM25-over-pool underperformed on this corpus, so both are opt-in; multi-query expansion
-(+40% recall) is the shipped default, and neighbor-chunk expansion lifts context recall
-0.212 → 0.242. Reproduce with `python3 -m scripts.benchmark_retrieval`.
-
-A reviewed 120-question (80/40) holdout contract is frozen in
-`data/evals/retrieval_benchmark.jsonl`. Latency, ANN, and holdout results are in
-[`docs/eval_results.md`](docs/eval_results.md): single-name p95 **1.95 s**,
-cross-sectional p95 **1.74 s**, ANN max delta **0.00**, Hybrid holdout Recall@10
-**0.375** (aspirational 0.85 needs human paraphrases).
-
-## Key Abbreviations & Glossary
-
-| Abbreviation / Term | Definition & Context |
-| :--- | :--- |
-| **SEC** | **U.S. Securities and Exchange Commission** — Federal regulator governing securities markets, disclosures, and filing standards. |
-| **10-K / 10-Q / 8-K** | **SEC Filing Types** — `10-K`: Comprehensive annual corporate report; `10-Q`: Unaudited quarterly report; `8-K`: Material current event announcement. |
-| **EDGAR** | **Electronic Data Gathering, Analysis, and Retrieval** — The SEC's public database where corporate filings are submitted, indexed, and retrieved. |
-| **CIK** | **Central Index Key** — A unique 10-digit number assigned by the SEC to identify a specific corporate issuer. |
-| **XBRL** | **eXtensible Business Reporting Language** — Machine-readable standard used in SEC Company Facts for structured financial data and tables. |
-| **GIN** | **Generalized Inverted Index** — PostgreSQL's inverted indexing method for high-performance lexical full-text search (`tsvector`). |
-| **HNSW** | **Hierarchical Navigable Small World** — Graph-based vector index algorithm in `pgvector` for fast approximate nearest neighbor retrieval. |
-| **halfvec** | **16-bit Float Vector (`float16`)** — A compact storage format in `pgvector` that cuts vector storage by half with zero loss in ANN ranking fidelity. |
-| **ANN** | **Approximate Nearest Neighbor** — Vector similarity search that optimizes query speed and scalability over exact linear scan. |
-| **RRF** | **Reciprocal Rank Fusion** — A hybrid ranking algorithm that combines score positions from multiple retrieval algorithms without requiring score normalization. |
-| **BM25** | **Best Matching 25** — A probabilistic term-weighting ranking function commonly used for lexical search. |
-| **MRR** | **Mean Reciprocal Rank** — Information retrieval metric evaluating how high the first relevant document is ranked ($1/\text{rank}$). |
-| **nDCG@k** | **Normalized Discounted Cumulative Gain at rank $k$** — Information retrieval metric measuring ranking quality with position discounts. |
-| **PIT** | **Point-in-Time** — Research data filtered strictly by SEC acceptance timestamps (`accepted_at`), eliminating lookahead bias and future information leakage. |
-| **IC** | **Information Coefficient** — Spearman rank correlation between quantitative signal forecasts and forward realized performance. |
-
-## Data Policy
+## Data policy
 
 Do not commit filings, HTTP caches, embeddings, market data, generated panels, database dumps,
 `.env` files, or secrets. Tiny deterministic fixtures belong in `data/sample/`.

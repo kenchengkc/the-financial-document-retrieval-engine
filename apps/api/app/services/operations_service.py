@@ -93,7 +93,14 @@ def build_data_quality_report(
 ) -> DataQualityReport:
     now = datetime.now(UTC)
     cutoff = now - timedelta(days=stale_after_days)
-    company_count = session.scalar(select(func.count()).select_from(Company)) or 0
+    company_count = (
+        session.scalar(
+            select(func.count())
+            .select_from(Company)
+            .where(Company.ticker.is_not(None))
+        )
+        or 0
+    )
     document_count = session.scalar(select(func.count()).select_from(Document)) or 0
     chunk_count = session.scalar(select(func.count()).select_from(Chunk)) or 0
     embedding_count = session.scalar(
@@ -105,6 +112,7 @@ def build_data_quality_report(
             func.max(Document.available_at).label("latest_available_at"),
         )
         .outerjoin(Document, Document.company_id == Company.id)
+        .where(Company.ticker.is_not(None))
         .group_by(Company.id)
         .order_by(Company.ticker)
     ).all()
@@ -117,7 +125,10 @@ def build_data_quality_report(
     form_rows = session.execute(
         select(Company.ticker, Document.form_type)
         .join(Document, Document.company_id == Company.id)
-        .where(Document.form_type.in_(["10-K", "10-Q"]))
+        .where(
+            Company.ticker.is_not(None),
+            Document.form_type.in_(["10-K", "10-Q"]),
+        )
         .distinct()
     ).all()
     forms_by_ticker: dict[str, set[str]] = {}
@@ -149,7 +160,7 @@ def build_data_quality_report(
         )
         .join(Company, Company.id == Document.company_id)
         .outerjoin(DocumentElement, DocumentElement.document_id == Document.id)
-        .where(~Document.chunks.any())
+        .where(Company.ticker.is_not(None), ~Document.chunks.any())
         .group_by(
             Document.id,
             Company.ticker,

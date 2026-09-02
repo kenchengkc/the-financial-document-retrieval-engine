@@ -1,0 +1,43 @@
+{
+  "as_of": "2026-07-31T23:59:59+00:00",
+  "benchmark_name": "FDRE Cross-Sectional v2 Holdout",
+  "benchmark_version": "v2",
+  "construction_constraints": {
+    "embedding_calls": 0,
+    "reranker_calls": 0,
+    "retrieval_execution": false,
+    "screen_execution": false
+  },
+  "construction_method": "raw_pit_panel_and_selected_filing_review",
+  "dataset_path": "data/evals/cross_sectional_benchmark.v2.holdout.jsonl",
+  "dataset_sha256": "9bb4736ab5e7373be6edcdac05ac781398b3a77f00b0d2dfdd5be6187d9deccc",
+  "development_dataset_path": "data/evals/cross_sectional_benchmark.v2.development.jsonl",
+  "development_dataset_sha256": "b3d0b17bd2da7ccaaf6cb655dff7de6e91c9506d5a61e15a19f0d049f8644571",
+  "development_gold_ticker_overlap": [],
+  "evaluation_status": "first_run_frozen",
+  "file_sha256": "30e584da7fc2665d848089b5ebe2480ef4e7d3d7ed8880f5053cf98ab26e6fbd",
+  "first_evaluated_at": "2026-08-26T06:01:59.086448+00:00",
+  "first_evaluation_artifact_id": 9594972775,
+  "first_evaluation_artifact_sha256": "3c7977a9883ef73e90c9a8cbd13a033f3fff6cc698db5f1dcaad2c81de5ae701",
+  "first_evaluation_corpus_snapshot_id": "388fe80d07d5bd6e",
+  "first_evaluation_git_sha": "ee80bae16d5f4d605db7ed15770c5158e79324bc",
+  "first_evaluation_part": "7.5",
+  "first_evaluation_result_sha256": {
+    "cross_sectional_eval.json": "4c0073317f8b0d084c96a17fd99f8865d34fc4c7c0bec93b5567e48f8ff12b32",
+    "cross_sectional_eval.md": "42b5a92b96c7064a015a73974d2eb0a3de2b27e1894a67ae73484ba4603e8c9c",
+    "cross_sectional_per_query.jsonl": "99239b661a6d735609684e539df9bec27bf4fedc80643b884750b65aee779775"
+  },
+  "first_evaluation_results_dir": "data/evals/results/cross-sectional-v2-holdout-first-run",
+  "first_evaluation_workflow_run_id": 32936267811,
+  "question_count": 14,
+  "sealed_at": "2026-08-25T22:46:00Z",
+  "split": "holdout",
+  "status": "sealed",
+  "task_type_counts": {
+    "change_screen": 2,
+    "semantic_screen": 5,
+    "semantic_structured_screen": 3,
+    "structured_screen": 3,
+    "temporal_screen": 1
+  }
+}

@@ -32,6 +32,49 @@ def test_initial_migration_upgrades_and_downgrades(tmp_path: Path) -> None:
     assert EXPECTED_TABLES.isdisjoint(remaining_tables)
 
 
+def test_historical_issuer_migration_is_linear_and_reversible(tmp_path: Path) -> None:
+    database_path = tmp_path / "fdre-historical-issuer.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    config = Config(REPO_ROOT / "alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "b2d4f6a8c105")
+    engine = create_engine(database_url)
+    ticker_before = next(
+        column for column in inspect(engine).get_columns("companies") if column["name"] == "ticker"
+    )
+    assert ticker_before["nullable"] is False
+
+    command.upgrade(config, "a7c9e1f3b205")
+    ticker_after = next(
+        column for column in inspect(engine).get_columns("companies") if column["name"] == "ticker"
+    )
+    assert ticker_after["nullable"] is True
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO companies (ticker, cik, name, created_at, updated_at)
+                VALUES (
+                    NULL,
+                    '0000000001',
+                    'Historical Issuer',
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        assert connection.scalar(text("SELECT count(*) FROM companies WHERE ticker IS NULL")) == 1
+        connection.execute(text("DELETE FROM companies WHERE ticker IS NULL"))
+
+    command.downgrade(config, "b2d4f6a8c105")
+    ticker_downgraded = next(
+        column for column in inspect(engine).get_columns("companies") if column["name"] == "ticker"
+    )
+    assert ticker_downgraded["nullable"] is False
+
+
 def test_pgvector_migration_preserves_existing_embeddings(tmp_path: Path) -> None:
     database_path = tmp_path / "fdre-vectors.db"
     database_url = f"sqlite+pysqlite:///{database_path}"

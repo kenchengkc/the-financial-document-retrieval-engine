@@ -1,6 +1,6 @@
 """Remediate documents that have parsed elements but no chunks.
 
-    FDRE_ALLOW_PROD=1 PYTHONPATH=packages/fdre:. \\
+    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. \\
       python3 -m scripts.remediate_unchunked
 """
 

@@ -1,153 +1,241 @@
-# FDRE v2: Cost-Constrained Research Infrastructure Roadmap
+# FDRE Roadmap — Hedge-Fund Research Infrastructure
 
-FDRE is financial research infrastructure designed for **Research/Data Engineering** and **Quant Research Engineering**. It provides point-in-time financial document ingestion, structured and lexical/vector retrieval, cross-sectional screening, and reproducible signal studies—engineered under a strict **$15–$20/month total cost envelope**.
+FDRE is point-in-time financial research infrastructure for technically sophisticated research and engineering audiences. The product bar is not “interesting AI demo”; it is **credible research infrastructure**: correct historical data, reproducible experiments, auditable lineage, strong retrieval, statistically disciplined signal research, predictable latency, and explicit failure behavior.
 
----
+> Status reviewed against `main` on **2026-08-30**.
 
-## 1. Financial SLO & Architecture Budget
+## Product principles
 
-| Component | Target Monthly Spend | Implementation / Constraint |
-| :--- | :---: | :--- |
-| **PostgreSQL (`pgvector`) on Neon** | $8 – $10 | Unified store for metadata, lexical (`tsvector` GIN), vectors (`halfvec` HNSW), typed facts, traces, and experiment manifests. |
-| **Frontend on Vercel** | $0 | Static / ISR deployment on Vercel hobby tier. |
-| **CI / Evals / Batch Jobs** | $0 | GitHub Actions standard public runners. |
-| **Observability & Tracing** | $0 | OpenTelemetry + Grafana Cloud Free tier + PostgreSQL trace spans. |
-| **Deterministic Query Planner** | $0 | Typed entity/temporal/intent parser without LLM overhead. |
-| **Feature Lineage Registry** | $0 | Stored reference pointers, hashes, and calculation versions in PostgreSQL. |
-| **Batch Signal Laboratory** | $0 | Local execution and scheduled GitHub Actions batch runs. |
-| **Embedding Queries (Voyage)** | $0 – $1 | Query embedding for dense search at portfolio traffic. |
-| **Selective Reranking** | $0 – $3 | Invoked on hard queries only, with hard monthly budget cap and hybrid fallback. |
-| **LLM Generation** | $0 | `ANSWER_GENERATOR=mock` / deterministic citation synthesis. |
-| **Target Normal Total** | **$9 – $15 / mo** | |
-| **Hard Production Ceiling** | **$20 / mo** | Enforced via budget circuit breakers and fallback routing. |
+A professional reviewer should be able to answer:
 
-### Core Architectural Principle
-> **No new recurring service unless FDRE's own empirical metrics demonstrate that the single-PostgreSQL architecture cannot meet a defined quality or latency SLO.**
+- Can I trust the information timestamp and universe eligibility?
+- Can I reproduce the result from exact data/code identity?
+- Can I trace every structured value back to its source filings?
+- Are retrieval and research claims supported by frozen measurements?
+- Are signal results evaluated out-of-sample with implementation costs and multiple-testing controls?
+- Does the system fail closed when data, lineage, or provider state is ambiguous?
+- Are infrastructure choices justified by measured bottlenecks rather than fashion?
 
----
+Do **not** prioritize generic chatbot polish, autonomous-agent complexity, decorative dashboards, more LLM calls, or extra distributed infrastructure ahead of research correctness and reproducibility.
 
-## 2. Phase Breakdown & Execution Sequence
+## Cost and architecture budget
 
+| Component | Current policy |
+| --- | --- |
+| PostgreSQL / pgvector | authoritative production store for retrieval + research state |
+| Railway API | bounded production compute |
+| Vercel frontend | existing deployment |
+| GitHub Actions | public CI / batch research |
+| Embeddings / reranking | bounded provider spend; reranking optional |
+| Historical bulk artifacts | Parquet/object storage only if needed |
+| Normal monthly target | **$10–15** |
+| Hard ceiling | **$20** |
+
+**No new recurring service unless FDRE’s own measurements show the existing stack cannot meet a defined correctness, quality, latency, scale, or workflow requirement economically.**
+
+Redis, Kafka, Elasticsearch/OpenSearch, Snowflake, a dedicated feature store, and distributed queues remain deferred behind measured triggers.
+
+## Current state
+
+### Complete / operational
+
+- Point-in-time SEC filing ingestion with acceptance/availability boundaries.
+- PostgreSQL lexical + vector hybrid retrieval over ~3.04M chunks.
+- Citation-verified answer workflow with abstention and PIT-aware cache.
+- Cross-sectional research screens with structured-first execution, exact filing evidence restriction, bounded semantic calls, and deployed HTTPS endpoint.
+- `fdre-panel-v3` feature lineage with export/replay verification.
+- Frozen retrieval and Cross-Sectional v2 benchmark contracts with immutable first-run holdout artifacts.
+- Signal research primitives: event studies, Spearman IC, quantiles, long-short spreads, issuer-cluster bootstrap inference, multiple-testing correction, and experiment manifests.
+- Flagship risk-churn acceleration study with precommitted walk-forward windows, purged unrealized outcomes, implementation-cost accounting, sector robustness, promotion gates, immutable artifacts, and honest `PROMOTE` / `REJECT` / `INSUFFICIENT` outcomes.
+- Market-data cache/retry/circuit-breaker hardening.
+- **Historical Universe HU-1:** stable security layer, time-varying identity/membership schema, provenance/confidence/verification state, deterministic PIT snapshot contract, Alembic migration, and tests.
+- **Historical Universe HU-2:** production membership reconstruction, identity-safe 500-security
+  starting anchor, explicit provisional queue, deterministic replay, and passed promotion gate.
+- **Historical Universe HU-3:** DB-backed PIT universe API, deterministic snapshot IDs,
+  constituent provenance, strict/provisional modes, JSON/Parquet export, replay and leakage tests,
+  and research-panel composition.
+
+### Current measured flagship state
+
+The flagship infrastructure runs successfully, but the research conclusion remains **INSUFFICIENT_NOT_YET_REALIZED** for the primary 1:63 horizon at the latest evaluation time. Only one walk-forward fold is currently eligible and the statistical gate requires more independent OOS history. Do not reinterpret workflow success as alpha validation.
+
+Current detailed metrics live in [`eval_results.md`](eval_results.md).
+
+## Active milestone — Historical Universe v1
+
+The current production S&P 500 seed is a **current-constituent snapshot**, so historical research remains exposed to survivorship/selection bias even when filings themselves are PIT-correct. Historical Universe v1 is therefore the highest-value next research milestone.
+
+See [`historical_universe_v1.md`](historical_universe_v1.md) for the canonical design and acceptance criteria.
+
+### HU-1 — Security master foundation
+
+**Status: COMPLETE.**
+
+Implemented:
+
+- SEC issuer/CIK separated from stable listed-security identity;
+- time-varying ticker/name/exchange periods;
+- time-varying universe-membership intervals;
+- provenance, confidence, and verification status;
+- half-open `[effective_from, effective_to)` semantics;
+- deterministic snapshot hashing;
+- fail-closed overlap, missing-identity, rejected/provisional evidence behavior;
+- migration and unit coverage.
+
+### HU-2 — Membership reconstruction
+
+**Status: COMPLETE (production promotion gate passed 2026-09-01).**
+
+Build a reproducible evidence-reconciliation pipeline for historical index membership.
+
+Required outputs:
+
+1. source adapters that preserve raw event identity and observation time;
+2. normalized add/remove/replacement events with announcement vs effective dates kept distinct;
+3. historical ticker/name resolution to stable securities and SEC CIKs;
+4. multi-source reconciliation with verified/provisional/rejected evidence;
+5. explicit ambiguity instead of guessed dates;
+6. deterministic interval materialization;
+7. coverage/audit report for gaps, overlaps, unresolved identities, share-class ambiguity, and source disagreement;
+8. current-date reconciliation against the existing S&P seed without using that seed as historical evidence.
+
+**HU-2 promotion gate:** do not integrate historical membership into flagship research until the coverage audit can characterize where history is trustworthy and where it is provisional.
+
+[Actions run `33462343599`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33462343599)
+applied and validated the production materialization. It created 396 historical-only issuers, 6
+current issuers, 483 securities, 1,004 identity periods, and 1,004 membership periods. Of the
+memberships, 809 are verified and 195 remain explicitly provisional. The resulting production
+state has 901 issuers, 985 common-stock securities, and 1,506 identity periods.
+
+The original **29 missing / 61 unexpected** anchor mismatch is fully classified. The materializer
+now uses an identity-safe 500-security anchor backed by IVV's SEC-filed 2009-12-31 holdings,
+including dated ticker/CIK decisions for the 18 source gaps and the exact SEC-backed XOM CIK
+correction. Strict and provisional snapshots both contain the expected 500 identities; replay is
+deterministic; and identity overlaps, membership overlaps, and missing identity coverage are all
+zero.
+
+The final audit resolves **1,044 / 1,055 (98.96%)** target-window observations and publishes the
+remaining 11 as unresolved/provisional. All 999 source intervals have explicit decisions. Of the
+365 intervals starting in 2010+, 299 have verified membership boundaries and 66 remain
+boundary-provisional. Completion means the production gate and fail-closed eligibility contract
+passed; it does not turn those 66 boundaries or 11 residual identities into guessed facts.
+
+Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
+definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
+
+### HU-3 — Universe API / SDK
+
+**Status: COMPLETE (merged 2026-08-30).**
+
+Strict PIT universe resolution is exposed through:
+
+```python
+fdre.universe("sp500", as_of="2020-03-20")
+fdre.universe("sp500", as_of="2020-03-20", include_provisional=True)
 ```
-                                  Execution Flow
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 0: Evaluation Platform v2 ($0)                                            │
-│ ├─ Task-stratified benchmark (500–1,000 queries)                                │
-│ └─ Multi-metric eval CLI (Recall@5/10/20, MRR, nDCG@10, PIT leakage, Latency)    │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 1: Deterministic Typed Query Planner ($0)                                 │
-│ ├─ Entity & alias resolution (exact boundary matching)                          │
-│ ├─ Temporal parser (fiscal period, YoY, comparable period)                      │
-│ └─ Strategy classifier (XBRL first, Lexical/Dense, Screen, or Comparison)       │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 2: Retrieval Engine v2 & Selective Reranking ($0–$3/mo)                   │
-│ ├─ Hybrid fusion optimization over existing 2.71M chunks                        │
-│ ├─ Selective reranking gate (evaluated on hard/ambiguous queries only)          │
-│ └─ Hard budget circuit breaker (graceful fallback to hybrid search)             │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 3: Cross-Sectional Research Engine in PostgreSQL ($0)                     │
-│ ├─ Single-DB multi-issuer screening DSL                                         │
-│ ├─ ANN candidate generation + issuer diversification                            │
-│ └─ Zero-leakage temporal point-in-time snapshots                                │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 4: Point-in-Time Feature Lineage Registry ($0)                            │
-│ ├─ Feature definition schemas (source accessions, calculation version, Git SHA) │
-│ ├─ Incremental recomputation & materialized PIT panel exports                   │
-│ └─ Dependency graph validation                                                  │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 5: Signal Research Laboratory ($0)                                        │
-│ ├─ Walk-forward cross-validation splits                                         │
-│ ├─ Spearman Rank IC, ICIR, quantile spreads, bootstrap intervals               │
-│ └─ Multiple-testing treatment (Benjamini-Hochberg / FDR) & experiment manifests │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Phase 6: Observability, SLOs & Failure Engineering ($0)                         │
-│ ├─ OpenTelemetry spans & Grafana Cloud Free integration                         │
-│ ├─ Formal latency SLO gates (p95 < 1.5s search, p95 < 3s answer)                │
-│ └─ Chaos & failure injection (provider timeout, backoff, idempotency)           │
-└─────────────────────────────────────────────────────────────────────────────────┘
+
+Implemented:
+
+- deterministic snapshot IDs;
+- constituent-level source lineage;
+- strict/provisional modes visible in outputs;
+- JSON/Parquet export;
+- replay verification;
+- explicit future-membership leakage tests;
+- composition with research-panel construction.
+
+### HU-4 — 10–15 year research archive
+
+**Status: COMPLETE.**
+
+Extend research depth without proportionally expanding the vector corpus.
+
+Prefer:
+
+```text
+historical filing
+  -> parse required sections/facts
+  -> compute research features
+  -> persist feature + exact lineage
+  -> optional compressed/Parquet artifact
+  -> no bulk embeddings unless justified
 ```
 
----
+Acceptance criteria include reproducible market outcomes, Parquet panel export, measured before/after storage and runtime, and total recurring spend below the $20 ceiling.
 
-## 3. Project Details
+The bounded CIK-keyed archive path, Risk Factors-only parser, zero-embedding invariant,
+lineage-preserving Parquet export, and market-cache manifests are implemented. Production covered
+all 822 reconstructed issuer CIKs in 33 disjoint batches: 11,166 annual filings, 10,681 verified
+feature rows, 654.45 MB incremental retained text, zero embedding growth, and zero paid model
+calls. The exact runtime, storage, named SEC gap, replay audit, and HU-5 market-outcome handoff are
+recorded in [`research_archive.md`](research_archive.md).
 
-### Phase 0: Evaluation Platform v2
-- **Objective**: Establish the immutable baseline before optimizing retrieval.
-- **Dataset Contract**: 500–1,000 task-stratified human-reviewed questions:
-  - *Direct factual* (XBRL metric lookups)
-  - *Semantic disclosure* (Risk Factors, MD&A)
-  - *Comparative* (Period-over-period, issuer comparisons)
-  - *Cross-sectional* (Multi-company theme scans)
-  - *Temporal* (As-of point-in-time constraints)
-  - *Hard negatives* (Same vocabulary, wrong year/quarter/issuer)
-  - *Abstentions* (Forecasts, insider data, unsupported claims)
-- **Metrics Tracked**: Recall@5/10/20, MRR, nDCG@10, Issuer Recall, Citation Precision, Abstention Macro-F1, PIT Leakage Rate (must be 0), and Latency p50/p95/p99.
-- **Deliverable**: `fdre eval retrieval --suite <name>` storing run manifests (Git SHA, dataset version, embeddings/reranker config, latencies, and metrics).
+### HU-5 — Institutional flagship rerun
 
-### Phase 1: Deterministic Typed Query Planner
-- **Objective**: Stop treating every query as an unconstrained semantic search.
-- **Design**: Fast, deterministic ($0 compute) parser resolving:
-  - Tickers & aliases
-  - Document types (10-K, 10-Q)
-  - Target sections (Risk Factors, MD&A, Financial Statements, Notes)
-  - Temporal windows (latest, prior year, as-of date)
-  - Operation type (`lookup`, `screen`, `compare`, `thematic_scan`)
-  - Modality routes (`xbrl_facts`, `narrative_text`, `tables`)
-  - Reranking necessity flag (`rerank: bool`)
+Rerun the **unchanged precommitted** risk-churn acceleration study on the reconstructed historical universe and longer history.
 
-### Phase 2: Retrieval Engine v2 & Selective Reranking
-- **Selective Execution**:
-  - *Bypassed* (Direct Hybrid): Ticker + Metric, known accession, exact section, XBRL fact query.
-  - *Reranked*: Semantic disclosure, subtle paraphrases, ambiguous cross-sectional queries.
-- **Budget Circuit Breaker**:
-  - Configurable hard limit (e.g. `RERANK_MONTHLY_BUDGET_USD=3.00`).
-  - When monthly quota is exhausted, system logs an alert and automatically falls back to unranked hybrid retrieval without failing user requests.
+Target:
 
-### Phase 3: Cross-Sectional Research Engine in PostgreSQL
-- **Objective**: Execute multi-company semantic and fundamental screens without adding Elasticsearch, Redis, or distributed clusters.
-- **Capabilities**:
-  - Issuer diversification in SQL before ranking.
-  - Filtered ANN execution over halfvec indexes.
-  - Composable research filters (e.g., disclosure changes AND year-over-year margin momentum).
+- at least 4 statistically usable sealed OOS folds, preferably 4–6+;
+- primary 1:63 outcome evaluable across multiple periods;
+- secondary 1:21 and 1:126 horizons retained;
+- 5/10/25/50 bp costs retained;
+- sector/temporal robustness retained;
+- universe snapshot identity included in the immutable experiment manifest;
+- result remains honestly `PROMOTE`, `REJECT`, or `INSUFFICIENT`.
 
-### Phase 4: Point-in-Time Feature Lineage Registry
-- **Objective**: Institutional-grade feature lineage with minimal storage cost.
-- **Schema**: Store lightweight scalar records containing `feature_name`, `ticker`, `effective_time`, `value`, `source_accessions`, `calculation_version`, `code_sha`, and `max_information_timestamp`.
+## After Historical Universe
 
-### Phase 5: Signal Research Laboratory
-- **Objective**: Academic and systematic-fund level research rigor.
-- **Standards**:
-  - Walk-forward rolling train/test splits.
-  - Pearson & Spearman Rank Information Coefficients (IC), IC Information Ratio (ICIR).
-  - Quantile spread returns and turnover.
-  - False Discovery Rate (FDR) multiple-testing corrections.
-  - Honest reporting of null results and statistical insignificance.
+Once HU makes the research dataset credible, the next highest-value investments are:
 
-### Phase 6: Observability, SLOs & Failure Injection
-- **SLO Framework**:
-  - Search p95: `< 1.5 s`
-  - Answer p95: `< 3.0 s`
-  - Cached Answer p95: `< 100 ms`
-  - Point-in-time Leakage: `0.00`
-  - API Availability: `99.9%`
-- **Failure Injection**: Verify resiliency against provider outages, SEC rate limits, partial batch failures, and network disconnects.
+### Portfolio implementation layer
 
----
+- monthly/weekly rebalance;
+- sector-neutral and beta-neutral variants;
+- turnover and 5/10/25/50 bp costs;
+- max-weight/liquidity/ADV constraints;
+- gross/net returns and signal decay.
 
-## 4. Immediate Next Step
+### Falsification harness
 
-Begin **Phase 0 (Evaluation Platform v2)**:
-1. Extend evaluation schemas in `packages/fdre/fdre/evals/datasets.py` for task stratification and gold-quote metadata.
-2. Build validation and evaluation commands to establish the frozen baseline.
+- randomized signals and event dates;
+- label permutation;
+- deliberate timestamp-leak tests;
+- placebo universes;
+- alternate neutralizations;
+- negative controls;
+- explicit multiple-testing ledger.
+
+### Researcher-facing SDK
+
+Target ergonomics:
+
+```python
+panel = fdre.panel(...)
+signal = fdre.signal(...)
+study = fdre.walk_forward(...)
+study.summary()
+study.verify_lineage()
+study.export(...)
+fdre.replay("experiment_id")
+```
+
+Support Parquet + DuckDB/Polars interoperability without hiding the underlying data/lineage mechanics.
+
+### Failure engineering and observability
+
+Add formal stage timing, provider/database/network fault tests, cache-corruption tests, idempotent retry proofs, and repeatable SLO/load characterization only where they improve operational confidence.
+
+### Harder evaluation
+
+Expand reviewed retrieval/research cases with amendments, restatements, near-duplicates, issuer confusion, exact as-of boundaries, abstention, and hard negatives. Preserve sealed-holdout discipline.
+
+## Immediate next step
+
+**Begin HU-4's measured 10–15 year research archive.**
+
+HU-2 and HU-3 are complete. Extend filing, feature, and market-outcome history without bulk
+embedding the archive; preserve accession/availability lineage, export reproducible Parquet
+panels, and measure storage/runtime/provider cost before scaling. The 66 provisional post-anchor
+boundaries and 11-row identity queue remain explicit follow-up evidence work and must continue to
+fail closed in strict snapshots.

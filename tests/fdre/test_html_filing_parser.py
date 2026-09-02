@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from fdre.parsing.html_filing_parser import HtmlFilingParser
+
+FIXTURE_PATH = Path(__file__).resolve().parents[2] / "data/sample/sec_filing.html"
+
+
+def test_extracts_sections_text_tables_and_reading_order() -> None:
+    elements = HtmlFilingParser().parse_file(FIXTURE_PATH)
+
+    assert elements
+    assert [element.reading_order for element in elements] == list(range(len(elements)))
+    assert all((element.text or element.markdown or "").strip() for element in elements)
+    assert not any("ignoreThis" in (element.text or "") for element in elements)
+    assert not any("Hidden filing metadata" in (element.text or "") for element in elements)
+
+    sections = {
+        element.section
+        for element in elements
+        if element.element_type == "section_header"
+    }
+    assert {"Business", "Risk Factors", "MD&A", "Financial Statements"} <= sections
+
+    risk_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "Market volatility" in (element.text or "")
+    )
+    assert risk_text.section == "Risk Factors"
+
+    tables = [element for element in elements if element.element_type == "table"]
+    assert len(tables) == 1
+    assert tables[0].section == "Risk Factors"
+    assert tables[0].markdown == (
+        "| Year | Revenue |\n"
+        "| --- | --- |\n"
+        "| 2025 | $125 |\n"
+        "| 2024 | $100 |"
+    )
+    assert tables[0].metadata["row_count"] == 2
+    assert tables[0].metadata["column_count"] == 2
+
+
+def test_removes_nested_hidden_tags_without_crashing() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html>
+          <body>
+            <div style="display: none">
+              <span><strong>Hidden filing metadata</strong></span>
+            </div>
+            <p>Visible filing content.</p>
+          </body>
+        </html>
+        """
+    )
+
+    texts = [element.text for element in elements]
+    assert "Visible filing content." in texts
+    assert not any("Hidden filing metadata" in (text or "") for text in texts)
+
+
+def test_detects_sections_encoded_as_layout_tables() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html>
+          <body>
+            <table>
+              <tr><td>Item 3.</td><td>Legal Proceedings</td></tr>
+            </table>
+            <p>We are involved in legal matters.</p>
+            <table>
+              <tr><td>Item 1A.</td><td>Risk Factors</td></tr>
+            </table>
+            <p>Competition may reduce sales and profits.</p>
+          </body>
+        </html>
+        """
+    )
+
+    risk_header = next(
+        element
+        for element in elements
+        if element.element_type == "section_header" and element.section == "Risk Factors"
+    )
+    assert risk_header.text == "Item 1A. Risk Factors"
+    risk_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "Competition" in (element.text or "")
+    )
+    assert risk_text.section == "Risk Factors"
+
+
+def test_unknown_item_heading_terminates_risk_factors_section() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html><body>
+          <h2>Item 1A. Risk Factors</h2>
+          <p>Competition may reduce sales.</p>
+          <h2>Item 1B. Unresolved Staff Comments</h2>
+          <p>There are no unresolved staff comments.</p>
+          <h2>Item 2. Properties</h2>
+          <p>We lease our headquarters.</p>
+        </body></html>
+        """
+    )
+
+    by_text = {element.text: element.section for element in elements}
+    assert by_text["Competition may reduce sales."] == "Risk Factors"
+    assert by_text["There are no unresolved staff comments."] == "Item 1B"
+    assert by_text["We lease our headquarters."] == "Item 2"
+
+
+def test_financial_statement_notes_reset_section_after_legal_proceedings() -> None:
+    elements = HtmlFilingParser().parse(
+        """
+        <html>
+          <body>
+            <p>Legal Proceedings</p>
+            <p>We are involved in claims and litigation from time to time.</p>
+            <p>Note 5 — DEBT</p>
+            <p>As of March 31, 2026, we had unsecured senior notes outstanding.</p>
+            <p>Note 8 — SEGMENT INFORMATION</p>
+            <p>AWS</p>
+            <p>The AWS segment consists of global compute and storage services.</p>
+            <table>
+              <tr>
+                <td>Item 2.</td>
+                <td>Management's Discussion and Analysis</td>
+              </tr>
+            </table>
+            <p>Forward-Looking Statements</p>
+          </body>
+        </html>
+        """
+    )
+
+    debt_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "unsecured senior notes" in (element.text or "")
+    )
+    assert debt_text.section == "Note 5 — DEBT"
+
+    aws_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "global compute and storage" in (element.text or "")
+    )
+    assert aws_text.section == "Note 8 — SEGMENT INFORMATION"
+
+    mda_text = next(
+        element
+        for element in elements
+        if element.element_type == "text" and "Forward-Looking Statements" in (element.text or "")
+    )
+    assert mda_text.section == "MD&A"

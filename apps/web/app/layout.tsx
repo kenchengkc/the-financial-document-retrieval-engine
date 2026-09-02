@@ -3,6 +3,7 @@ import { Libre_Franklin, Newsreader } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "./research-console.css";
+import "./ask-ui-fixes.css";
 
 const newsreader = Newsreader({
   subsets: ["latin"],

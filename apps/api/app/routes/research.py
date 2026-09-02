@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from time import perf_counter
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -33,11 +34,17 @@ from fdre.research.panel import (
     build_research_panel,
     serialize_research_panel,
 )
+from fdre.research.screen import (
+    ResearchScreenPlan,
+    ResearchScreenResponse,
+    execute_research_screen,
+)
 from fdre.research.thematic import (
     ThematicScanRequest,
     ThematicScanResponse,
     diversify_candidates_by_issuer,
 )
+from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -185,6 +192,40 @@ def export_research_panel(
                 f'attachment; filename="fdre-panel-{panel.corpus_snapshot_id}.{extension}"'
             )
         },
+    )
+
+
+@router.post("/screen", response_model=ResearchScreenResponse)
+def research_screen(
+    request: ResearchScreenPlan,
+    session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ResearchScreenResponse:
+    started = perf_counter()
+
+    def semantic_search(
+        query: str,
+        filters: SearchFilters,
+        top_k: int,
+    ) -> list[RetrievalCandidate]:
+        return search_documents(
+            session,
+            settings,
+            query=query,
+            filters=filters,
+            top_k=top_k,
+        ).candidates
+
+    try:
+        result = execute_research_screen(
+            session,
+            request,
+            semantic_search=semantic_search,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return result.model_copy(
+        update={"latency_ms": round((perf_counter() - started) * 1000)}
     )
 
 

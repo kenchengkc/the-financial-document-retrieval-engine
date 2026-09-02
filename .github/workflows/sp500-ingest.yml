@@ -1,7 +1,7 @@
 name: S&P 500 batch ingestion
 
-# Runs one S&P 500 ticker batch through the full SEC ingest pipeline.
-# Use workflow_dispatch with offset/limit to walk the universe over time.
+# Runs one S&P 500 ticker batch through either the vector corpus or the HU-4 research archive.
+# Use workflow_dispatch with offset/limit to walk the selected universe over time.
 # Requires DATABASE_URL (Neon pooled), optional DATABASE_URL_DIRECT (Neon direct for ingest),
 # SEC_USER_AGENT, and embedding provider secrets (see ingest.yml and docs/neon-migration.md).
 
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       offset:
-        description: "Batch offset into sp500_tickers.json"
+        description: "Batch offset into the selected issuer universe"
         default: "0"
       limit:
         description: "Batch size (tickers per run)"
@@ -38,6 +38,9 @@ on:
       lane_spec:
         description: "Parallel lane as LANE:LANES_TOTAL:RANGE_END (e.g. 1:4:180); disjoint lanes run concurrently"
         default: "0:1:499"
+      archive_spec:
+        description: "HU-4 FROM:TO:VERIFIED_ONLY (blank = current vector mode; empty TO = today)"
+        default: ""
 
 permissions:
   contents: read
@@ -63,15 +66,16 @@ jobs:
       EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      ARCHIVE_SPEC: ${{ github.event.inputs.archive_spec || '' }}
     steps:
       - name: Check required secrets
         id: check
         run: |
           provider_ready=true
-          if [ "${EMBEDDING_PROVIDER}" = "voyage" ] && [ -z "${VOYAGE_API_KEY}" ]; then
+          if [ -z "${ARCHIVE_SPEC}" ] && [ "${EMBEDDING_PROVIDER}" = "voyage" ] && [ -z "${VOYAGE_API_KEY}" ]; then
             provider_ready=false
           fi
-          if [ "${EMBEDDING_PROVIDER}" = "openai" ] && [ -z "${OPENAI_API_KEY}" ]; then
+          if [ -z "${ARCHIVE_SPEC}" ] && [ "${EMBEDDING_PROVIDER}" = "openai" ] && [ -z "${OPENAI_API_KEY}" ]; then
             provider_ready=false
           fi
           if { [ -n "${DATABASE_URL_DIRECT}" ] || [ -n "${DATABASE_URL_POOLED}" ]; } \
@@ -113,20 +117,34 @@ jobs:
       FORCE_PARSE: ${{ github.event.inputs.force_parse || 'false' }}
       INDEX_ONLY: ${{ github.event.inputs.index_only || 'false' }}
       LANE_SPEC: ${{ github.event.inputs.lane_spec || '0:1:499' }}
+      ARCHIVE_SPEC: ${{ github.event.inputs.archive_spec || '' }}
     steps:
-      - name: Parse lane spec
+      - name: Parse mode and lane specs
         run: |
           IFS=':' read -r lane lanes_total range_end <<< "${LANE_SPEC}"
           : "${lane:=0}"; : "${lanes_total:=1}"; : "${range_end:=499}"
+          mode=current_vector
+          archive_from=2010-01-01
+          archive_to=""
+          archive_verified_only=false
+          if [ -n "${ARCHIVE_SPEC}" ]; then
+            mode=research_archive
+            IFS=':' read -r archive_from archive_to archive_verified_only <<< "${ARCHIVE_SPEC}"
+          fi
           {
             echo "LANE=${lane}"
             echo "LANES_TOTAL=${lanes_total}"
             echo "RANGE_END=${range_end}"
+            echo "MODE=${mode}"
+            echo "ARCHIVE_FROM=${archive_from}"
+            echo "ARCHIVE_TO=${archive_to}"
+            echo "ARCHIVE_VERIFIED_ONLY=${archive_verified_only}"
           } >> "${GITHUB_ENV}"
 
       - name: Validate inputs
         run: |
           [[ "${OFFSET}" =~ ^[0-9]+$ ]]
+          [[ "${MODE}" =~ ^(current_vector|research_archive)$ ]]
           [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]
           [[ "${FILING_LIMIT}" =~ ^[1-9][0-9]*$ ]]
           [[ "${ANNUAL_LIMIT}" =~ ^$|^[1-9][0-9]*$ ]]
@@ -136,6 +154,9 @@ jobs:
           [[ "${LANE}" =~ ^[0-9]+$ ]]
           [[ "${LANES_TOTAL}" =~ ^[1-9][0-9]*$ ]]
           [[ "${RANGE_END}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${ARCHIVE_FROM}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [[ "${ARCHIVE_TO}" =~ ^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [[ "${ARCHIVE_VERIFIED_ONLY}" =~ ^(true|false)$ ]]
 
       - name: Divide embedding rate budget across lanes
         run: |
@@ -161,7 +182,11 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
+          if [ "${MODE}" = "research_archive" ]; then
+            python -m pip install -e ".[data]"
+          else
+            python -m pip install -e .
+          fi
 
       - name: Use direct database URL for ingest
         run: |
@@ -178,6 +203,24 @@ jobs:
 
       - name: Run S&P 500 batch ingest
         run: |
+          if [ "${MODE}" = "research_archive" ]; then
+            archive_to="${ARCHIVE_TO:-$(date -u +%Y-%m-%d)}"
+            verified_args=()
+            if [ "${ARCHIVE_VERIFIED_ONLY}" = "true" ]; then
+              verified_args+=(--verified-only)
+            fi
+            python -m scripts.research_archive \
+              --universe sp500 \
+              --from "${ARCHIVE_FROM}" \
+              --to "${archive_to}" \
+              --forms 10-K \
+              --offset "${OFFSET}" \
+              --limit "${LIMIT}" \
+              --lane "${LANE}" \
+              --apply \
+              "${verified_args[@]}"
+            exit 0
+          fi
           force_args=()
           if [ "${FORCE_PARSE}" = "true" ]; then
             force_args+=(--force-parse --force-rechunk)
@@ -206,6 +249,14 @@ jobs:
         if: always()
         run: python -m scripts.retrieval_pipeline audit
 
+      - name: Upload HU-4 research archive artifacts
+        if: always() && github.event.inputs.archive_spec != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-archive-${{ github.run_id }}
+          path: data/processed/research-archive
+          if-no-files-found: warn
+
       - name: Queue next S&P 500 batch
         if: success() && github.event.inputs.chain == 'true'
         env:
@@ -222,6 +273,7 @@ jobs:
               -f quarterly_limit="${QUARTERLY_LIMIT}" \
               -f force_parse="${FORCE_PARSE}" \
               -f index_only="${INDEX_ONLY}" \
+              -f archive_spec="${ARCHIVE_SPEC}" \
               -f lane_spec="${LANE_SPEC}" \
               -f chain=true
           else

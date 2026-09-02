@@ -39,7 +39,8 @@ const INITIAL_SOURCE_STATUSES: SourceStatuses = {
   operations: "loading",
 };
 
-const FOUNDATION_CACHE_KEY = "fdre.foundation.v1";
+const FOUNDATION_CACHE_KEY = "fdre.foundation.v2";
+const LEGACY_FOUNDATION_CACHE_KEY = "fdre.foundation.v1";
 const FOUNDATION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type FoundationCache = {
@@ -47,21 +48,47 @@ type FoundationCache = {
   data: FoundationData;
 };
 
+function parseFoundationCache(raw: string): FoundationCache | null {
+  const cached = JSON.parse(raw) as FoundationCache;
+  if (
+    !Number.isFinite(cached.savedAt) ||
+    Date.now() - cached.savedAt > FOUNDATION_CACHE_TTL_MS ||
+    !cached.data ||
+    !Array.isArray(cached.data.companies)
+  ) {
+    return null;
+  }
+  return cached;
+}
+
+function foundationCacheIsCurrent(cached: FoundationCache) {
+  const coverage = cached.data.coverage;
+  if (!coverage) return false;
+  return (
+    coverage.sp500_catalog_count >= coverage.sp500_indexed_count &&
+    coverage.sp500_indexed_count >= coverage.indexed_count - 5
+  );
+}
+
 function readFoundationCache(): FoundationCache | null {
   try {
-    const raw = window.localStorage.getItem(FOUNDATION_CACHE_KEY);
-    if (!raw) return null;
-    const cached = JSON.parse(raw) as FoundationCache;
-    if (
-      !Number.isFinite(cached.savedAt) ||
-      Date.now() - cached.savedAt > FOUNDATION_CACHE_TTL_MS ||
-      !cached.data ||
-      !Array.isArray(cached.data.companies)
-    ) {
+    const currentRaw = window.localStorage.getItem(FOUNDATION_CACHE_KEY);
+    if (currentRaw) {
+      const current = parseFoundationCache(currentRaw);
+      if (current && foundationCacheIsCurrent(current)) return current;
       window.localStorage.removeItem(FOUNDATION_CACHE_KEY);
+    }
+
+    const legacyRaw = window.localStorage.getItem(LEGACY_FOUNDATION_CACHE_KEY);
+    if (!legacyRaw) return null;
+    const legacy = parseFoundationCache(legacyRaw);
+    if (!legacy || !foundationCacheIsCurrent(legacy)) {
+      window.localStorage.removeItem(LEGACY_FOUNDATION_CACHE_KEY);
       return null;
     }
-    return cached;
+    window.localStorage.setItem(FOUNDATION_CACHE_KEY, legacyRaw);
+    window.localStorage.removeItem(LEGACY_FOUNDATION_CACHE_KEY);
+    return legacy;
   } catch {
     return null;
   }
@@ -346,23 +373,23 @@ export function DataFoundation({
             <div className="foundation-split">
               <span>
                 <strong>
+                  {coverageLoading
+                    ? "Loading"
+                    : (data.coverage?.sp500_indexed_count ?? "Unavailable")}
+                </strong>{" "}
+                S&amp;P 500 universe
+              </span>
+              <span>
+                <strong>
                   {companiesLoading ? "Loading" : data.companies.length ? nyse : "Unavailable"}
                 </strong>{" "}
-                NYSE
+                NYSE-listed
               </span>
               <span>
                 <strong>
                   {companiesLoading ? "Loading" : data.companies.length ? nasdaq : "Unavailable"}
                 </strong>{" "}
-                Nasdaq
-              </span>
-              <span>
-                <strong>
-                  {coverageLoading
-                    ? "Loading"
-                    : (data.coverage?.sp500_indexed_count ?? "Unavailable")}
-                </strong>{" "}
-                S&amp;P 500
+                Nasdaq-listed
               </span>
             </div>
             <div className="foundation-company-list" role="list" aria-label="Companies with the most filing passages">

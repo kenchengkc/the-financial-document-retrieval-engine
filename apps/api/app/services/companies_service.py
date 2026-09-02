@@ -38,12 +38,9 @@ def get_coverage(session: Session) -> CoverageResponse:
             return cached[1].model_copy(deep=True)
 
     payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
-    response = (
-        CoverageResponse.model_validate(payload)
-        if payload is not None
-        else _build_coverage(session)
-    )
-    if payload is None:
+    response = CoverageResponse.model_validate(payload) if payload is not None else None
+    if response is None or not _coverage_snapshot_is_current(response):
+        response = _build_coverage(session)
         write_metric_snapshot(
             session,
             metric_key=_COVERAGE_SNAPSHOT_KEY,
@@ -57,6 +54,25 @@ def get_coverage(session: Session) -> CoverageResponse:
             response.model_copy(deep=True),
         )
     return response
+
+
+def _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
+    """Invalidate persisted metrics when universe inputs or derived counts disagree."""
+    sp500_catalog = {ticker.upper() for ticker in sp500_primary_tickers()}
+    indexed_tickers = [
+        ticker.upper()
+        for ticker in response.indexed_tickers
+        if ticker.upper() not in _DEMO_TICKERS
+    ]
+    expected_sp500_indexed_count = sum(
+        ticker in sp500_catalog for ticker in indexed_tickers
+    )
+    return (
+        response.catalog_count == catalog_company_count()
+        and response.sp500_catalog_count == len(sp500_catalog)
+        and response.indexed_count == len(indexed_tickers)
+        and response.sp500_indexed_count == expected_sp500_indexed_count
+    )
 
 
 def _build_coverage(session: Session) -> CoverageResponse:
@@ -106,9 +122,10 @@ def _indexed_company_tickers(session: Session) -> list[str]:
     statement = (
         select(Company.ticker)
         .join(indexed_company_ids, indexed_company_ids.c.company_id == Company.id)
+        .where(Company.ticker.is_not(None))
         .order_by(Company.ticker)
     )
-    return list(session.scalars(statement))
+    return [ticker for ticker in session.scalars(statement) if ticker is not None]
 
 
 def list_companies(
@@ -194,6 +211,7 @@ def _indexed_company_rows(session: Session) -> list[CompanySummary]:
         .outerjoin(Document, Document.company_id == Company.id)
         .outerjoin(Chunk, Chunk.document_id == Document.id)
         .outerjoin(Embedding, Embedding.chunk_id == Chunk.id)
+        .where(Company.ticker.is_not(None))
         .group_by(Company.id)
         .order_by(Company.ticker)
     )
@@ -209,4 +227,5 @@ def _indexed_company_rows(session: Session) -> list[CompanySummary]:
             indexed=int(row.chunk_count or 0) > 0,
         )
         for row in rows
+        if row.ticker is not None
     ]

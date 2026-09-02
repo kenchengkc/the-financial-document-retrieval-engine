@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md alembic.ini ./
 COPY apps ./apps
-COPY packages ./packages
+COPY src ./src
 COPY scripts ./scripts
 COPY data ./data
 

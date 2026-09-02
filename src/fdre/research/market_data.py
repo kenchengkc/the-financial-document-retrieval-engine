@@ -1,0 +1,484 @@
+"""Runtime daily-price fetcher for event studies.
+
+Pulls dividend- and split-adjusted daily closes from Tiingo or the public Yahoo
+Finance chart API and returns ``MarketBar`` rows the event-study engine consumes.
+Market data is fetched on demand and cached locally; it is never committed (see
+the repo data policy).
+"""
+
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+import os
+import re
+import time as time_module
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime, time
+from pathlib import Path
+
+import requests
+
+from fdre.research.event_study import MarketBar
+
+TIINGO_URL = "https://api.tiingo.com/tiingo/daily/{symbol}/prices"
+
+CHART_HOSTS = (
+    "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
+    "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+)
+DEFAULT_CACHE_DIR = Path("data/cache/market")
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    )
+}
+_CACHE_FILE_PATTERN = re.compile(
+    r"^(?:(?P<tiingo>tiingo)_)?(?P<ticker>.+)_(?P<start>\d{8})_(?P<end>\d{8})\.json$"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MarketCacheEntry:
+    filename: str
+    provider: str
+    ticker: str
+    requested_start: str
+    requested_end: str
+    first_bar_date: str | None
+    last_bar_date: str | None
+    bar_count: int
+    size_bytes: int
+    sha256_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class MarketCacheManifest:
+    schema_version: str
+    manifest_id: str
+    entries: tuple[MarketCacheEntry, ...]
+
+
+class MarketDataRateLimitError(requests.HTTPError):
+    """Provider-wide rate limit detected while fetching one market symbol."""
+
+    def __init__(self, provider: str, ticker: str) -> None:
+        super().__init__(f"{provider} rate limited market-data request for {ticker}")
+        self.provider = provider
+        self.ticker = ticker
+
+
+def _epoch(day: date) -> int:
+    return int(datetime.combine(day, time.min, tzinfo=UTC).timestamp())
+
+
+def _market_cache_path(
+    ticker: str,
+    start: date,
+    end: date,
+    *,
+    cache_dir: Path | None,
+    provider: str,
+) -> Path | None:
+    if cache_dir is None:
+        return None
+    prefix = "tiingo_" if provider == "tiingo" else ""
+    return Path(cache_dir) / f"{prefix}{ticker.upper()}_{start:%Y%m%d}_{end:%Y%m%d}.json"
+
+
+def open_yahoo_session() -> tuple[requests.Session, str | None]:
+    """Establish a Yahoo session with anti-bot cookies + a crumb token."""
+    session = requests.Session()
+    session.headers.update(_HEADERS)
+    for url in ("https://fc.yahoo.com/", "https://finance.yahoo.com/"):
+        with contextlib.suppress(requests.RequestException):
+            session.get(url, timeout=10)
+    crumb = None
+    try:
+        response = session.get(
+            "https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10
+        )
+        text = response.text.strip()
+        if response.ok and text and "<" not in text and "Too Many" not in text:
+            crumb = text
+    except requests.RequestException:
+        pass
+    return session, crumb
+
+
+def fetch_ticker_bars(
+    ticker: str,
+    start: date,
+    end: date,
+    *,
+    session: requests.Session | None = None,
+    crumb: str | None = None,
+    cache_dir: Path | None = DEFAULT_CACHE_DIR,
+    timeout: float = 25.0,
+    rate_limit_retries: int = 1,
+) -> list[MarketBar]:
+    """Daily adjusted closes for one ticker over [start, end]."""
+    cache_path = None
+    if cache_dir is not None:
+        cache_path = Path(cache_dir) / f"{ticker.upper()}_{start:%Y%m%d}_{end:%Y%m%d}.json"
+        if cache_path.exists():
+            return _parse_chart(ticker, json.loads(cache_path.read_text()))
+
+    http = session or requests
+    params: dict[str, str | int] = {
+        "period1": _epoch(start),
+        "period2": _epoch(end),
+        "interval": "1d",
+        "events": "div,split",
+    }
+    if crumb:
+        params["crumb"] = crumb
+    payload: dict | None = None
+    saw_rate_limit = False
+    for host in CHART_HOSTS:
+        for attempt in range(rate_limit_retries + 1):
+            response = http.get(host.format(symbol=ticker.upper()), params=params, timeout=timeout)
+            if response.status_code == 429:
+                saw_rate_limit = True
+                if attempt < rate_limit_retries:
+                    time_module.sleep(2.0 * (attempt + 1))
+                continue
+            response.raise_for_status()
+            payload = response.json()
+            break
+        if payload is not None:
+            break
+    if payload is None:
+        if saw_rate_limit:
+            raise MarketDataRateLimitError("yahoo", ticker)
+        return []
+    bars = _parse_chart(ticker, payload)
+    if cache_path is not None and bars:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(payload))
+    return bars
+
+
+def _covering_tiingo_path(
+    cache_dir: Path, ticker: str, start: date, end: date
+) -> Path | None:
+    """Path of a cached Tiingo file whose window covers [start, end], if any.
+
+    The cache key embeds the exact requested window, so a wider study universe
+    that shifts the date range by even a day would otherwise miss every cached
+    file and re-fetch the whole universe. Any cached file spanning at least
+    [start, end] already holds the bars we need.
+    """
+    prefix = f"tiingo_{ticker.upper()}_"
+    for path in cache_dir.glob(f"{prefix}*.json"):
+        match = re.fullmatch(rf"{re.escape(prefix)}(\d{{8}})_(\d{{8}})\.json", path.name)
+        if match is None:
+            continue
+        cached_start = datetime.strptime(match.group(1), "%Y%m%d").date()
+        cached_end = datetime.strptime(match.group(2), "%Y%m%d").date()
+        if cached_start <= start and cached_end >= end:
+            return path
+    return None
+
+
+def fetch_ticker_bars_tiingo(
+    ticker: str,
+    start: date,
+    end: date,
+    token: str,
+    *,
+    session: requests.Session | None = None,
+    cache_dir: Path | None = DEFAULT_CACHE_DIR,
+    timeout: float = 25.0,
+) -> list[MarketBar]:
+    """Daily adjusted closes for one ticker from Tiingo (requires a free token)."""
+    cache_path = None
+    if cache_dir is not None:
+        cache_path = Path(cache_dir) / f"tiingo_{ticker.upper()}_{start:%Y%m%d}_{end:%Y%m%d}.json"
+        if cache_path.exists():
+            rows = json.loads(cache_path.read_text())
+            return _parse_tiingo(ticker, rows)
+        covering = _covering_tiingo_path(Path(cache_dir), ticker, start, end)
+        if covering is not None:
+            return _parse_tiingo(ticker, json.loads(covering.read_text()))
+    http = session or requests
+    response = http.get(
+        TIINGO_URL.format(symbol=ticker.lower()),
+        params={
+            "startDate": start.isoformat(),
+            "endDate": end.isoformat(),
+            "format": "json",
+            "token": token,
+        },
+        timeout=timeout,
+    )
+    if response.status_code == 404:
+        return []
+    if response.status_code == 429:
+        raise MarketDataRateLimitError("tiingo", ticker)
+    response.raise_for_status()
+    rows = response.json()
+    bars = _parse_tiingo(ticker, rows)
+    if cache_path is not None and bars:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(rows))
+    return bars
+
+
+def _parse_tiingo(ticker: str, rows: list[dict]) -> list[MarketBar]:
+    bars: list[MarketBar] = []
+    for row in rows or []:
+        price = row.get("adjClose")
+        day = row.get("date")
+        if price is None or not day or price <= 0:
+            continue
+        bars.append(
+            MarketBar(
+                ticker=ticker.upper(),
+                date=date.fromisoformat(str(day)[:10]),
+                adjusted_close=float(price),
+            )
+        )
+    return bars
+
+
+def fetch_market_bars(
+    tickers: list[str],
+    start: date,
+    end: date,
+    *,
+    benchmark: str = "SPY",
+    cache_dir: Path | None = DEFAULT_CACHE_DIR,
+    pause: float = 0.5,
+    tiingo_token: str | None = None,
+    cache_only: bool = False,
+    max_uncached_fetches: int | None = None,
+) -> tuple[list[MarketBar], list[str]]:
+    """Fetch bars for ``tickers`` plus the benchmark. Returns (bars, missing).
+
+    Prefers Tiingo when a token is available (``tiingo_token`` arg or the
+    ``TIINGO_API_KEY`` env var) and falls back per symbol to the keyless Yahoo
+    chart API. A provider-wide 429 trips a circuit breaker for the remainder of
+    the invocation so one throttled provider cannot stall every symbol. When
+    ``cache_only`` is true or ``max_uncached_fetches`` is exhausted, uncached
+    symbols are returned as missing without making network calls.
+    """
+    token = tiingo_token or os.environ.get("TIINGO_API_KEY")
+    wanted = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
+    session = requests.Session()
+    crumb = None
+    yahoo_session_ready = False
+    tiingo_rate_limited = False
+    yahoo_rate_limited = False
+    bars: list[MarketBar] = []
+    missing: list[str] = []
+    uncached_fetches = 0
+    for symbol in wanted:
+        tiingo_cache = (
+            _covering_tiingo_path(Path(cache_dir), symbol, start, end)
+            if cache_dir is not None
+            else None
+        )
+        yahoo_cache = _market_cache_path(
+            symbol, start, end, cache_dir=cache_dir, provider="yahoo"
+        )
+        if tiingo_cache is not None:
+            provider = "tiingo"
+        elif yahoo_cache is not None and yahoo_cache.exists():
+            provider = "yahoo"
+        elif token and not tiingo_rate_limited:
+            provider = "tiingo"
+        elif not yahoo_rate_limited:
+            provider = "yahoo"
+        else:
+            missing.append(symbol)
+            continue
+        cache_path = _market_cache_path(
+            symbol,
+            start,
+            end,
+            cache_dir=cache_dir,
+            provider=provider,
+        )
+        cached = cache_path is not None and cache_path.exists()
+        if not cached and provider == "tiingo" and tiingo_cache is not None:
+            # A wider cached window already covers this request; reuse it instead
+            # of counting it as a fresh (rate-limited) fetch.
+            cached = True
+        if not cached:
+            if cache_only:
+                missing.append(symbol)
+                continue
+            if (
+                max_uncached_fetches is not None
+                and uncached_fetches >= max_uncached_fetches
+            ):
+                missing.append(symbol)
+                continue
+            uncached_fetches += 1
+        ticker_bars: list[MarketBar] = []
+        try:
+            if provider == "tiingo":
+                ticker_bars = fetch_ticker_bars_tiingo(
+                    symbol,
+                    start,
+                    end,
+                    token or "cache-only",
+                    session=session,
+                    cache_dir=cache_dir,
+                )
+            else:
+                if not yahoo_session_ready:
+                    session, crumb = open_yahoo_session()
+                    yahoo_session_ready = True
+                ticker_bars = fetch_ticker_bars(
+                    symbol, start, end, session=session, crumb=crumb, cache_dir=cache_dir
+                )
+        except MarketDataRateLimitError as error:
+            if error.provider == "tiingo":
+                tiingo_rate_limited = True
+            elif error.provider == "yahoo":
+                yahoo_rate_limited = True
+        except requests.RequestException:
+            ticker_bars = []
+        if (
+            provider == "tiingo"
+            and not ticker_bars
+            and not cache_only
+            and not yahoo_rate_limited
+        ):
+            if not yahoo_session_ready:
+                session, crumb = open_yahoo_session()
+                yahoo_session_ready = True
+            try:
+                ticker_bars = fetch_ticker_bars(
+                    symbol, start, end, session=session, crumb=crumb, cache_dir=cache_dir
+                )
+            except MarketDataRateLimitError:
+                yahoo_rate_limited = True
+                ticker_bars = []
+            except requests.RequestException:
+                ticker_bars = []
+        if ticker_bars:
+            bars.extend(ticker_bars)
+        else:
+            missing.append(symbol)
+        if not cached:
+            time_module.sleep(pause)
+    return bars, missing
+
+
+def build_market_cache_manifest(cache_dir: Path) -> MarketCacheManifest:
+    """Hash every recognized market cache file into a deterministic replay manifest."""
+
+    entries: list[MarketCacheEntry] = []
+    if cache_dir.exists():
+        for path in sorted(cache_dir.glob("*.json")):
+            match = _CACHE_FILE_PATTERN.fullmatch(path.name)
+            if match is None:
+                continue
+            provider = "tiingo" if match.group("tiingo") else "yahoo"
+            ticker = match.group("ticker").upper()
+            content = path.read_bytes()
+            payload = json.loads(content)
+            if provider == "tiingo":
+                if not isinstance(payload, list):
+                    raise ValueError(f"invalid Tiingo cache payload: {path}")
+                bars = _parse_tiingo(ticker, payload)
+            else:
+                if not isinstance(payload, dict):
+                    raise ValueError(f"invalid Yahoo cache payload: {path}")
+                bars = _parse_chart(ticker, payload)
+            bar_dates = sorted(bar.date for bar in bars)
+            entries.append(
+                MarketCacheEntry(
+                    filename=path.name,
+                    provider=provider,
+                    ticker=ticker,
+                    requested_start=datetime.strptime(
+                        match.group("start"), "%Y%m%d"
+                    ).date().isoformat(),
+                    requested_end=datetime.strptime(
+                        match.group("end"), "%Y%m%d"
+                    ).date().isoformat(),
+                    first_bar_date=bar_dates[0].isoformat() if bar_dates else None,
+                    last_bar_date=bar_dates[-1].isoformat() if bar_dates else None,
+                    bar_count=len(bars),
+                    size_bytes=len(content),
+                    sha256_hash=hashlib.sha256(content).hexdigest(),
+                )
+            )
+    canonical_entries = tuple(entries)
+    manifest_payload = [asdict(entry) for entry in canonical_entries]
+    manifest_id = hashlib.sha256(
+        json.dumps(manifest_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return MarketCacheManifest(
+        schema_version="fdre-market-cache-manifest-v1",
+        manifest_id=manifest_id,
+        entries=canonical_entries,
+    )
+
+
+def write_market_cache_manifest(cache_dir: Path, output_path: Path) -> MarketCacheManifest:
+    manifest = build_market_cache_manifest(cache_dir)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(
+            {
+                "schema_version": manifest.schema_version,
+                "manifest_id": manifest.manifest_id,
+                "entry_count": len(manifest.entries),
+                "entries": [asdict(entry) for entry in manifest.entries],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def verify_market_cache_manifest(cache_dir: Path, manifest_path: Path) -> MarketCacheManifest:
+    expected = json.loads(manifest_path.read_text(encoding="utf-8"))
+    actual = build_market_cache_manifest(cache_dir)
+    actual_payload = {
+        "schema_version": actual.schema_version,
+        "manifest_id": actual.manifest_id,
+        "entry_count": len(actual.entries),
+        "entries": [asdict(entry) for entry in actual.entries],
+    }
+    if expected != actual_payload:
+        raise ValueError("market cache does not match its reproducibility manifest")
+    return actual
+
+
+def _parse_chart(ticker: str, payload: dict) -> list[MarketBar]:
+    result = (payload.get("chart") or {}).get("result") or []
+    if not result:
+        return []
+    block = result[0]
+    timestamps = block.get("timestamp") or []
+    indicators = block.get("indicators") or {}
+    adjclose_blocks = indicators.get("adjclose") or []
+    closes = adjclose_blocks[0].get("adjclose") if adjclose_blocks else None
+    if not closes:
+        quote = (indicators.get("quote") or [{}])[0]
+        closes = quote.get("close")
+    if not closes:
+        return []
+    bars: list[MarketBar] = []
+    for epoch, price in zip(timestamps, closes, strict=False):
+        if price is None or price <= 0:
+            continue
+        bars.append(
+            MarketBar(
+                ticker=ticker.upper(),
+                date=datetime.fromtimestamp(epoch, UTC).date(),
+                adjusted_close=float(price),
+            )
+        )
+    return bars

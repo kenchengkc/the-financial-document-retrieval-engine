@@ -67,7 +67,7 @@ def selected_tickers(args: argparse.Namespace, session: Session) -> list[str]:
         return list(
             session.scalars(
                 select(Company.ticker)
-                .where(Company.documents.any())
+                .where(Company.ticker.is_not(None), Company.documents.any())
                 .order_by(Company.ticker)
                 .offset(args.offset)
                 .limit(args.limit)

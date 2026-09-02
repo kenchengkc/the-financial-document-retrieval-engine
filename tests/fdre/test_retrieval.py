@@ -1,0 +1,306 @@
+from __future__ import annotations
+
+import pytest
+import respx
+from httpx import Response
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.orm import Session
+
+from apps.api.app.config import Settings
+from apps.api.app.db import Base
+from apps.api.app.models import Chunk, Company, Document, DocumentElement
+from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
+from fdre.retrieval.dense import DenseRetriever
+from fdre.retrieval.hybrid import HybridRetriever, reciprocal_rank_fusion
+from fdre.retrieval.preprocess import load_company_references
+from fdre.retrieval.query import RetrievalCandidate, SearchFilters
+from fdre.retrieval.rerank import FakeReranker, VoyageReranker, reranker_from_settings
+from fdre.retrieval.sparse import SparseRetriever
+
+
+def _seed_retrieval_data(session: Session) -> None:
+    company = Company(ticker="NVDA", cik="0001045810", name="NVIDIA Corporation")
+    document = Document(
+        company=company,
+        source_type="sec",
+        form_type="10-K",
+        accession_number="0001045810-25-000023",
+    )
+    for order, (section, text) in enumerate(
+        [
+            ("Business", "Data center revenue increased with AI demand."),
+            ("Risk Factors", "Export controls may restrict product sales."),
+            ("Business", "Gaming revenue also increased."),
+        ],
+        start=1,
+    ):
+        element = DocumentElement(
+            document=document,
+            element_type="text",
+            section=section,
+            text=text,
+            reading_order=order,
+        )
+        document.chunks.append(
+            Chunk(
+                element=element,
+                chunk_text=text,
+                chunk_type="text",
+                section=section,
+                token_count=len(text.split()),
+                metadata_json={
+                    "ticker": "NVDA",
+                    "cik": "0001045810",
+                    "form_type": "10-K",
+                    "section": section,
+                    "element_type": "text",
+                },
+            )
+        )
+    session.add(company)
+    session.commit()
+
+
+def test_company_references_exclude_historical_issuers_without_current_tickers() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Company(ticker="NVDA", cik="0001045810", name="NVIDIA Corporation"),
+                Company(ticker=None, cik="0000000001", name="Historical Issuer"),
+            ]
+        )
+        session.commit()
+
+        references = load_company_references(session)
+
+    assert [(row.ticker, row.name) for row in references] == [
+        ("NVDA", "NVIDIA Corporation")
+    ]
+
+
+def test_dense_sparse_hybrid_and_reranking() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    provider = LocalHashEmbeddingProvider(dimensions=32)
+    with Session(engine) as session:
+        _seed_retrieval_data(session)
+        rebuild_embeddings(session, provider)
+        filters = SearchFilters(tickers=["NVDA"], sections=["Business"])
+        dense = DenseRetriever(provider)
+        sparse = SparseRetriever()
+        dense_results = dense.search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=5,
+        )
+        sparse_results = sparse.search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=5,
+        )
+        hybrid_results = HybridRetriever(dense, sparse).search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=5,
+        )
+        reranked = FakeReranker().rerank(
+            "gaming revenue",
+            hybrid_results,
+            top_n=2,
+        )
+
+        assert dense_results
+        assert sparse_results
+        assert len({result.chunk_id for result in hybrid_results}) == len(hybrid_results)
+        assert all(result.metadata["section"] == "Business" for result in hybrid_results)
+        assert any(result.dense_score is not None for result in hybrid_results)
+        assert any(result.sparse_score is not None for result in hybrid_results)
+        assert reranked[0].rerank_score is not None
+        assert "Gaming" in reranked[0].text
+
+
+def test_retrieval_filters_by_exact_accession() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    provider = LocalHashEmbeddingProvider(dimensions=32)
+    older_text = "AI data center revenue increased dramatically."
+    with Session(engine) as session:
+        _seed_retrieval_data(session)
+        company = session.scalar(select(Company).where(Company.ticker == "NVDA"))
+        assert company is not None
+        older_document = Document(
+            company=company,
+            source_type="sec",
+            form_type="10-K",
+            accession_number="0001045810-24-000001",
+        )
+        older_element = DocumentElement(
+            document=older_document,
+            element_type="text",
+            section="Business",
+            text=older_text,
+            reading_order=1,
+        )
+        older_chunk = Chunk(
+            document=older_document,
+            element=older_element,
+            chunk_text=older_text,
+            chunk_type="text",
+            section="Business",
+            token_count=len(older_text.split()),
+            metadata_json={
+                "ticker": "NVDA",
+                "cik": "0001045810",
+                "form_type": "10-K",
+                "section": "Business",
+                "element_type": "text",
+            },
+        )
+        session.add(older_document)
+        session.commit()
+        rebuild_embeddings(session, provider)
+
+        filters = SearchFilters(
+            tickers=["NVDA"],
+            accession_numbers=["0001045810-25-000023"],
+            sections=["Business"],
+        )
+        dense_results = DenseRetriever(provider).search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=10,
+        )
+        sparse_results = SparseRetriever().search(
+            session,
+            "AI data center revenue",
+            filters=filters,
+            limit=10,
+        )
+
+        assert dense_results
+        assert sparse_results
+        assert older_chunk.id not in {result.chunk_id for result in dense_results}
+        assert older_chunk.id not in {result.chunk_id for result in sparse_results}
+        for results in (dense_results, sparse_results):
+            accessions = set(
+                session.scalars(
+                    select(Document.accession_number)
+                    .join(Chunk, Chunk.document_id == Document.id)
+                    .where(
+                        Chunk.id.in_([result.chunk_id for result in results])
+                    )
+                )
+            )
+            assert accessions == {"0001045810-25-000023"}
+
+
+def test_expand_with_neighbors_adds_adjacent_chunks() -> None:
+    from fdre.retrieval.neighbors import expand_with_neighbors
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed_retrieval_data(session)
+        chunks = list(session.scalars(select(Chunk).order_by(Chunk.id)))
+        middle = chunks[1]
+        hit = RetrievalCandidate(
+            chunk_id=middle.id, text=middle.chunk_text, metadata={}, rerank_score=0.9
+        )
+        statements: list[str] = []
+        event.listen(
+            engine,
+            "before_cursor_execute",
+            lambda _conn, _cursor, statement, _params, _context, _many: statements.append(
+                statement
+            ),
+        )
+        expanded = expand_with_neighbors(session, [hit], window=1)
+
+        assert {c.chunk_id for c in expanded} == {chunks[0].id, chunks[1].id, chunks[2].id}
+        assert len(statements) == 2
+        neighbors = [c for c in expanded if c.metadata.get("neighbor_expanded")]
+        assert len(neighbors) == 2
+        # the original hit is preserved and not flagged as a neighbor
+        original = next(c for c in expanded if c.chunk_id == middle.id)
+        assert not original.metadata.get("neighbor_expanded")
+        # window=0 is a no-op
+        assert expand_with_neighbors(session, [hit], window=0) == [hit]
+
+
+def test_bm25_rank_prefers_lexical_match() -> None:
+    from fdre.retrieval.bm25 import bm25_rank
+
+    documents = [
+        "the company reported revenue growth in its gaming division",
+        "data center revenue accelerated sharply this quarter",
+        "general corporate boilerplate language with no signal",
+    ]
+    order = bm25_rank("data center revenue", documents)
+    assert order[0] == 1  # strongest term overlap ranks first
+    assert order[-1] == 2  # the boilerplate doc ranks last
+
+
+def test_reciprocal_rank_fusion_rewards_agreement_and_top_ranks() -> None:
+    # id 1 is rank-1 in both lists; id 2 and 3 sit lower / appear in one list each.
+    dense = (1.0, [1, 3, 4])
+    sparse = (1.0, [1, 2, 5])
+    scores = reciprocal_rank_fusion([dense, sparse], k=60)
+    ranked = sorted(scores, key=lambda i: -scores[i])
+    assert ranked[0] == 1  # agreed top of both lists wins
+    assert scores[1] > scores[3] and scores[1] > scores[2]
+    # weighting one ranker higher lifts its exclusive ids
+    weighted = reciprocal_rank_fusion([(0.1, [1, 3, 4]), (1.0, [2, 1, 5])], k=60)
+    assert weighted[2] > weighted[3]
+
+
+def _candidate(chunk_id: int, text: str) -> RetrievalCandidate:
+    return RetrievalCandidate(
+        chunk_id=chunk_id, text=text, metadata={"ticker": "AAPL"}, hybrid_score=0.5
+    )
+
+
+@respx.mock
+def test_voyage_reranker_orders_by_relevance() -> None:
+    respx.post("https://api.voyageai.com/v1/rerank").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"index": 2, "relevance_score": 0.95},
+                    {"index": 0, "relevance_score": 0.40},
+                ]
+            },
+        )
+    )
+    candidates = [
+        _candidate(10, "supply chain risk"),
+        _candidate(11, "incorporated by reference"),
+        _candidate(12, "export controls disproportionately impact us"),
+    ]
+    reranked = VoyageReranker(api_key="test-key", model="rerank-2.5").rerank(
+        "export controls", candidates, top_n=2
+    )
+
+    # Voyage returns top_k ordered by relevance; index maps back to the input candidate.
+    assert [candidate.chunk_id for candidate in reranked] == [12, 10]
+    assert reranked[0].rerank_score == 0.95
+    assert [candidate.rank for candidate in reranked] == [1, 2]
+
+
+def test_reranker_from_settings_voyage() -> None:
+    with_key = Settings.model_construct(
+        reranker_provider="voyage", reranker_model="rerank-2.5", voyage_api_key="k"
+    )
+    assert isinstance(reranker_from_settings(with_key), VoyageReranker)
+
+    without_key = Settings.model_construct(
+        reranker_provider="voyage", reranker_model="rerank-2.5", voyage_api_key=None
+    )
+    with pytest.raises(ValueError):
+        reranker_from_settings(without_key)
