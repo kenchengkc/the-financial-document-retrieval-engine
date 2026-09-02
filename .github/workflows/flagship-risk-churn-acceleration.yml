@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       max_tickers:
-        description: "Maximum eligible issuer count"
+        description: "Maximum historically eligible issuer count"
         default: "250"
       min_documents:
         description: "Minimum 10-K/10-Q history per issuer"
@@ -84,7 +84,7 @@ jobs:
       - name: Apply database migrations
         run: alembic upgrade head
 
-      - name: Run precommitted flagship study
+      - name: Run precommitted HU-5 flagship study
         run: |
           args=(
             --max-tickers "${MAX_TICKERS}"
@@ -93,32 +93,20 @@ jobs:
             --output-dir data/processed/flagship/risk-churn-acceleration
           )
           log_file="$(mktemp)"
-          for attempt in 1 2 3; do
-            set +e
-            python -m scripts.flagship_risk_churn_acceleration "${args[@]}" 2>&1 | tee "${log_file}"
-            status=${PIPESTATUS[0]}
-            set -e
-            if [ "${status}" -eq 0 ]; then
-              primary_result="$(grep '^PRIMARY_RESULT=' "${log_file}" | tail -1 || true)"
-              if [ -n "${primary_result}" ]; then
-                {
-                  echo "### Flagship primary result"
-                  echo
-                  echo "\`${primary_result}\`"
-                } >> "${GITHUB_STEP_SUMMARY}"
-                echo "::notice::${primary_result}"
-              fi
-              exit 0
-            fi
-            if ! grep -q "flagship market-data coverage is incomplete" "${log_file}"; then
-              exit "${status}"
-            fi
-            if [ "${attempt}" -eq 3 ]; then
-              exit "${status}"
-            fi
-            echo "::notice::Market-data coverage incomplete; retrying from the cache populated by attempt ${attempt}."
-            sleep $((attempt * 15))
-          done
+          set +e
+          python -m scripts.hu5_risk_churn_acceleration "${args[@]}" 2>&1 | tee "${log_file}"
+          status=${PIPESTATUS[0]}
+          set -e
+          primary_result="$(grep '^PRIMARY_RESULT=' "${log_file}" | tail -1 || true)"
+          if [ -n "${primary_result}" ]; then
+            {
+              echo "### Flagship primary result"
+              echo
+              echo "\`${primary_result}\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "::notice::${primary_result}"
+          fi
+          exit "${status}"
 
       - name: Manifest reproducible market cache
         if: always()
