@@ -107,18 +107,35 @@ identity. Scoped chunk and embedding counts remained exactly 10,696 before and a
 embedding, reranking, and generation calls and estimated provider cost were all zero. The source
 artifact is GitHub Actions run `33561265364`.
 
-The measured full archive cohort contains 822 issuer CIKs with verified or provisional overlapping
-membership evidence (785 have at least one verified membership). Full rollout is split into two
-disjoint, resumable lanes capped at five SEC requests per second each, preserving the SEC-wide
-ten-request-per-second ceiling. These measurements are operational evidence for scaling; final
-storage and runtime are reported only from completed production batches.
+## Full production result
 
-Do not mark HU-4 complete until production reports establish:
+The measured full archive cohort contains 822 unique issuer CIKs with verified or provisional
+overlapping membership evidence (785 have at least one verified membership). Production ran from
+2026-09-01 21:36 UTC through 2026-09-02 03:02 UTC in 33 disjoint, resumable batches. Two lanes were
+capped at five SEC requests per second each, preserving the SEC-wide ten-request-per-second
+ceiling. One batch stopped on a missing SEC submissions root; the fix was merged in PR #68 and the
+same offset resumed idempotently. No later issuer was skipped.
 
-1. full reconstructed-issuer batch coverage for the target window;
-2. accession and availability completeness;
-3. Risk Factors parse coverage and exact feature lineage;
-4. Parquet replay identity;
-5. market-cache manifest coverage for the unchanged HU-5 horizons;
-6. measured storage/runtime and zero embedding growth;
-7. continued normal monthly spend within `$10-15` and below the `$20` ceiling.
+Aggregating every batch report produced:
+
+- 11,166 selected 10-K records across all 822 CIKs, with no duplicate cohort assignment;
+- 9,728 new document rows and 1,438 evidence-backed updates;
+- 10,008 filings downloaded and parsed, transferring 43,072,314,555 bytes from SEC;
+- 590 filings explicitly recorded without a selected Risk Factors section;
+- 1,509,402 retained elements and 654,447,650 incremental text bytes;
+- 10,681 Parquet feature rows across 807 CIKs in 3,249,996 artifact bytes;
+- exactly one unavailable SEC submissions root, CIK `0000076406`, retained as a named gap;
+- zero new chunks, zero new embeddings, zero paid model calls, and zero new recurring services.
+
+Independent replay loaded and verified all 33 Parquet artifacts. All 10,681 rows had an accession
+and availability timestamp, no feature lineage exceeded its event availability, and every batch
+snapshot verified. The final scoped corpus contains 11,166 documents, 10,576 parsed documents,
+3,229,381 elements, 1,365,146,178 text bytes, and the unchanged 1,677,521 pre-existing
+chunks/embeddings. Summed materialization time was 28,412,796 ms across both lanes; end-to-end wall
+time was about 5 hours 26 minutes including the stopped batch and hotfix promotion.
+
+HU-4's archive, lineage, Parquet, storage, runtime, and cost gates are complete. The market-cache
+manifest machinery is implemented and corruption-tested. HU-5 must still populate and verify the
+actual historical-symbol outcome cache for its unchanged `1:21`, `1:63`, and `1:126` horizons;
+missing outcome coverage remains a fail-closed HU-5 result, not a reason to alter the archive or
+silently narrow the reconstructed universe.
