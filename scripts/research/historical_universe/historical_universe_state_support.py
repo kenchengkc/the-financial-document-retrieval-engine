@@ -1,14 +1,15 @@
-"""Project strict HU coverage after exact independent state corroboration.
+"""Project or explicitly apply exact independent Historical Universe state corroboration.
 
-The command is intentionally non-mutating. It stages only fully-supported verification upgrades
-inside one transaction, runs the existing HU-5 strict daily gate, writes an audit artifact, and
-rolls the entire transaction back.
+Projection is the default. Apply mode is deliberately gated by an exact replay plan ID and an
+explicit production opt-in, and can only promote membership rows already classified promotable by
+the fail-closed state-support planner. Identity rows remain diagnostic-only.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
@@ -42,7 +43,9 @@ from fdre.research.hu5_universe import (
     build_hu5_universe_gate,
     load_hu5_universe_records,
 )
-from scripts.research.historical_universe.historical_universe_strict_coverage import load_provisional_membership_blockers
+from scripts.research.historical_universe.historical_universe_strict_coverage import (
+    load_provisional_membership_blockers,
+)
 
 
 def _date(value: str) -> date:
@@ -237,6 +240,27 @@ def _assert_row_matches(
         raise RuntimeError(f"row {decision.row_kind}/{decision.row_id} is no longer provisional")
 
 
+def _validate_apply_request(
+    *,
+    apply: bool,
+    expected_plan_id: str | None,
+    plan_id: str,
+    allow_prod: bool,
+) -> None:
+    if not apply:
+        if expected_plan_id is not None:
+            raise RuntimeError("--expected-plan-id requires --apply")
+        return
+    if not allow_prod:
+        raise RuntimeError("--apply requires FDRE_ALLOW_PROD=1")
+    if expected_plan_id is None:
+        raise RuntimeError("--apply requires --expected-plan-id")
+    if expected_plan_id != plan_id:
+        raise RuntimeError(
+            f"state-support plan changed: expected {expected_plan_id}, computed {plan_id}"
+        )
+
+
 def _stage_decisions(
     session: Session,
     decisions: tuple[StateSupportDecision, ...],
@@ -315,6 +339,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--window-start", type=_date, default=date(2010, 1, 1))
     parser.add_argument("--window-end", type=_date, default=date(2026, 9, 1))
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Commit only fully-supported membership upgrades; projection remains the default.",
+    )
+    parser.add_argument(
+        "--expected-plan-id",
+        help="Required with --apply; must exactly match the freshly recomputed support plan.",
+    )
     return parser
 
 
@@ -352,11 +385,19 @@ def main() -> int:
                 universe_code=universe_code,
             )
             plan_id = state_support_plan_id(decisions)
+            _validate_apply_request(
+                apply=args.apply,
+                expected_plan_id=args.expected_plan_id,
+                plan_id=plan_id,
+                allow_prod=os.environ.get("FDRE_ALLOW_PROD") == "1",
+            )
             membership_updates, identity_updates = _stage_decisions(
                 session,
                 decisions,
                 plan_id=plan_id,
             )
+            if identity_updates != 0:
+                raise RuntimeError("state-support apply must never promote identity rows")
             records = load_hu5_universe_records(
                 session,
                 universe_code=universe_code,
@@ -372,7 +413,10 @@ def main() -> int:
             error_counts = Counter(
                 item.error for item in gate.dates if not item.eligible and item.error is not None
             )
-            session.rollback()
+            if args.apply:
+                session.commit()
+            else:
+                session.rollback()
     finally:
         engine.dispose()
 
@@ -384,7 +428,9 @@ def main() -> int:
         item.status for item in decisions if item.row_kind == "identity"
     )
     payload = {
-        "schema_version": "fdre-hu-state-support-projection-v1",
+        "schema_version": "fdre-hu-state-support-result-v2",
+        "mode": "apply" if args.apply else "projection",
+        "applied": args.apply,
         "plan_id": plan_id,
         "universe_code": universe_code,
         "window_start": args.window_start.isoformat(),
@@ -399,6 +445,8 @@ def main() -> int:
         "identity_status_counts": dict(sorted(identity_status_counts.items())),
         "projected_membership_updates": membership_updates,
         "projected_identity_updates": identity_updates,
+        "applied_membership_updates": membership_updates if args.apply else 0,
+        "applied_identity_updates": identity_updates if args.apply else 0,
         "projected_gate": {
             "gate_manifest_id": gate.gate_manifest_id,
             "input_provenance_id": gate.input_provenance_id,
@@ -413,9 +461,18 @@ def main() -> int:
         "residual_membership_evidence": residual_evidence,
         "decisions": [item.as_dict() for item in decisions],
         "interpretation": (
-            "Projection only. Fully-supported rows are staged in one transaction using exact "
-            "independent interval containment and then rolled back. Partial overlaps, ticker "
-            "reuse ambiguity, missing state, and date-convention disagreements remain provisional."
+            (
+                "Applied only fully-supported membership rows using exact independent interval "
+                "containment. Identity rows and all partial, ambiguous, unsupported, "
+                "missing-state, or date-convention disagreements remain provisional."
+            )
+            if args.apply
+            else (
+                "Projection only. Fully-supported membership rows are staged in one transaction "
+                "using exact independent interval containment and then rolled back. Identity rows "
+                "and all partial, ambiguous, unsupported, missing-state, or date-convention "
+                "disagreements remain provisional."
+            )
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
