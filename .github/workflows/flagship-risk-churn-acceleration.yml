@@ -16,6 +16,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/flagship-risk-churn-acceleration.yml"
+      - "scripts/hu5_risk_churn_acceleration.py"
+      - "scripts/historical_universe_blocker_audit.py"
+      - "src/fdre/research/hu5_universe.py"
+      - "src/fdre/research/hu5_blockers.py"
 
 permissions:
   contents: read
@@ -83,6 +87,13 @@ jobs:
 
       - name: Apply database migrations
         run: alembic upgrade head
+
+      - name: Measure strict historical-universe blockers
+        run: |
+          mkdir -p data/processed/flagship/risk-churn-acceleration
+          python -m scripts.historical_universe_blocker_audit \
+            --database-url "${DATABASE_URL}" \
+            --output data/processed/flagship/risk-churn-acceleration/universe-blockers.json
 
       - name: Run precommitted HU-5 flagship study
         run: |
