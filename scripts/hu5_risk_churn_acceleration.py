@@ -434,7 +434,10 @@ def main() -> int:
             return _write_insufficiency(
                 output_dir,
                 reason_code="no_historical_issuers",
-                reason="No historical-universe issuer CIK satisfies the frozen document-depth gate.",
+                reason=(
+                    "No historical-universe issuer CIK satisfies the frozen "
+                    "document-depth gate."
+                ),
                 gate=gate,
                 event_config=event_config,
                 walk_config=walk_config,
