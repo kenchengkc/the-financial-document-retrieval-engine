@@ -146,7 +146,7 @@ Implemented:
 
 ### HU-4 — 10–15 year research archive
 
-**Status: IN PROGRESS.**
+**Status: COMPLETE.**
 
 Extend research depth without proportionally expanding the vector corpus.
 
@@ -164,12 +164,11 @@ historical filing
 Acceptance criteria include reproducible market outcomes, Parquet panel export, measured before/after storage and runtime, and total recurring spend below the $20 ceiling.
 
 The bounded CIK-keyed archive path, Risk Factors-only parser, zero-embedding invariant,
-lineage-preserving Parquet export, and market-cache manifests are implemented. A three-issuer
-production gate passed with 24 missing filings materialized, 1.31 MB of retained section text,
-32 lineage-bearing feature rows, and zero embedding growth or paid model calls. Measurements and
-the promotion checklist are recorded in [`research_archive.md`](research_archive.md). Full
-822-issuer production cohort coverage and measured replay remain before HU-4 can be marked
-complete.
+lineage-preserving Parquet export, and market-cache manifests are implemented. Production covered
+all 822 reconstructed issuer CIKs in 33 disjoint batches: 11,166 annual filings, 10,681 verified
+feature rows, 654.45 MB incremental retained text, zero embedding growth, and zero paid model
+calls. The exact runtime, storage, named SEC gap, replay audit, and HU-5 market-outcome handoff are
+recorded in [`research_archive.md`](research_archive.md).
 
 ### HU-5 — Institutional flagship rerun
 
