@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.historical_universe_promotion_gate import evaluate
+from scripts.research.historical_universe.historical_universe_promotion_gate import evaluate
 
 
 def _component_history(path: Path) -> Path:

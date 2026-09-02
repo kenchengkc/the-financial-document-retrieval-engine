@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from scripts.build_sp500_tickers import build_sp500_tickers, write_sp500_tickers
+from scripts.ingestion.build_sp500_tickers import build_sp500_tickers, write_sp500_tickers
 
 
 def test_build_sp500_tickers_maps_symbols_to_catalog_primary_tickers(
@@ -36,9 +36,9 @@ def test_build_sp500_tickers_maps_symbols_to_catalog_primary_tickers(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("scripts.build_sp500_tickers.LISTED_COMPANIES_PATH", listed_path)
+    monkeypatch.setattr("scripts.ingestion.build_sp500_tickers.LISTED_COMPANIES_PATH", listed_path)
     monkeypatch.setattr(
-        "scripts.build_sp500_tickers._load_wikipedia_symbols",
+        "scripts.ingestion.build_sp500_tickers._load_wikipedia_symbols",
         lambda **_: ["AAPL", "MSFT", "ZZZZ"],
     )
 

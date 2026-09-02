@@ -1,6 +1,6 @@
 """Stratified retrieval latency benchmark (single-name vs cross-sectional).
 
-    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. python3 -m scripts.benchmark_latency
+    FDRE_ALLOW_PROD=1 PYTHONPATH=src:. python3 -m scripts.benchmarks.benchmark_latency
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.preprocess import load_company_references, preprocess_query
 from fdre.retrieval.query import SearchFilters
 from fdre.retrieval.sparse import SparseRetriever
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 SINGLE_NAME_QUERIES = [
     ("AAPL", "What are Apple's supply chain risks?"),

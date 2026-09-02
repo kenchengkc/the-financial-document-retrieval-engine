@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from scripts.ingest_sec_sample import ingest_sec_metadata
+from scripts.ingestion.ingest_sec_sample import ingest_sec_metadata
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 

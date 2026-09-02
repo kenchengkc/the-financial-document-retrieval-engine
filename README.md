@@ -6,10 +6,10 @@ availability time, and reproducibility matter.
 
 [Live service](https://thefdre.com) ·
 [API health](https://api.thefdre.com/health) ·
-[Architecture](docs/architecture.md) ·
+[Architecture](docs/architecture/system.md) ·
 [Roadmap](docs/roadmap.md) ·
-[Evaluation plan](docs/eval_plan.md) ·
-[Evaluation results](docs/eval_results.md)
+[Evaluation plan](docs/evaluations/eval_plan.md) ·
+[Evaluation results](docs/evaluations/eval_results.md)
 
 FDRE is research infrastructure. It is not a trading strategy, portfolio optimizer, execution
 simulator, or low-latency trading system.
@@ -71,7 +71,7 @@ queue, and analytics services.
 
 The answer path is fail-closed: resolve the issuer and time scope, retrieve evidence, rerank it,
 apply an evidence gate, extract supported claims, verify citations, and otherwise abstain. See
-[`docs/architecture.md`](docs/architecture.md) for the detailed component and data-flow design.
+[`docs/architecture/system.md`](docs/architecture/system.md) for the detailed component and data-flow design.
 
 ## Point-in-time contract
 
@@ -124,7 +124,7 @@ the same deployed revision measured HTTPS p95 of **3.137 s**, so semantic tail l
 active optimization target.
 
 Full methodology, latency breakdowns, holdout definitions, and reproduction commands live in
-[`docs/eval_results.md`](docs/eval_results.md).
+[`docs/evaluations/eval_results.md`](docs/evaluations/eval_results.md).
 
 ## Research status
 
@@ -147,7 +147,7 @@ python3 -m pip install -e ".[dev,data]"
 cp .env.example .env
 docker compose up -d postgres
 alembic upgrade head
-python3 -m scripts.retrieval_pipeline seed-demo
+python3 -m scripts.pipelines.retrieval_pipeline seed-demo
 uvicorn apps.api.app.main:app --reload
 ```
 
@@ -166,26 +166,26 @@ and the sample demo. `.env.example` and `apps/web/.env.example` are the configur
 ## Data and research CLI
 
 ```bash
-python3 -m scripts.retrieval_pipeline --help
-python3 -m scripts.retrieval_pipeline index --tickers AAPL MSFT
-python3 -m scripts.retrieval_pipeline xbrl --tickers AAPL MSFT
-python3 -m scripts.retrieval_pipeline panel --tickers AAPL MSFT \
+python3 -m scripts.pipelines.retrieval_pipeline --help
+python3 -m scripts.pipelines.retrieval_pipeline index --tickers AAPL MSFT
+python3 -m scripts.pipelines.retrieval_pipeline xbrl --tickers AAPL MSFT
+python3 -m scripts.pipelines.retrieval_pipeline panel --tickers AAPL MSFT \
   --as-of 2026-06-01T00:00:00+00:00 --format parquet \
   --output data/processed/research-panel.parquet
-python3 -m scripts.retrieval_pipeline audit
+python3 -m scripts.pipelines.retrieval_pipeline audit
 ```
 
 Batch ingestion is separate because automation relies on resumable stage manifests:
 
 ```bash
-python3 scripts/ingest_ticker_batch.py \
+python3 scripts/ingestion/ingest_ticker_batch.py \
   --universe research50 --limit 50 --annual-limit 3 --quarterly-limit 8
 ```
 
 Reproduce the retrieval ablation with:
 
 ```bash
-python3 -m scripts.benchmark_retrieval
+python3 -m scripts.benchmarks.benchmark_retrieval
 ```
 
 ## API

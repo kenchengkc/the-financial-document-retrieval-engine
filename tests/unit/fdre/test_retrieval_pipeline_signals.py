@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
-from scripts.retrieval_pipeline import (
+from scripts.pipelines.retrieval_pipeline import (
     _fundamental_metric,
     _is_annual_comparative_fact,
     _neutralize_signal_events,

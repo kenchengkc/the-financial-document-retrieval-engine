@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
-from scripts.ingest_sec_sample import ingest_sec_metadata
+from scripts.ingestion.ingest_sec_sample import ingest_sec_metadata
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 

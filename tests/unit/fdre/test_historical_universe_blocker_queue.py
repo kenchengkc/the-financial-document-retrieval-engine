@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.historical_universe_blocker_queue import build_remediation_queue
+from scripts.research.historical_universe.historical_universe_blocker_queue import build_remediation_queue
 
 
 def test_queue_prefers_exact_day_unlock_then_overlap_pressure() -> None:

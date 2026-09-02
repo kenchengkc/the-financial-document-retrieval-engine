@@ -5,7 +5,7 @@ development questions, adds abstention/filter/temporal/table/cross-sectional ite
 assigns an 80/40 development/holdout split, and stamps metadata.reviewed_by.
 
     FDRE_ALLOW_PROD=1 PYTHONPATH=src:. \\
-      python3 -m scripts.build_reviewed_benchmark
+      python3 -m scripts.benchmarks.build_reviewed_benchmark
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from fdre.evals.datasets import (
     validate_reviewed_benchmark,
     write_jsonl_dataset,
 )
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 REVIEWER = "fdre-corpus-review-2026-07"
 DEFAULT_SOURCE = "data/evals/retrieval_benchmark.jsonl"

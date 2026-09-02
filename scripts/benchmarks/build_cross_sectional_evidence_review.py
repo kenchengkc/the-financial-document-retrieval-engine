@@ -14,7 +14,7 @@ from apps.api.app.models import Chunk, Document
 from fdre.evals import build_cross_sectional_screen_plan, load_jsonl_dataset
 from fdre.evals.datasets import EvalQuestion
 from fdre.research.panel import ResearchPanelQuery, ResearchPanelRow, build_research_panel
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 DEFAULT_DATASET = "data/evals/cross_sectional_benchmark.v1.jsonl"
 DEFAULT_OUTPUT = "data/processed/evals/cross-sectional-evidence-review.jsonl"

@@ -42,7 +42,7 @@ from fdre.research.hu5_universe import (
     build_hu5_universe_gate,
     load_hu5_universe_records,
 )
-from scripts.historical_universe_strict_coverage import load_provisional_membership_blockers
+from scripts.research.historical_universe.historical_universe_strict_coverage import load_provisional_membership_blockers
 
 
 def _date(value: str) -> date:

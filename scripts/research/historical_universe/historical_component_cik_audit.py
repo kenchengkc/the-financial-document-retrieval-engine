@@ -23,7 +23,7 @@ from fdre.research.historical_universe_identity import (
     load_stable_securities,
 )
 from fdre.research.historical_universe_pipeline import run_hu2_reconstruction
-from scripts.historical_universe_coverage import (
+from scripts.research.historical_universe.historical_universe_coverage import (
     _load_identity_records,
     _load_sources,
     _parse_timestamp,

@@ -1,6 +1,6 @@
 from collections import Counter
 
-from scripts.historical_universe_anchor_reconciliation import (
+from scripts.research.historical_universe.historical_universe_anchor_reconciliation import (
     _REJECTED_FJA_DUPLICATE,
     _REJECTED_LAWCAL_SYMBOL,
     _SEC_CONFIRMED_GAP_IDENTITIES,

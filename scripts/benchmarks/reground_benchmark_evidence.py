@@ -5,7 +5,7 @@ contains the normalized quote, then refresh section metadata from that chunk.
 Shortens overlong quotes to a distinctive in-chunk window when needed.
 
     FDRE_ALLOW_PROD=1 PYTHONPATH=src:. \\
-      python3 -m scripts.reground_benchmark_evidence
+      python3 -m scripts.benchmarks.reground_benchmark_evidence
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from fdre.evals.datasets import (
     validate_reviewed_benchmark,
     write_jsonl_dataset,
 )
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 
 def _shorten_to_chunk(quote: str, chunk_text: str, *, max_len: int = 120) -> str:

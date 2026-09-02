@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from typing import cast
 
 import pytest
-from scripts.evaluate_cross_sectional import (
+from scripts.benchmarks.evaluate_cross_sectional import (
     build_cross_sectional_benchmark_metadata,
     parse_args,
 )

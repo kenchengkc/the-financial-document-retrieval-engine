@@ -14,7 +14,7 @@ from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader
 from fdre.ingestion.ticker_map import DEFAULT_SAMPLE_TICKERS
 from fdre.parsing.html_filing_parser import HtmlFilingParser
-from scripts.ingest_sec_sample import DEFAULT_FORMS
+from scripts.ingestion.ingest_sec_sample import DEFAULT_FORMS
 
 
 @dataclass(frozen=True, slots=True)

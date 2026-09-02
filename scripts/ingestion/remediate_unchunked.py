@@ -1,7 +1,7 @@
 """Remediate documents that have parsed elements but no chunks.
 
     FDRE_ALLOW_PROD=1 PYTHONPATH=src:. \\
-      python3 -m scripts.remediate_unchunked
+      python3 -m scripts.ingestion.remediate_unchunked
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
 from apps.api.app.services.operations_service import build_data_quality_report
-from scripts.eval_guard import require_neon_optin
-from scripts.retrieval_pipeline import chunk_selected_documents
+from scripts.benchmarks.eval_guard import require_neon_optin
+from scripts.pipelines.retrieval_pipeline import chunk_selected_documents
 
 
 def main() -> None:

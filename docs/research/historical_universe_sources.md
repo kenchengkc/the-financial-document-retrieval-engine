@@ -130,7 +130,7 @@ The audit is deliberately designed to make missing historical coverage measurabl
 Normalize `snp-history` evidence and audit exact SEC historical-name matches:
 
 ```bash
-python scripts/historical_universe_evidence.py history.csv \
+python scripts/research/historical_universe/historical_universe_evidence.py history.csv \
   --adapter snp-history-csv \
   --observed-at 2026-08-29T20:00:00Z \
   --sec-cik-lookup cik-lookup-data.txt \
@@ -140,7 +140,7 @@ python scripts/historical_universe_evidence.py history.csv \
 Normalize the independent Wikipedia changes table:
 
 ```bash
-python scripts/historical_universe_evidence.py historical-components.html \
+python scripts/research/historical_universe/historical_universe_evidence.py historical-components.html \
   --adapter wikipedia-historical-components-html \
   --observed-at 2026-08-29T20:00:00Z \
   --sec-cik-lookup cik-lookup-data.txt \

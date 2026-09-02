@@ -18,8 +18,8 @@ from fdre.evals import (
 )
 from fdre.evals.datasets import EvalQuestion
 from fdre.research.screen import ResearchScreenResponse, ScreenConditionResult
-from scripts.eval_guard import require_neon_optin
-from scripts.evaluate_cross_sectional import (
+from scripts.benchmarks.eval_guard import require_neon_optin
+from scripts.benchmarks.evaluate_cross_sectional import (
     _production_screen_executor,
     require_sealed_holdout_optin,
 )

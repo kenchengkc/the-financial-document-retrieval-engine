@@ -17,7 +17,7 @@ the answer — neighbor expansion's value would only surface with a synthesizing
 because the top hit is usually a different, also-relevant chunk in the same
 section; answer_on_target is the meaningful relevance proxy.
 
-    PYTHONPATH=src:. VOYAGE_API_KEY=... python3.11 -m scripts.benchmark_answer
+    PYTHONPATH=src:. VOYAGE_API_KEY=... python3.11 -m scripts.benchmarks.benchmark_answer
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from fdre.evals.datasets import EvalQuestion
 from fdre.graph.nodes import GeneratedAnswer, MockAnswerGenerator, WorkflowContext
 from fdre.graph.workflow import run_answer_workflow
 from fdre.retrieval.query import RetrievalCandidate
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 
 def _run(questions: list[EvalQuestion], window: int) -> dict[str, float]:

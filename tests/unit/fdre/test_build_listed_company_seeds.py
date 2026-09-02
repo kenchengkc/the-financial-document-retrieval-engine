@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import pytest
-from scripts.build_listed_company_seeds import _looks_like_etf, build_listed_companies
+from scripts.ingestion.build_listed_company_seeds import _looks_like_etf, build_listed_companies
 
 
 def test_looks_like_etf_filters_funds_and_etns() -> None:
@@ -51,7 +51,7 @@ def test_build_listed_companies_deduplicates_by_cik(monkeypatch: pytest.MonkeyPa
         def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
             return FakeResponse()
 
-    monkeypatch.setattr("scripts.build_listed_company_seeds.httpx.Client", FakeClient)
+    monkeypatch.setattr("scripts.ingestion.build_listed_company_seeds.httpx.Client", FakeClient)
     companies = build_listed_companies(user_agent="FDRE tests test@example.com")
 
     assert len(companies) == 1

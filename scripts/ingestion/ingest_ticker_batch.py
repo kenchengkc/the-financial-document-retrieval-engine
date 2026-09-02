@@ -29,7 +29,7 @@ from fdre.ingestion.ticker_map import (
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.ingestion_lock import lane_lock_id, serialized_ingestion
+from scripts.ingestion.ingestion_lock import lane_lock_id, serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:
@@ -159,7 +159,7 @@ def _run_ingestion(
                 "latency_ms": _run(
                     [
                         sys.executable,
-                        "scripts/ingest_sec_sample.py",
+                        "scripts/ingestion/ingest_sec_sample.py",
                         *ticker_args,
                         *form_args,
                         *history_args,
@@ -171,7 +171,7 @@ def _run_ingestion(
             download_cmd = [
                 sys.executable,
                 "-m",
-                "scripts.download_filings",
+                "scripts.ingestion.download_filings",
                 *ticker_args,
                 *form_args,
                 "--limit",
@@ -193,7 +193,7 @@ def _run_ingestion(
             chunk_cmd = [
                 sys.executable,
                 "-m",
-                "scripts.retrieval_pipeline",
+                "scripts.pipelines.retrieval_pipeline",
                 "chunk",
                 *ticker_args,
             ]
@@ -209,7 +209,7 @@ def _run_ingestion(
                 [
                     sys.executable,
                     "-m",
-                    "scripts.retrieval_pipeline",
+                    "scripts.pipelines.retrieval_pipeline",
                     "index",
                     *ticker_args,
                 ]

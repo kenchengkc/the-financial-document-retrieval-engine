@@ -61,9 +61,9 @@ Verification checks source completeness, PIT timestamps, snapshot consistency, d
 Panel and signal artifacts can be verified from the CLI:
 
 ```bash
-python -m scripts.verify_research_lineage panel data/processed/panel.json
-python -m scripts.verify_research_lineage panel data/processed/panel.csv
-python -m scripts.verify_research_lineage signal data/processed/signal-study.json
+python -m scripts.research.verify_research_lineage panel data/processed/panel.json
+python -m scripts.research.verify_research_lineage panel data/processed/panel.csv
+python -m scripts.research.verify_research_lineage signal data/processed/signal-study.json
 ```
 
 Parquet panel verification is supported when the optional data dependencies are installed.

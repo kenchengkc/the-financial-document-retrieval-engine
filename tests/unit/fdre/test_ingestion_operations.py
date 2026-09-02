@@ -3,8 +3,8 @@ from __future__ import annotations
 from argparse import Namespace
 from typing import Any
 
-from scripts.ingest_company_facts_batch import selected_tickers
-from scripts.ingestion_lock import ingestion_lock_is_busy, serialized_ingestion
+from scripts.ingestion.ingest_company_facts_batch import selected_tickers
+from scripts.ingestion.ingestion_lock import ingestion_lock_is_busy, serialized_ingestion
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session

@@ -28,7 +28,7 @@ from fdre.ingestion.xbrl import ingest_company_facts
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.ingestion_lock import serialized_ingestion
+from scripts.ingestion.ingestion_lock import serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:

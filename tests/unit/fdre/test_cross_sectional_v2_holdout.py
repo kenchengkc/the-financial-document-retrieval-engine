@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from scripts.evaluate_cross_sectional import require_sealed_holdout_optin
+from scripts.benchmarks.evaluate_cross_sectional import require_sealed_holdout_optin
 
 from fdre.evals.datasets import (
     compute_dataset_sha256,

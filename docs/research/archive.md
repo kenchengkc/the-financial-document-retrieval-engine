@@ -49,7 +49,7 @@ membership or identity evidence.
 Local read-only plan:
 
 ```bash
-python -m scripts.research_archive \
+python -m scripts.research.research_archive \
   --from 2010-01-01 \
   --to 2026-09-01 \
   --offset 0 \
@@ -59,7 +59,7 @@ python -m scripts.research_archive \
 Explicit apply:
 
 ```bash
-python -m scripts.research_archive \
+python -m scripts.research.research_archive \
   --from 2010-01-01 \
   --to 2026-09-01 \
   --offset 0 \
@@ -75,7 +75,7 @@ bar range/count, byte size, and SHA-256. The manifest has its own content hash a
 without a network call:
 
 ```bash
-python -m scripts.market_cache_manifest \
+python -m scripts.research.market_cache_manifest \
   --cache-dir data/cache/market \
   --manifest data/processed/market-cache/manifest.json \
   --verify

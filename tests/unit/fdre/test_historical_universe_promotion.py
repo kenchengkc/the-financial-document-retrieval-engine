@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-from scripts.historical_universe_promote import (
+from scripts.research.historical_universe.historical_universe_promote import (
     AnchorConstituentExpectation,
     AnchorExpectation,
     BoundaryVerification,

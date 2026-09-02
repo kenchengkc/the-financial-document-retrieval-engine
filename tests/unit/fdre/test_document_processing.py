@@ -5,8 +5,8 @@ from pathlib import Path
 
 import httpx
 import respx
-from scripts.download_filings import process_documents
-from scripts.retrieval_pipeline import chunk_selected_documents
+from scripts.ingestion.download_filings import process_documents
+from scripts.pipelines.retrieval_pipeline import chunk_selected_documents
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,7 @@ from apps.api.app.models import (
     DocumentElement,
     Embedding,
 )
-from fdre.demo import seed_demo_document
+from scripts.ingestion.seed_demo import seed_demo_document
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader, sha256_bytes

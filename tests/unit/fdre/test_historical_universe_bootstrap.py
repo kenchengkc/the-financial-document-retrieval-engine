@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-from scripts.bootstrap_current_security_master import (
+from scripts.research.historical_universe.bootstrap_current_security_master import (
     bootstrap_current_security_master,
     load_current_security_bootstrap,
 )

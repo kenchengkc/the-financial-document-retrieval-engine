@@ -31,7 +31,7 @@ Contract:
 Example holdout execution:
 
 ```bash
-FDRE_ALLOW_PROD=1 python3 -m scripts.retrieval_pipeline eval \
+FDRE_ALLOW_PROD=1 python3 -m scripts.pipelines.retrieval_pipeline eval \
   data/evals/retrieval_benchmark.jsonl \
   --require-reviewed --split holdout --k 10
 ```

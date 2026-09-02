@@ -4,7 +4,7 @@ Keeps evidence labels fixed. Rewrites generic template questions to mention the
 issuer and a distinctive fragment of the labeled quote so retrieval matching is
 more realistic.
 
-    PYTHONPATH=src:. python3 -m scripts.refine_benchmark_questions
+    PYTHONPATH=src:. python3 -m scripts.benchmarks.refine_benchmark_questions
 """
 
 from __future__ import annotations

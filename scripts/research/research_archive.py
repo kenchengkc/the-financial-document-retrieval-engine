@@ -22,7 +22,7 @@ from fdre.research.archive import (
     select_archive_issuers,
     write_archive_report,
 )
-from scripts.ingestion_lock import lane_lock_id, serialized_ingestion
+from scripts.ingestion.ingestion_lock import lane_lock_id, serialized_ingestion
 
 
 def parse_args() -> argparse.Namespace:

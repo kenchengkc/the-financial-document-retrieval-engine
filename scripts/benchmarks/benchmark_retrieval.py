@@ -6,7 +6,7 @@ default (multi-query expansion, weighted fusion, ts_rank) and prints recall@k,
 MRR and nDCG@k for each. The labels are content-grounded: a retrieved chunk is
 relevant only if it shares the issuer + section and contains the labeled quote.
 
-    PYTHONPATH=src:. python3.11 -m scripts.benchmark_retrieval
+    PYTHONPATH=src:. python3.11 -m scripts.benchmarks.benchmark_retrieval
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from fdre.retrieval.neighbors import expand_with_neighbors
 from fdre.retrieval.preprocess import CompanyReference, load_company_references, preprocess_query
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.sparse import SparseRetriever
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 DEFAULT_DATASET = "data/evals/retrieval_benchmark.jsonl"
 

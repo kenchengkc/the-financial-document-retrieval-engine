@@ -19,7 +19,7 @@ from apps.api.app.db import create_db_engine
 from apps.api.app.models import Chunk, Company, Document, Embedding, FinancialFact
 from apps.api.app.services.operations_service import build_data_quality_report
 from fdre.chunking import rebuild_document_chunks
-from fdre.demo import seed_demo_document
+from scripts.ingestion.seed_demo import seed_demo_document
 from fdre.evals.datasets import (
     EvalQuestion,
     compute_dataset_sha256,
@@ -337,7 +337,7 @@ def main() -> None:
                 }
             )
         elif args.command == "eval":
-            from scripts.eval_guard import require_neon_optin
+            from scripts.benchmarks.eval_guard import require_neon_optin
 
             require_neon_optin()
             questions = load_jsonl_dataset(args.dataset)

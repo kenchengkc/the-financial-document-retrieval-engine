@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.flagship_risk_churn_acceleration import _primary_result_status
+from scripts.research.flagship_risk_churn_acceleration import _primary_result_status
 
 
 def test_primary_status_reports_not_yet_realized_without_oos_observations() -> None:

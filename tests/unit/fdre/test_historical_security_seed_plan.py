@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from scripts.historical_security_seed_plan import build_historical_security_seed_plan
+from scripts.research.historical_universe.historical_security_seed_plan import build_historical_security_seed_plan
 
 from fdre.research.historical_universe_evidence import (
     MembershipEventType,

@@ -37,7 +37,7 @@ from fdre.research.screen import (
     execute_research_screen,
 )
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
-from scripts.eval_guard import require_neon_optin
+from scripts.benchmarks.eval_guard import require_neon_optin
 
 DEFAULT_DATASET = "data/evals/cross_sectional_benchmark.v1.jsonl"
 DEFAULT_SOURCE_DATASET = "data/evals/retrieval_benchmark.jsonl"

@@ -420,9 +420,9 @@ Earlier snapshots/results remain useful for showing improvement over time but ar
 export FDRE_ALLOW_PROD=1
 export PYTHONPATH=src:.
 
-python3 -m scripts.benchmark_latency --k 10 --warmup 2 --repeats 2
-python3 -m scripts.benchmark_ann_recall --k 10
-python3 -m scripts.retrieval_pipeline eval data/evals/retrieval_benchmark.jsonl \
+python3 -m scripts.benchmarks.benchmark_latency --k 10 --warmup 2 --repeats 2
+python3 -m scripts.benchmarks.benchmark_ann_recall --k 10
+python3 -m scripts.pipelines.retrieval_pipeline eval data/evals/retrieval_benchmark.jsonl \
   --require-reviewed --split holdout --k 10
 ```
 

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from scripts.historical_universe_coverage import (
+from scripts.research.historical_universe.historical_universe_coverage import (
     _current_constituent_reconciliation,
     _raw_evidence_diagnostics,
     _sha256_file,

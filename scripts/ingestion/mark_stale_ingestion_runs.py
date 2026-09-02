@@ -15,7 +15,7 @@ from apps.api.app.models import IngestionRun
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.ingestion_lock import ingestion_lock_is_busy
+from scripts.ingestion.ingestion_lock import ingestion_lock_is_busy
 
 
 def parse_args() -> argparse.Namespace:
