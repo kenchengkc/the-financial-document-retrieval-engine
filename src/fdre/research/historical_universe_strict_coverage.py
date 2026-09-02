@@ -172,7 +172,7 @@ def _build_segments(
         boundaries.update((start, end))
     ordered = sorted(boundaries)
     segments: list[StrictCoverageSegment] = []
-    for start, end in zip(ordered, ordered[1:], strict=True):
+    for start, end in zip(ordered, ordered[1:]):
         if end <= start:
             continue
         active = tuple(
