@@ -106,8 +106,8 @@ def plan_state_support(
 ) -> tuple[StateSupportDecision, ...]:
     """Return deterministic, fail-closed state-support decisions for provisional rows."""
     by_symbol: dict[str, list[TickerMembershipLineage]] = {}
-    for lineage in lineages:
-        by_symbol.setdefault(lineage.symbol, []).append(lineage)
+    for lineage_record in lineages:
+        by_symbol.setdefault(lineage_record.symbol, []).append(lineage_record)
     for values in by_symbol.values():
         values.sort(
             key=lambda item: (
