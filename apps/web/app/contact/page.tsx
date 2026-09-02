@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Image from "next/image";
-import Link from "next/link";
-import { ArrowUpRight, Code2, Globe, Mail } from "lucide-react";
+import { ArrowUpRight, Globe, Mail } from "lucide-react";
+
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Contact | FDRE",
@@ -59,36 +59,7 @@ const LINKS = [
 export default function Contact() {
   return (
     <div className="site-shell">
-      <header className="hd-nav light">
-        <Link className="hd-brand" href="/" aria-label="FDRE home">
-          <Image
-            className="hd-brand-img"
-            src="/fdre-logo-color.png"
-            alt="FDRE"
-            width={629}
-            height={230}
-            priority
-          />
-        </Link>
-        <nav className="hd-links" aria-label="Site">
-          <Link href="/">Console</Link>
-          <Link href="/about">About</Link>
-          <Link className="on" href="/contact">
-            Contact
-          </Link>
-        </nav>
-        <div className="hd-right">
-          <a
-            className="hd-pill"
-            href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Code2 size={16} aria-hidden="true" />
-            <span className="hd-pill-label">View source</span>
-          </a>
-        </div>
-      </header>
+      <SiteHeader tone="light" active="contact" />
 
       <main className="contact-main">
         <div className="contact-intro">
