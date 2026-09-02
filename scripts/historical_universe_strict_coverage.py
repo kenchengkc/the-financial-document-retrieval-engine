@@ -76,7 +76,7 @@ def load_provisional_membership_blockers(
             UniverseMembership.id,
         )
     ).all()
-    security_ids = sorted({int(row.security_id) for row in rows})
+    security_ids = sorted({int(membership_row.security_id) for membership_row in rows})
     identity_rows = (
         session.execute(
             select(
@@ -106,40 +106,44 @@ def load_provisional_membership_blockers(
         else []
     )
     identities_by_security: dict[int, list[IdentityContext]] = defaultdict(list)
-    for row in identity_rows:
-        identities_by_security[int(row.security_id)].append(
+    for identity_row in identity_rows:
+        identities_by_security[int(identity_row.security_id)].append(
             IdentityContext(
-                symbol=str(row.symbol),
-                effective_from=row.effective_from,
-                effective_to=row.effective_to,
-                verification_status=str(row.verification_status),
-                source_hash=str(row.source_hash),
+                symbol=str(identity_row.symbol),
+                effective_from=identity_row.effective_from,
+                effective_to=identity_row.effective_to,
+                verification_status=str(identity_row.verification_status),
+                source_hash=str(identity_row.source_hash),
             )
         )
 
     blockers: list[ProvisionalMembershipBlocker] = []
-    for row in rows:
+    for membership_row in rows:
         identities = tuple(
             identity
-            for identity in identities_by_security[int(row.security_id)]
+            for identity in identities_by_security[int(membership_row.security_id)]
             if _overlaps(
                 identity.effective_from,
                 identity.effective_to,
-                window_start=row.effective_from,
-                window_end=row.effective_to or window_end,
+                window_start=membership_row.effective_from,
+                window_end=membership_row.effective_to or window_end,
             )
         )
         blockers.append(
             ProvisionalMembershipBlocker(
-                membership_id=int(row.id),
-                security_id=int(row.security_id),
-                cik=str(row.cik),
-                effective_from=row.effective_from,
-                effective_to=row.effective_to,
-                source=str(row.source),
-                source_url=str(row.source_url) if row.source_url is not None else None,
-                source_hash=str(row.source_hash),
-                confidence=float(row.confidence),
+                membership_id=int(membership_row.id),
+                security_id=int(membership_row.security_id),
+                cik=str(membership_row.cik),
+                effective_from=membership_row.effective_from,
+                effective_to=membership_row.effective_to,
+                source=str(membership_row.source),
+                source_url=(
+                    str(membership_row.source_url)
+                    if membership_row.source_url is not None
+                    else None
+                ),
+                source_hash=str(membership_row.source_hash),
+                confidence=float(membership_row.confidence),
                 identities=identities,
             )
         )
