@@ -1,0 +1,58 @@
+.header {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .header {
+    min-height: 0;
+    flex-wrap: wrap;
+    column-gap: 14px;
+    row-gap: 14px;
+    padding: 16px 20px 18px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .links {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .links a {
+    font-size: 13px;
+  }
+
+  .right {
+    margin-left: auto;
+  }
+
+  .source {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 420px) {
+  .header {
+    padding-inline: 18px;
+  }
+
+  .links {
+    gap: 8px;
+  }
+
+  .links a {
+    font-size: 12.5px;
+  }
+
+  .source {
+    padding-inline: 14px;
+  }
+}

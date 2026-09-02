@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
-import { Code2 } from "lucide-react";
+
+import { SiteHeader } from "@/components/site-header";
 
 import { HeroStage } from "./hero-stage";
 import { SearchDemo } from "./search-demo";
@@ -41,37 +41,7 @@ export default async function About() {
   return (
     <div className="site-shell">
       <section className="about-hero">
-        <header className="hd-nav light">
-          <Link className="hd-brand" href="/" aria-label="FDRE home">
-            <Image
-              className="hd-brand-img"
-              src="/fdre-logo-color.png"
-              alt="FDRE"
-              width={629}
-              height={230}
-              priority
-            />
-          </Link>
-          <nav className="hd-links" aria-label="Site">
-            <Link href="/">Console</Link>
-            <Link className="on" href="/about">
-              About
-            </Link>
-            <Link href="/contact">Contact</Link>
-          </nav>
-          <div className="hd-right">
-            <a
-              className="hd-pill"
-              href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Code2 size={16} aria-hidden="true" />
-              <span className="hd-pill-label">View source</span>
-            </a>
-          </div>
-        </header>
-
+        <SiteHeader tone="light" active="about" />
         <HeroStage />
       </section>
 
@@ -84,7 +54,7 @@ export default async function About() {
           </div>
           <SearchDemo />
           <p className="demo-foot">
-            <Link href="/">Open the live console →</Link>
+            <Link href="/#research">Open the live research tools →</Link>
           </p>
         </section>
 
