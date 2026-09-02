@@ -20,11 +20,11 @@ def build_remediation_queue(payload: dict[str, Any]) -> dict[str, Any]:
         str(item["blocker_id"]): item
         for item in payload.get("membership_blockers", [])
     }
-    segments = [
-        {
-            "day_count": int(item["day_count"]),
-            "blocker_ids": set(item.get("membership_blocker_ids", [])),
-        }
+    segments: list[tuple[int, set[str]]] = [
+        (
+            int(item["day_count"]),
+            {str(value) for value in item.get("membership_blocker_ids", [])},
+        )
         for item in payload.get("segments", [])
         if item.get("membership_blocker_ids")
     ]
@@ -36,14 +36,14 @@ def build_remediation_queue(payload: dict[str, Any]) -> dict[str, Any]:
         choices: list[tuple[int, float, int, str]] = []
         for blocker_id in sorted(remaining):
             marginal = sum(
-                segment["day_count"]
-                for segment in segments
-                if (segment["blocker_ids"] & remaining) == {blocker_id}
+                day_count
+                for day_count, blocker_ids in segments
+                if (blocker_ids & remaining) == {blocker_id}
             )
             pressure = sum(
-                segment["day_count"] / len(segment["blocker_ids"] & remaining)
-                for segment in segments
-                if blocker_id in (segment["blocker_ids"] & remaining)
+                day_count / len(blocker_ids & remaining)
+                for day_count, blocker_ids in segments
+                if blocker_id in (blocker_ids & remaining)
             )
             active_days = int(blockers[blocker_id].get("active_day_count", 0))
             choices.append((marginal, pressure, active_days, blocker_id))
