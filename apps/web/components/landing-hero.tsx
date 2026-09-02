@@ -1,7 +1,6 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 
 const WAVE_PATH =
   "M0,58 C200,42 400,70 600,56 C800,42 1000,68 1200,54 L1200,120 L0,120 Z";
@@ -26,6 +25,7 @@ export function LandingHero({
   return (
     <section className="landing" id="top" data-screen-label="FDRE Home">
       <div className="ld-topline" />
+      <SiteHeader tone="dark" active="home" onResearch={onExplore} />
 
       <div className="ld-scene" aria-hidden="true">
         <div className="ld-sky" />
@@ -53,34 +53,6 @@ export function LandingHero({
       </div>
 
       <div className="ld-wrap">
-        <nav className="ld-nav" aria-label="Primary">
-          <Image
-            className="ld-brand-img"
-            src="/fdre-logo-white.png"
-            alt="FDRE"
-            width={629}
-            height={230}
-            priority
-          />
-          <div className="ld-links">
-            <a className="on" href="#top">
-              Home
-            </a>
-            <button type="button" onClick={onExplore}>
-              Research
-            </button>
-            <Link href="/about">About</Link>
-            <a
-              href="https://github.com/kenchengkc/the-financial-document-retrieval-engine"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Source
-            </a>
-            <Link href="/contact">Contact</Link>
-          </div>
-        </nav>
-
         <section className="ld-hero">
           <p className="ld-eyebrow">Point-in-time · citation-verified · reproducible</p>
           <h1>
