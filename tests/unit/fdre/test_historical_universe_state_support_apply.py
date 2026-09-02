@@ -3,21 +3,22 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-
-from apps.api.app.models.historical_universe import UniverseMembership
-from fdre.research.historical_universe_lineage import TickerMembershipLineage
-from fdre.research.historical_universe_state_support import (
-    ProvisionalStateInterval,
-    plan_state_support,
-    state_support_plan_id,
-)
 from scripts.research.historical_universe.historical_universe_state_support import (
     _stage_decisions,
     _validate_apply_request,
 )
 
+from apps.api.app.models.historical_universe import UniverseMembership
+from fdre.research.historical_universe_lineage import TickerMembershipLineage
+from fdre.research.historical_universe_state_support import (
+    ProvisionalStateInterval,
+    StateSupportDecision,
+    plan_state_support,
+    state_support_plan_id,
+)
 
-def _decision():
+
+def _decision() -> StateSupportDecision:
     interval = ProvisionalStateInterval(
         row_kind="membership",
         row_id=7,
@@ -75,7 +76,11 @@ class _SessionStub:
         self.membership = membership
         self.flushed = False
 
-    def get(self, model, row_id: int):
+    def get(
+        self,
+        model: type[UniverseMembership],
+        row_id: int,
+    ) -> UniverseMembership:
         assert model is UniverseMembership
         assert row_id == self.membership.id
         return self.membership
