@@ -100,20 +100,17 @@ export function HeroStage() {
       <div className="ih-card">
         <p className="hd-eyebrow">About FDRE</p>
         <h1>
-          SEC filing research with <span className="accent">sources you can inspect</span>
+          Watch SEC filings become <span className="accent">inspectable evidence</span>
         </h1>
-        <p className="lede">
-          FDRE turns SEC filings into cited search results, reported financial data, historical
-          research data, and inputs for filing event studies.
-        </p>
+        <p className="lede">Search. Compare. Test. Every result stays linked to its source.</p>
         <div className="ih-meta">
-          <span>Research and data engineering</span>
+          <span>Point-in-time</span>
           <span className="sep" aria-hidden="true" />
-          <span>Quantitative research</span>
+          <span>Source-linked</span>
           <span className="sep" aria-hidden="true" />
-          <span>No trading-strategy claims</span>
+          <span>Research only</span>
         </div>
-        <a className="ih-down" href="#see-it-work" aria-label="Scroll to the live demo">
+        <a className="ih-down" href="#see-it-work" aria-label="Scroll to the animated product tour">
           <ArrowDown size={18} strokeWidth={1.8} />
         </a>
       </div>
