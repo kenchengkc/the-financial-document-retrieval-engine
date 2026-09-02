@@ -48,7 +48,7 @@ permissions:
 
 concurrency:
   # One concurrency group per lane_spec: a lane's own batches queue (serialize),
-  # while disjoint lanes run in parallel. scripts/ingest_ticker_batch.py holds a
+  # while disjoint lanes run in parallel. scripts/ingestion/ingest_ticker_batch.py holds a
   # per-lane Postgres advisory lock so concurrent lanes can't collide on writes.
   group: fdre-sp500-ingestion-lane-${{ github.event.inputs.lane_spec || '0:1:499' }}
   cancel-in-progress: false
@@ -209,7 +209,7 @@ jobs:
             if [ "${ARCHIVE_VERIFIED_ONLY}" = "true" ]; then
               verified_args+=(--verified-only)
             fi
-            python -m scripts.research_archive \
+            python -m scripts.research.research_archive \
               --universe sp500 \
               --from "${ARCHIVE_FROM}" \
               --to "${archive_to}" \
@@ -236,7 +236,7 @@ jobs:
           if [ -n "${QUARTERLY_LIMIT}" ]; then
             history_args+=(--quarterly-limit "${QUARTERLY_LIMIT}")
           fi
-          python scripts/ingest_ticker_batch.py \
+          python scripts/ingestion/ingest_ticker_batch.py \
             --universe sp500 \
             --offset "${OFFSET}" \
             --limit "${LIMIT}" \
@@ -247,7 +247,7 @@ jobs:
 
       - name: Publish data-quality audit
         if: always()
-        run: python -m scripts.retrieval_pipeline audit
+        run: python -m scripts.pipelines.retrieval_pipeline audit
 
       - name: Upload HU-4 research archive artifacts
         if: always() && github.event.inputs.archive_spec != ''

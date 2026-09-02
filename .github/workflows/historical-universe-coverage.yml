@@ -20,17 +20,17 @@ on:
       - "apps/api/alembic/versions/a7c9e1f3b205_allow_historical_issuers_without_tickers.py"
       - "apps/api/app/models/companies.py"
       - "apps/api/app/services/companies_service.py"
-      - "scripts/bootstrap_current_security_master.py"
-      - "scripts/historical_component_cik_audit.py"
-      - "scripts/historical_security_seed_plan.py"
-      - "scripts/historical_universe_alias_audit.py"
-      - "scripts/historical_universe_anchor_audit.py"
-      - "scripts/historical_universe_anchor_reconciliation.py"
-      - "scripts/historical_universe_boundary_audit.py"
-      - "scripts/historical_universe_coverage.py"
-      - "scripts/historical_universe_lineage_audit.py"
-      - "scripts/historical_universe_promote.py"
-      - "scripts/historical_universe_promotion_gate.py"
+      - "scripts/research/historical_universe/bootstrap_current_security_master.py"
+      - "scripts/research/historical_universe/historical_component_cik_audit.py"
+      - "scripts/research/historical_universe/historical_security_seed_plan.py"
+      - "scripts/research/historical_universe/historical_universe_alias_audit.py"
+      - "scripts/research/historical_universe/historical_universe_anchor_audit.py"
+      - "scripts/research/historical_universe/historical_universe_anchor_reconciliation.py"
+      - "scripts/research/historical_universe/historical_universe_boundary_audit.py"
+      - "scripts/research/historical_universe/historical_universe_coverage.py"
+      - "scripts/research/historical_universe/historical_universe_lineage_audit.py"
+      - "scripts/research/historical_universe/historical_universe_promote.py"
+      - "scripts/research/historical_universe/historical_universe_promotion_gate.py"
       - "src/fdre/research/historical_component_history.py"
       - "src/fdre/research/historical_universe_anchor.py"
       - "src/fdre/research/historical_universe_boundary.py"
@@ -99,7 +99,7 @@ jobs:
       - name: Plan current security-master bootstrap
         run: |
           mkdir -p "${OUTPUT_DIR}"
-          python -m scripts.bootstrap_current_security_master \
+          python -m scripts.research.historical_universe.bootstrap_current_security_master \
             --database-url "${DATABASE_URL}" \
             --current-constituents data/sample/sp500_tickers.json \
             --output "${OUTPUT_DIR}/security-master-bootstrap-plan.json"
@@ -107,7 +107,7 @@ jobs:
       - name: Apply current security-master bootstrap
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_security_bootstrap }}
         run: |
-          python -m scripts.bootstrap_current_security_master \
+          python -m scripts.research.historical_universe.bootstrap_current_security_master \
             --database-url "${DATABASE_URL}" \
             --current-constituents data/sample/sp500_tickers.json \
             --apply \
@@ -139,12 +139,12 @@ jobs:
       - name: Emit complete target-window anchor
         run: |
           ANCHOR_URL="https://raw.githubusercontent.com/fja05680/sp500/${HISTORICAL_ANCHOR_REF}/S%26P%20500%20Historical%20Components%20%26%20Changes.csv"
-          python -m scripts.historical_universe_anchor_audit --input "${SOURCE_DIR}/sp500-complete-history.csv" --source-ref "${HISTORICAL_ANCHOR_REF}" --source-url "${ANCHOR_URL}" --observed-at "${HU2_OBSERVED_AT}" --output "${OUTPUT_DIR}/complete-snapshot-anchor.json"
+          python -m scripts.research.historical_universe.historical_universe_anchor_audit --input "${SOURCE_DIR}/sp500-complete-history.csv" --source-ref "${HISTORICAL_ANCHOR_REF}" --source-url "${ANCHOR_URL}" --observed-at "${HU2_OBSERVED_AT}" --output "${OUTPUT_DIR}/complete-snapshot-anchor.json"
 
       - name: Reconcile complete-anchor symbol differences
         run: |
           SEC_IVV_URL="https://www.sec.gov/Archives/edgar/data/1100663/000119312510044578/dnq.htm"
-          python -m scripts.historical_universe_anchor_reconciliation \
+          python -m scripts.research.historical_universe.historical_universe_anchor_reconciliation \
             --component-history "${SOURCE_DIR}/components-history.csv" \
             --component-history-ref "${COMPONENT_HISTORY_REF}" \
             --fja-anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" \
@@ -156,7 +156,7 @@ jobs:
 
       - name: Adjudicate all provisional interval boundaries
         run: |
-          python -m scripts.historical_universe_boundary_audit \
+          python -m scripts.research.historical_universe.historical_universe_boundary_audit \
             --component-history "${SOURCE_DIR}/components-history.csv" \
             --component-history-ref "${COMPONENT_HISTORY_REF}" \
             --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" \
@@ -170,7 +170,7 @@ jobs:
 
       - name: Plan HU-2 production materialization
         run: |
-          python -m scripts.historical_universe_promote \
+          python -m scripts.research.historical_universe.historical_universe_promote \
             --database-url "${DATABASE_URL}" \
             --component-history "${SOURCE_DIR}/components-history.csv" \
             --component-history-ref "${COMPONENT_HISTORY_REF}" \
@@ -190,7 +190,7 @@ jobs:
       - name: Apply HU-2 production materialization
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
         run: |
-          python -m scripts.historical_universe_promote \
+          python -m scripts.research.historical_universe.historical_universe_promote \
             --database-url "${DATABASE_URL}" \
             --component-history "${SOURCE_DIR}/components-history.csv" \
             --component-history-ref "${COMPONENT_HISTORY_REF}" \
@@ -205,7 +205,7 @@ jobs:
 
       - name: Run coverage audit
         run: |
-          python -m scripts.historical_universe_coverage \
+          python -m scripts.research.historical_universe.historical_universe_coverage \
             --database-url "${DATABASE_URL}" \
             --snp-history "${SOURCE_DIR}/snp-history.csv" \
             --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" \
@@ -218,19 +218,19 @@ jobs:
 
       - name: Emit cross-source issuer aliases
         run: |
-          python -m scripts.historical_universe_alias_audit --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/issuer-aliases.json"
+          python -m scripts.research.historical_universe.historical_universe_alias_audit --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/issuer-aliases.json"
 
       - name: Plan historical security seeds
         run: |
-          python -m scripts.historical_security_seed_plan --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/historical-security-seed-plan.json"
+          python -m scripts.research.historical_universe.historical_security_seed_plan --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/historical-security-seed-plan.json"
 
       - name: Measure ticker-lineage recovery
         run: |
-          python -m scripts.historical_universe_lineage_audit --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/ticker-lineage-audit.json"
+          python -m scripts.research.historical_universe.historical_universe_lineage_audit --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --ticker-lineages "${SOURCE_DIR}/sp500-ticker-start-end.csv" --ticker-lineages-ref "${HISTORICAL_ANCHOR_REF}" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/ticker-lineage-audit.json"
 
       - name: Measure historical component CIK recovery
         run: |
-          python -m scripts.historical_component_cik_audit --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/component-cik-audit.json" --residual-output "${OUTPUT_DIR}/residual-observation-queue.json"
+          python -m scripts.research.historical_universe.historical_component_cik_audit --database-url "${DATABASE_URL}" --snp-history "${SOURCE_DIR}/snp-history.csv" --wikipedia-html "${SOURCE_DIR}/wikipedia-historical-components.html" --sec-cik-lookup "${SOURCE_DIR}/sec-cik-lookup-data.txt" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --observed-at "${HU2_OBSERVED_AT}" --snp-history-ref "${SNP_HISTORY_REF}" --wikipedia-revision "${WIKIPEDIA_REVISION}" --output "${OUTPUT_DIR}/component-cik-audit.json" --residual-output "${OUTPUT_DIR}/residual-observation-queue.json"
 
       - name: Evaluate final HU-2 promotion gate
         run: |
@@ -238,12 +238,12 @@ jobs:
           if [ -f "${OUTPUT_DIR}/historical-universe-materialization-applied.json" ]; then
             MATERIALIZATION_REPORT="${OUTPUT_DIR}/historical-universe-materialization-applied.json"
           fi
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${MATERIALIZATION_REPORT}" --component-cik-audit "${OUTPUT_DIR}/component-cik-audit.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
+          python -m scripts.research.historical_universe.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${MATERIALIZATION_REPORT}" --component-cik-audit "${OUTPUT_DIR}/component-cik-audit.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json"
 
       - name: Require HU-2 gate after explicit production apply
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_historical_universe }}
         run: |
-          python -m scripts.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-cik-audit "${OUTPUT_DIR}/component-cik-audit.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
+          python -m scripts.research.historical_universe.historical_universe_promotion_gate --coverage "${OUTPUT_DIR}/coverage.json" --remediation "${OUTPUT_DIR}/remediation.json" --anchor "${OUTPUT_DIR}/complete-snapshot-anchor.json" --anchor-reconciliation "${OUTPUT_DIR}/anchor-reconciliation.json" --boundary-audit "${OUTPUT_DIR}/boundary-adjudication.json" --materialization "${OUTPUT_DIR}/historical-universe-materialization-applied.json" --component-cik-audit "${OUTPUT_DIR}/component-cik-audit.json" --component-history "${SOURCE_DIR}/components-history.csv" --component-history-ref "${COMPONENT_HISTORY_REF}" --output "${OUTPUT_DIR}/promotion-gate.json" --require-pass
 
       - name: Publish summary
         if: always()
