@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import styles from "./site-header.module.css";
+
 type ActivePage = "home" | "about" | "contact";
 
 const SOURCE_URL = "https://github.com/kenchengkc/the-financial-document-retrieval-engine";
@@ -23,15 +25,17 @@ export function SiteHeader({
 
   useEffect(() => {
     if (!onHome || window.location.hash !== "#research") return;
-    window.requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setResearchActive(true);
       document.querySelector(".home-research")?.scrollIntoView({ block: "start" });
     });
+    return () => window.cancelAnimationFrame(frame);
   }, [onHome]);
 
   return (
-    <header className={`hd-nav${tone === "light" ? " light" : ""}`}>
+    <header className={`hd-nav${tone === "light" ? " light" : ""} ${styles.header}`}>
       <Link
-        className="hd-brand"
+        className={`hd-brand ${styles.brand}`}
         href={onHome ? "#top" : "/"}
         aria-label="FDRE home"
         onClick={() => setResearchActive(false)}
@@ -46,7 +50,7 @@ export function SiteHeader({
         />
       </Link>
 
-      <nav className="hd-links" aria-label="Site">
+      <nav className={`hd-links ${styles.links}`} aria-label="Site">
         <Link
           className={onHome && !researchActive ? "on" : undefined}
           href={onHome ? "#top" : "/"}
@@ -75,9 +79,9 @@ export function SiteHeader({
         </Link>
       </nav>
 
-      <div className="hd-right">
+      <div className={`hd-right ${styles.right}`}>
         <a
-          className="hd-pill"
+          className={`hd-pill ${styles.source}`}
           href={SOURCE_URL}
           target="_blank"
           rel="noreferrer"
