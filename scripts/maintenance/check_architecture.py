@@ -55,7 +55,11 @@ def architecture_violations() -> tuple[str, ...]:
         text = path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), start=1):
             if FLAT_SCRIPT_PATH.search(line) or FLAT_SCRIPT_MODULE.search(line):
-                violations.append(f"stale flat-script reference: {relative}:{line_number}: {line.strip()}")
+                message = (
+                    f"stale flat-script reference: {relative}:{line_number}: "
+                    f"{line.strip()}"
+                )
+                violations.append(message)
 
     return tuple(violations)
 
