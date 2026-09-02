@@ -128,13 +128,19 @@ def test_blocker_audit_id_is_deterministic() -> None:
         memberships=(_membership(1, date(2020, 1, 1), None),),
         identities=(_identity(1, "AAA", date(2020, 1, 1), None),),
     )
-    kwargs = {
-        "universe_code": "sp500",
-        "input_provenance_id": "input",
-        "window_start": date(2020, 1, 1),
-        "window_end": date(2020, 1, 10),
-    }
-    first = build_hu5_strict_blocker_audit(records, **kwargs)
-    second = build_hu5_strict_blocker_audit(records, **kwargs)
+    first = build_hu5_strict_blocker_audit(
+        records,
+        universe_code="sp500",
+        input_provenance_id="input",
+        window_start=date(2020, 1, 1),
+        window_end=date(2020, 1, 10),
+    )
+    second = build_hu5_strict_blocker_audit(
+        records,
+        universe_code="sp500",
+        input_provenance_id="input",
+        window_start=date(2020, 1, 1),
+        window_end=date(2020, 1, 10),
+    )
 
     assert first.blocker_audit_id == second.blocker_audit_id
