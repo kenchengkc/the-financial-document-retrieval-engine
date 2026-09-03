@@ -40,6 +40,7 @@ EXPECTED_TABLES = {
     "retrieval_results",
     "retrieval_runs",
     "securities",
+    "security_identity_evidence",
     "security_identity_periods",
     "universe_membership_evidence",
     "universe_memberships",
@@ -63,6 +64,11 @@ def test_metadata_creates_expected_tables_and_indexes() -> None:
         "document_elements": {"document_id", "element_type", "section"},
         "chunks": {"chunk_type", "document_id", "section"},
         "securities": {"company_id", "security_type"},
+        "security_identity_evidence": {
+            "security_identity_period_id",
+            "accession_number",
+            "projection_plan_id",
+        },
         "security_identity_periods": {
             "security_id",
             "symbol",
