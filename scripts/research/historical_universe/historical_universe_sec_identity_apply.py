@@ -279,17 +279,17 @@ def _validate_projection(
         if not evidence_ids:
             raise RuntimeError(f"fully supported row {row_id} has no SEC evidence")
         for evidence_id in evidence_ids:
-            evidence = evidence_by_id.get(evidence_id)
-            if evidence is None:
+            matched_evidence = evidence_by_id.get(evidence_id)
+            if matched_evidence is None:
                 raise RuntimeError(f"row {row_id} references missing SEC evidence {evidence_id}")
-            if evidence.row_id != row_id or evidence.cik != cik:
+            if matched_evidence.row_id != row_id or matched_evidence.cik != cik:
                 raise RuntimeError(
                     f"row {row_id} SEC evidence is bound to a different identity/CIK"
                 )
-            if sec_symbol_match_key(evidence.symbol) != target_key:
+            if sec_symbol_match_key(matched_evidence.symbol) != target_key:
                 raise RuntimeError(f"row {row_id} SEC evidence symbol does not match the target")
-            if evidence.filing_date < effective_from or (
-                effective_to is not None and evidence.filing_date >= effective_to
+            if matched_evidence.filing_date < effective_from or (
+                effective_to is not None and matched_evidence.filing_date >= effective_to
             ):
                 raise RuntimeError(f"row {row_id} SEC evidence falls outside the identity interval")
 
@@ -513,6 +513,7 @@ def main() -> int:
 
     engine = create_db_engine(args.database_url)
     applied_rows: list[dict[str, object]]
+    evidence_count: int
     try:
         with Session(engine) as session:
             applied_count, evidence_count, applied_rows = _stage_candidates(
@@ -549,9 +550,7 @@ def main() -> int:
         "applied": True,
         "plan_id": args.expected_plan_id,
         "applied_identity_updates": len(applied_rows),
-        "persisted_sec_evidence_count": sum(
-            len(item["sec_evidence_ids"]) for item in applied_rows
-        ),
+        "persisted_sec_evidence_count": evidence_count,
         "rows": applied_rows,
         "interpretation": (
             "Applied only identity rows whose freshly replayed projection exactly matched the "
