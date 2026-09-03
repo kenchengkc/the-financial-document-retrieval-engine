@@ -8,6 +8,7 @@ from apps.api.app.models.evals import EvalQuestion, EvalResult
 from apps.api.app.models.financial_facts import FinancialFact
 from apps.api.app.models.historical_universe import (
     Security,
+    SecurityIdentityEvidence,
     SecurityIdentityPeriod,
     UniverseMembership,
     UniverseMembershipEvidence,
@@ -35,6 +36,7 @@ __all__ = [
     "RetrievalResult",
     "RetrievalRun",
     "Security",
+    "SecurityIdentityEvidence",
     "SecurityIdentityPeriod",
     "UniverseMembership",
     "UniverseMembershipEvidence",
