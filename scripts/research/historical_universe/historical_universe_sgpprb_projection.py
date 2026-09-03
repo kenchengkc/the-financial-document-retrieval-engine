@@ -209,7 +209,9 @@ def _stage_rejections(
         else:
             row = session.get(SecurityIdentityPeriod, decision.row_id)
         if row is None:
-            raise RuntimeError(f"adjudication row disappeared: {decision.row_kind}:{decision.row_id}")
+            raise RuntimeError(
+                f"adjudication row disappeared: {decision.row_kind}:{decision.row_id}"
+            )
         if row.verification_status != "provisional":
             raise RuntimeError(
                 f"adjudication row is no longer provisional: {decision.row_kind}:{decision.row_id}"
