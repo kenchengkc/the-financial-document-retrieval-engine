@@ -19,7 +19,7 @@ jobs:
       (github.event_name == 'issue_comment' &&
        github.event.issue.number == 84 &&
        github.actor == 'kenchengkc' &&
-       github.event.comment.body == '/hu5-apply-membership-continuity 7602e5fcd53e4bd48e3de8c1d7d05f5bd964cd89cc689ed0a3d20b4593b171ef')
+       github.event.comment.body == '/hu5-apply-membership-continuity fbd4ca8d2833ef99d36e04cf72bd5fda862f51ad8284652ebcdd2a1dbd3d2277')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -27,7 +27,7 @@ jobs:
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
       PYTHONPATH: .
       CURRENT_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
-      EXPECTED_PLAN_ID: 7602e5fcd53e4bd48e3de8c1d7d05f5bd964cd89cc689ed0a3d20b4593b171ef
+      EXPECTED_PLAN_ID: fbd4ca8d2833ef99d36e04cf72bd5fda862f51ad8284652ebcdd2a1dbd3d2277
       OUTPUT_DIR: data/processed/historical-universe/hu5-membership-continuity
 
     steps:
@@ -90,8 +90,8 @@ jobs:
             --projection "${OUTPUT_DIR}/projection.json" \
             --current-constituents-ref "${CURRENT_REF}" \
             --expected-plan-id "${EXPECTED_PLAN_ID}" \
-            --expected-verify-count 16 \
-            --expected-reject-count 6 \
+            --expected-verify-count 0 \
+            --expected-reject-count 1 \
             --apply \
             --output "${OUTPUT_DIR}/apply.json"
 
