@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
+from datetime import date
 from typing import Literal
 
 from bs4 import BeautifulSoup
@@ -139,6 +140,8 @@ class SecurityTypeAdjudicationTarget:
     security_id: int
     cik: str
     symbol: str
+    effective_from: date
+    effective_to: date | None
     prior_source_hash: str
     verification_status: str
 
@@ -147,6 +150,8 @@ class SecurityTypeAdjudicationTarget:
             raise ValueError("row_id and security_id must be positive")
         if not self.cik.isdigit() or len(self.cik) != 10:
             raise ValueError("cik must be a zero-padded 10-digit string")
+        if self.effective_to is not None and self.effective_to <= self.effective_from:
+            raise ValueError("effective interval must be positive")
         if len(self.prior_source_hash) != 64:
             raise ValueError("prior_source_hash must be SHA-256")
 
@@ -158,6 +163,8 @@ class SecurityTypeAdjudicationDecision:
     security_id: int
     cik: str
     symbol: str
+    effective_from: date
+    effective_to: date | None
     prior_source_hash: str
     status: AdjudicationStatus
     evidence_id: str | None
@@ -170,6 +177,8 @@ class SecurityTypeAdjudicationDecision:
 
     def as_dict(self) -> dict[str, object]:
         payload = asdict(self)
+        payload["effective_from"] = self.effective_from.isoformat()
+        payload["effective_to"] = self.effective_to.isoformat() if self.effective_to else None
         payload["rejection_candidate"] = self.rejection_candidate
         return payload
 
@@ -218,6 +227,8 @@ def plan_security_type_adjudication(
             "security_id": target.security_id,
             "cik": target.cik,
             "symbol": target.symbol,
+            "effective_from": target.effective_from.isoformat(),
+            "effective_to": target.effective_to.isoformat() if target.effective_to else None,
             "prior_source_hash": target.prior_source_hash,
             "status": status,
             "evidence_id": evidence_id,
@@ -229,6 +240,8 @@ def plan_security_type_adjudication(
                 security_id=target.security_id,
                 cik=target.cik,
                 symbol=target.symbol,
+                effective_from=target.effective_from,
+                effective_to=target.effective_to,
                 prior_source_hash=target.prior_source_hash,
                 status=status,
                 evidence_id=evidence_id,
