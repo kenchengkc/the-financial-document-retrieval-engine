@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from fdre.research.historical_universe_membership_continuity import (
     MEMBERSHIP_CONTINUITY_SCHEMA_VERSION,
+    ContinuityAction,
+    ContinuityMethod,
     MembershipContinuityDecision,
     membership_continuity_plan_id,
 )
@@ -38,19 +40,25 @@ def _required_str(value: Any, *, field: str) -> str:
 def _decision_from_payload(raw: Any) -> MembershipContinuityDecision:
     if not isinstance(raw, dict):
         raise RuntimeError("membership continuity decision must be an object")
-    action = _required_str(raw.get("action"), field="action")
-    method = _required_str(raw.get("method"), field="method")
-    if action not in {"verify", "reject", "unresolved"}:
-        raise RuntimeError(f"unsupported continuity action: {action}")
+    action_raw = _required_str(raw.get("action"), field="action")
+    method_raw = _required_str(raw.get("method"), field="method")
+    if action_raw not in {"verify", "reject", "unresolved"}:
+        raise RuntimeError(f"unsupported continuity action: {action_raw}")
     expected_method = {
         "verify": "current_constituent_anchor",
         "reject": "single_verified_sibling_cover",
         "unresolved": "unresolved",
-    }[action]
-    if method != expected_method:
-        raise RuntimeError(f"continuity action {action} has invalid method {method}")
+    }[action_raw]
+    if method_raw != expected_method:
+        raise RuntimeError(
+            f"continuity action {action_raw} has invalid method {method_raw}"
+        )
+    action = cast(ContinuityAction, action_raw)
+    method = cast(ContinuityMethod, method_raw)
     evidence_raw = raw.get("evidence_ids")
-    if not isinstance(evidence_raw, list) or not all(isinstance(item, str) for item in evidence_raw):
+    if not isinstance(evidence_raw, list) or not all(
+        isinstance(item, str) for item in evidence_raw
+    ):
         raise RuntimeError("evidence_ids must be a string list")
     evidence_ids = tuple(evidence_raw)
     if tuple(sorted(set(evidence_ids))) != evidence_ids:
@@ -82,8 +90,8 @@ def _decision_from_payload(raw: Any) -> MembershipContinuityDecision:
         effective_from=effective_from,
         effective_to=effective_to,
         prior_source_hash=prior_source_hash,
-        action=action,  # type: ignore[arg-type]
-        method=method,  # type: ignore[arg-type]
+        action=action,
+        method=method,
         evidence_ids=evidence_ids,
         reason=reason,
         decision_hash="",
