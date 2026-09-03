@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from fdre.research.historical_universe_lineage import TickerMembershipLineage
 from fdre.research.historical_universe_sec_identity import (
     SecIdentityFilingObservation,
     extract_trading_symbols,
@@ -16,7 +17,6 @@ from fdre.research.historical_universe_state_support import (
     ProvisionalStateInterval,
     plan_state_support,
 )
-from fdre.research.historical_universe_lineage import TickerMembershipLineage
 
 
 def _interval(*, row_id: int = 1, symbol: str = "ABC") -> ProvisionalStateInterval:
@@ -33,7 +33,11 @@ def _interval(*, row_id: int = 1, symbol: str = "ABC") -> ProvisionalStateInterv
     )
 
 
-def _lineage(*, symbol: str = "ABC", end: date | None = date(2015, 1, 1)) -> TickerMembershipLineage:
+def _lineage(
+    *,
+    symbol: str = "ABC",
+    end: date | None = date(2015, 1, 1),
+) -> TickerMembershipLineage:
     return TickerMembershipLineage(
         symbol=symbol,
         effective_from=date(2010, 1, 1),
@@ -98,7 +102,7 @@ def test_sec_directory_url_is_strict() -> None:
     ) == (
         "https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/index.json"
     )
-    with pytest.raises(ValueError, match="www.sec.gov"):
+    with pytest.raises(ValueError, match=r"www\.sec\.gov"):
         filing_directory_index_url("https://example.com/report.htm")
 
 
