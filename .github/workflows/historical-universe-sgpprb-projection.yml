@@ -65,7 +65,7 @@ jobs:
             echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
           fi
 
-      - name: Project SEC-backed SGPPRB rejection
+      - name: Discover and project SEC-backed SGPPRB adjudication
         run: |
           mkdir -p "${OUTPUT_DIR}"
           python -m scripts.research.historical_universe.historical_universe_security_type_projection \
@@ -74,7 +74,7 @@ jobs:
             --window-end 2026-09-01 \
             --output "${OUTPUT_DIR}/projection.json"
 
-      - name: Validate projection invariants
+      - name: Validate discovery invariants
         run: |
           python - <<'PY'
           import json
@@ -82,32 +82,45 @@ jobs:
 
           path = Path("data/processed/historical-universe/sgpprb-adjudication/projection.json")
           payload = json.loads(path.read_text())
+          discovery = payload["discovery"]
+          membership = discovery["membership"]
+          evidence = payload["sec_evidence"]
+
           assert payload["mode"] == "projection"
           assert payload["applied"] is False
-          assert payload["target_cik"] == "0000310158"
+          assert payload["known_blocker_membership_id"] == 580
+          assert payload["target_sec_cik"] == "0000310158"
           assert payload["target_symbol"] == "SGPPRB"
-          assert payload["target_count"] == 2
-          assert payload["rejection_candidate_count"] == 2
-          assert payload["status_counts"] == {"reject_non_common_security": 2}
+          assert membership["row_id"] == 580
+          assert membership["universe_code"] == "sp500"
+          assert len(membership["source_hash"]) == 64
+          assert evidence["cik"] == "0000310158"
+          assert evidence["listed_symbol"] == "SGPPRB"
+          assert evidence["security_type"] == "preferred_stock"
+          assert evidence["common_symbol"] == "SGP"
+          assert len(evidence["evidence_id"]) == 64
+          assert len(evidence["payload_sha256"]) == 64
           assert len(payload["plan_id"]) == 64
-          assert len(payload["sec_evidence"]["evidence_id"]) == 64
-          kinds = sorted(item["row_kind"] for item in payload["decisions"])
-          assert kinds == ["identity", "membership"]
-          assert all(item["verification_status"] == "provisional" for item in payload["decisions"])
-          assert all(len(item["prior_source_hash"]) == 64 for item in payload["decisions"])
+          assert payload["staged_rejection_count"] == payload["rejection_candidate_count"]
+          assert 0 <= payload["rejection_candidate_count"] <= 2
+          assert discovery["overlapping_sgpprb_identity_count"] == len(
+              discovery["overlapping_sgpprb_identities"]
+          )
+          for identity in discovery["identity_periods"]:
+              assert len(identity["source_hash"]) == 64
           print(json.dumps({
               "plan_id": payload["plan_id"],
-              "rows": [
-                  {
-                      "row_kind": item["row_kind"],
-                      "row_id": item["row_id"],
-                      "security_id": item["security_id"],
-                      "effective_from": item["effective_from"],
-                      "effective_to": item["effective_to"],
-                      "prior_source_hash": item["prior_source_hash"],
-                  }
-                  for item in payload["decisions"]
-              ],
+              "sec_evidence_id": evidence["evidence_id"],
+              "sec_payload_sha256": evidence["payload_sha256"],
+              "membership": membership,
+              "security": discovery["security"],
+              "company": discovery["company"],
+              "bridge_status": discovery["bridge_status"],
+              "issuer_matches_sec_evidence": discovery["issuer_matches_sec_evidence"],
+              "overlapping_sgpprb_identities": discovery["overlapping_sgpprb_identities"],
+              "all_identity_periods": discovery["identity_periods"],
+              "decisions": payload["decisions"],
+              "rejection_candidate_count": payload["rejection_candidate_count"],
               "strict_before": payload["strict_coverage_before"],
               "strict_projected": payload["strict_coverage_projected"],
           }, indent=2, sort_keys=True))
@@ -123,17 +136,34 @@ jobs:
           payload = json.loads(
               Path("data/processed/historical-universe/sgpprb-adjudication/projection.json").read_text()
           )
+          discovery = payload["discovery"]
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
-              handle.write("### SGPPRB security-type adjudication\n\n")
+              handle.write("### SGPPRB security-type discovery/adjudication\n\n")
               handle.write(f"- Plan ID: `{payload['plan_id']}`\n")
               handle.write(f"- SEC evidence ID: `{payload['sec_evidence']['evidence_id']}`\n")
               handle.write(f"- SEC payload SHA-256: `{payload['sec_evidence']['payload_sha256']}`\n")
+              handle.write(
+                  f"- Live company CIK: `{discovery['company']['cik']}`; SEC evidence CIK: "
+                  f"`{payload['sec_evidence']['cik']}`\n"
+              )
+              handle.write(f"- Bridge status: **{discovery['bridge_status']}**\n")
+              handle.write(
+                  f"- Overlapping SGPPRB identities: "
+                  f"**{discovery['overlapping_sgpprb_identity_count']}**\n"
+              )
               handle.write(f"- Rejection candidates: **{payload['rejection_candidate_count']}**\n")
-              for item in payload["decisions"]:
+              membership = discovery["membership"]
+              handle.write(
+                  f"- Membership row **{membership['row_id']}** / security "
+                  f"**{membership['security_id']}**: `{membership['effective_from']}` → "
+                  f"`{membership['effective_to']}` / `{membership['verification_status']}` / "
+                  f"source `{membership['source_hash']}`\n"
+              )
+              for identity in discovery["overlapping_sgpprb_identities"]:
                   handle.write(
-                      f"- {item['row_kind']} row **{item['row_id']}** / security "
-                      f"**{item['security_id']}**: `{item['effective_from']}` → "
-                      f"`{item['effective_to']}` / source `{item['prior_source_hash']}`\n"
+                      f"- SGPPRB identity row **{identity['row_id']}**: "
+                      f"`{identity['effective_from']}` → `{identity['effective_to']}` / "
+                      f"`{identity['verification_status']}` / source `{identity['source_hash']}`\n"
                   )
               before = payload["strict_coverage_before"]
               after = payload["strict_coverage_projected"]
