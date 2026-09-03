@@ -7,6 +7,10 @@ while its parent security row 798 is typed `common_stock`. Immutable SEC evidenc
 establishes that `SGP PrB` was mandatory convertible preferred stock and that `SGP` was the issuer's
 common-share ticker.
 
+The SEC filing identity projection and guarded apply layers from PRs #81 and #82 are now merged into
+`main`. This follow-up therefore sits on top of the production-ready identity evidence stack rather
+than being blocked on that prerequisite work.
+
 This is a separate security-master consistency problem, not permission to override a verified row
 inside the membership cleanup. A future adjudication should first determine why row 1082 was marked
 verified, whether security 798 represents the correct economic instrument, and whether correcting
