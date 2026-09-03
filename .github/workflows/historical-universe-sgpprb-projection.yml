@@ -1,0 +1,147 @@
+name: Historical Universe SGPPRB projection
+
+on:
+  push:
+    branches:
+      - research/hu-sgpprb-adjudication
+    paths:
+      - ".github/workflows/historical-universe-sgpprb-projection.yml"
+      - "scripts/research/historical_universe/historical_universe_security_type_projection.py"
+      - "src/fdre/research/historical_universe_security_type.py"
+      - "src/fdre/research/hu5_universe.py"
+      - "apps/api/app/models/historical_universe.py"
+      - "tests/unit/fdre/test_historical_universe_security_type.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-historical-universe-sgpprb-projection-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  project:
+    name: Read-only production SGPPRB projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/historical-universe/sgpprb-adjudication
+
+    steps:
+      - name: Check required database secret
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "."
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Project SEC-backed SGPPRB rejection
+        run: |
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.research.historical_universe.historical_universe_security_type_projection \
+            --database-url "${DATABASE_URL}" \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/projection.json"
+
+      - name: Validate projection invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("data/processed/historical-universe/sgpprb-adjudication/projection.json")
+          payload = json.loads(path.read_text())
+          assert payload["mode"] == "projection"
+          assert payload["applied"] is False
+          assert payload["target_cik"] == "0000310158"
+          assert payload["target_symbol"] == "SGPPRB"
+          assert payload["target_count"] == 2
+          assert payload["rejection_candidate_count"] == 2
+          assert payload["status_counts"] == {"reject_non_common_security": 2}
+          assert len(payload["plan_id"]) == 64
+          assert len(payload["sec_evidence"]["evidence_id"]) == 64
+          kinds = sorted(item["row_kind"] for item in payload["decisions"])
+          assert kinds == ["identity", "membership"]
+          assert all(item["verification_status"] == "provisional" for item in payload["decisions"])
+          assert all(len(item["prior_source_hash"]) == 64 for item in payload["decisions"])
+          print(json.dumps({
+              "plan_id": payload["plan_id"],
+              "rows": [
+                  {
+                      "row_kind": item["row_kind"],
+                      "row_id": item["row_id"],
+                      "security_id": item["security_id"],
+                      "effective_from": item["effective_from"],
+                      "effective_to": item["effective_to"],
+                      "prior_source_hash": item["prior_source_hash"],
+                  }
+                  for item in payload["decisions"]
+              ],
+              "strict_before": payload["strict_coverage_before"],
+              "strict_projected": payload["strict_coverage_projected"],
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Summarize projection
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(
+              Path("data/processed/historical-universe/sgpprb-adjudication/projection.json").read_text()
+          )
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write("### SGPPRB security-type adjudication\n\n")
+              handle.write(f"- Plan ID: `{payload['plan_id']}`\n")
+              handle.write(f"- SEC evidence ID: `{payload['sec_evidence']['evidence_id']}`\n")
+              handle.write(f"- SEC payload SHA-256: `{payload['sec_evidence']['payload_sha256']}`\n")
+              handle.write(f"- Rejection candidates: **{payload['rejection_candidate_count']}**\n")
+              for item in payload["decisions"]:
+                  handle.write(
+                      f"- {item['row_kind']} row **{item['row_id']}** / security "
+                      f"**{item['security_id']}**: `{item['effective_from']}` → "
+                      f"`{item['effective_to']}` / source `{item['prior_source_hash']}`\n"
+                  )
+              before = payload["strict_coverage_before"]
+              after = payload["strict_coverage_projected"]
+              handle.write(
+                  f"- Strict eligible days: **{before['strict_eligible_day_count']} → "
+                  f"{after['strict_eligible_day_count']}** of {before['day_count']}\n"
+              )
+          PY
+
+      - name: Upload projection artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-universe-sgpprb-projection-${{ github.run_id }}
+          path: data/processed/historical-universe/sgpprb-adjudication
+          if-no-files-found: error
+          retention-days: 30
