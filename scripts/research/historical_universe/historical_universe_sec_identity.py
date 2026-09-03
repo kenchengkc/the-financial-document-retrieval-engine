@@ -1,6 +1,6 @@
 """Project HU issuer→symbol closure from immutable SEC filing-level XBRL evidence.
 
-The command is read-only.  It combines the existing pinned ticker-state containment decision with
+The command is read-only. It combines the existing pinned ticker-state containment decision with
 an explicit ``dei:TradingSymbol`` fact fetched from a filing belonging to the exact SEC issuer CIK.
 No membership or identity row is mutated.
 """
@@ -207,7 +207,7 @@ def _candidate_documents(
     limit: int,
 ) -> tuple[CandidateDocument, ...]:
     interval = target.interval
-    upper = interval.effective_to or (window_end.replace() + date.resolution)
+    upper = interval.effective_to or (window_end + date.resolution)
     eligible = [
         document
         for document in documents.get(target.company_id, ())
@@ -336,8 +336,7 @@ def main() -> int:
                 if fetched is None:
                     fetched = _fetch_filing(client, document)
                     fetch_cache[document.document_id] = fetched
-                evidence_ids: list[str] = []
-                symbols: set[str] = set()
+                fact_pairs: list[tuple[str, str]] = []
                 for symbol, concept, context_ref, source_url, payload_sha256 in fetched.symbols:
                     item = SecTradingSymbolEvidence(
                         row_id=target.interval.row_id,
@@ -352,16 +351,14 @@ def main() -> int:
                         context_ref=context_ref,
                     )
                     evidence.append(item)
-                    evidence_ids.append(item.evidence_id)
-                    symbols.add(symbol)
+                    fact_pairs.append((symbol, item.evidence_id))
                 observations.append(
                     SecIdentityFilingObservation(
                         row_id=target.interval.row_id,
                         accession_number=document.accession_number,
                         filing_date=document.filing_date,
                         form_type=document.form_type,
-                        symbols=tuple(sorted(symbols)),
-                        evidence_ids=tuple(sorted(set(evidence_ids))),
+                        facts=tuple(sorted(set(fact_pairs))),
                         inspected_urls=fetched.inspected_urls,
                         error=fetched.error,
                     )
