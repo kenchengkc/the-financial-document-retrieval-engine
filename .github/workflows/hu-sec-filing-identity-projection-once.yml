@@ -3,7 +3,7 @@ name: One-shot HU SEC filing identity projection
 on:
   push:
     branches:
-      - ops/manual-hu-sec-filing-identity-projection-only
+      - research/hu-sec-filing-identity-projection
 
 permissions:
   contents: read
