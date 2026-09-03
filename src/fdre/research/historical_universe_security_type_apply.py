@@ -6,10 +6,12 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 from fdre.research.historical_universe_security_type import (
     SEC_SECURITY_TYPE_DECISION_SCHEMA_VERSION,
     SecSecurityTypeEvidence,
+    SecurityType,
     security_symbol_key,
 )
 
@@ -104,9 +106,10 @@ def _evidence_from_dict(payload: dict[str, object]) -> SecSecurityTypeEvidence:
         listed_symbol=_as_str(
             payload.get("listed_symbol"), field="sec_evidence.listed_symbol"
         ),
-        security_type=_as_str(
-            payload.get("security_type"), field="sec_evidence.security_type"
-        ),  # type: ignore[arg-type]
+        security_type=cast(
+            SecurityType,
+            _as_str(payload.get("security_type"), field="sec_evidence.security_type"),
+        ),
         common_symbol=_as_str(
             payload.get("common_symbol"), field="sec_evidence.common_symbol"
         ),
@@ -226,7 +229,9 @@ def validate_sgpprb_projection(
         None,
     )
     if membership is None or identity is None:
-        raise RuntimeError("SGPPRB projection no longer contains the frozen membership/identity pair")
+        raise RuntimeError(
+            "SGPPRB projection no longer contains the frozen membership/identity pair"
+        )
     if _as_int(membership.get("security_id"), field="membership.security_id") != SGPPRB_SECURITY_ID:
         raise RuntimeError("SGPPRB membership security changed")
     if _as_str(membership.get("cik"), field="membership.cik") != SGPPRB_CIK:
