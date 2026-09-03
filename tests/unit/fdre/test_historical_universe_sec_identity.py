@@ -56,13 +56,15 @@ def _observation(
     symbols: tuple[str, ...] = ("ABC",),
     accession: str = "0000000001-13-000001",
 ) -> SecIdentityFilingObservation:
+    facts = tuple(
+        sorted((symbol, f"{index + 1:064x}") for index, symbol in enumerate(symbols))
+    )
     return SecIdentityFilingObservation(
         row_id=row_id,
         accession_number=accession,
         filing_date=date(2013, 2, 1),
         form_type="10-K",
-        symbols=tuple(sorted(symbols)),
-        evidence_ids=("c" * 64,) if symbols else (),
+        facts=facts,
         inspected_urls=(
             "https://www.sec.gov/Archives/edgar/data/1/000000000113000001/report.htm",
         ),
@@ -144,33 +146,31 @@ def test_exact_sec_symbol_plus_full_state_is_promotion_candidate() -> None:
 
     assert decision.status == "fully_supported"
     assert decision.promotion_candidate is True
-    assert decision.sec_evidence_ids == ("c" * 64,)
+    assert decision.sec_evidence_ids == (f"{1:064x}",)
 
 
 def test_share_class_sec_symbol_equivalence_is_supported() -> None:
     interval = _interval(symbol="BF-B")
     states = plan_state_support((interval,), (_lineage(symbol="BF-B"),))
-    decision = plan_sec_identity_support(
-        (interval,),
-        states,
-        (_observation(symbols=("BFA", "BFB", "BF26")),),
-    )[0]
+    observation = _observation(symbols=("BFA", "BFB", "BF26"))
+    decision = plan_sec_identity_support((interval,), states, (observation,))[0]
 
     assert decision.status == "fully_supported"
     assert decision.promotion_candidate is True
+    matching_id = dict(observation.facts)["BFB"]
+    assert decision.sec_evidence_ids == (matching_id,)
 
 
 def test_matching_common_stock_fact_ignores_unrelated_registered_security_symbols() -> None:
     interval = _interval(symbol="BAX")
     states = plan_state_support((interval,), (_lineage(symbol="BAX"),))
-    decision = plan_sec_identity_support(
-        (interval,),
-        states,
-        (_observation(symbols=("BAX", "BAX 29")),),
-    )[0]
+    observation = _observation(symbols=("BAX", "BAX 29"))
+    decision = plan_sec_identity_support((interval,), states, (observation,))[0]
 
     assert decision.status == "fully_supported"
     assert decision.promotion_candidate is True
+    matching_id = dict(observation.facts)["BAX"]
+    assert decision.sec_evidence_ids == (matching_id,)
 
 
 def test_conflicting_sec_symbol_fails_closed() -> None:
