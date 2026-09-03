@@ -64,8 +64,8 @@ def build_report(
         )
         .order_by(UniverseMembership.id)
     ).all()
-    blocker_ids = {int(row.id) for row in blocker_rows}
-    company_ids = sorted({int(row.company_id) for row in blocker_rows})
+    blocker_ids = {int(blocker_row.id) for blocker_row in blocker_rows}
+    company_ids = sorted({int(blocker_row.company_id) for blocker_row in blocker_rows})
 
     securities = (
         session.execute(
@@ -84,7 +84,7 @@ def build_report(
         if company_ids
         else []
     )
-    security_ids = sorted({int(row.id) for row in securities})
+    security_ids = sorted({int(security_row.id) for security_row in securities})
 
     identities = (
         session.execute(
@@ -147,57 +147,67 @@ def build_report(
     )
 
     identities_by_security: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in identities:
-        identities_by_security[int(row.security_id)].append(
+    for identity_row in identities:
+        identities_by_security[int(identity_row.security_id)].append(
             {
-                "identity_id": int(row.id),
-                "symbol": str(row.symbol),
-                "name": str(row.name) if row.name is not None else None,
-                "effective_from": row.effective_from.isoformat(),
-                "effective_to": row.effective_to.isoformat() if row.effective_to else None,
-                "verification_status": str(row.verification_status),
-                "confidence": float(row.confidence),
-                "source": str(row.source),
-                "source_hash": str(row.source_hash),
+                "identity_id": int(identity_row.id),
+                "symbol": str(identity_row.symbol),
+                "name": str(identity_row.name) if identity_row.name is not None else None,
+                "effective_from": identity_row.effective_from.isoformat(),
+                "effective_to": (
+                    identity_row.effective_to.isoformat() if identity_row.effective_to else None
+                ),
+                "verification_status": str(identity_row.verification_status),
+                "confidence": float(identity_row.confidence),
+                "source": str(identity_row.source),
+                "source_hash": str(identity_row.source_hash),
             }
         )
 
     memberships_by_security: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in memberships:
-        memberships_by_security[int(row.security_id)].append(
+    for membership_row in memberships:
+        memberships_by_security[int(membership_row.security_id)].append(
             {
-                "membership_id": int(row.id),
-                "blocking_provisional": int(row.id) in blocker_ids,
-                "effective_from": row.effective_from.isoformat(),
-                "effective_to": row.effective_to.isoformat() if row.effective_to else None,
-                "verification_status": str(row.verification_status),
-                "confidence": float(row.confidence),
-                "source": str(row.source),
-                "source_url": str(row.source_url) if row.source_url is not None else None,
-                "source_hash": str(row.source_hash),
+                "membership_id": int(membership_row.id),
+                "blocking_provisional": int(membership_row.id) in blocker_ids,
+                "effective_from": membership_row.effective_from.isoformat(),
+                "effective_to": (
+                    membership_row.effective_to.isoformat() if membership_row.effective_to else None
+                ),
+                "verification_status": str(membership_row.verification_status),
+                "confidence": float(membership_row.confidence),
+                "source": str(membership_row.source),
+                "source_url": (
+                    str(membership_row.source_url)
+                    if membership_row.source_url is not None
+                    else None
+                ),
+                "source_hash": str(membership_row.source_hash),
             }
         )
 
     grouped: dict[str, dict[str, object]] = {}
-    for row in securities:
-        cik = str(row.cik)
+    for security_row in securities:
+        cik = str(security_row.cik)
         group = grouped.setdefault(
             cik,
             {
                 "cik": cik,
-                "company_id": int(row.company_id),
-                "company_name": str(row.name),
+                "company_id": int(security_row.company_id),
+                "company_name": str(security_row.name),
                 "blocking_membership_ids": sorted(
                     int(blocker.id) for blocker in blocker_rows if str(blocker.cik) == cik
                 ),
                 "securities": [],
             },
         )
-        security_id = int(row.id)
+        security_id = int(security_row.id)
         security_payload = {
             "security_id": security_id,
-            "security_type": str(row.security_type),
-            "share_class": str(row.share_class) if row.share_class is not None else None,
+            "security_type": str(security_row.security_type),
+            "share_class": (
+                str(security_row.share_class) if security_row.share_class is not None else None
+            ),
             "identities": identities_by_security.get(security_id, []),
             "memberships": memberships_by_security.get(security_id, []),
         }
