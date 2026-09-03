@@ -3,14 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-
-from apps.api.app.models import Company
-from apps.api.app.models.historical_universe import (
-    Security,
-    SecurityIdentityEvidence,
-    SecurityIdentityPeriod,
-)
-from fdre.research.historical_universe_sec_identity import SecTradingSymbolEvidence
 from scripts.research.historical_universe.historical_universe_sec_identity_apply import (
     PROJECTION_SCHEMA_VERSION,
     _decision_hash,
@@ -20,6 +12,14 @@ from scripts.research.historical_universe.historical_universe_sec_identity_apply
     _validate_projection,
     corroborated_identity_source_hash,
 )
+
+from apps.api.app.models import Company
+from apps.api.app.models.historical_universe import (
+    Security,
+    SecurityIdentityEvidence,
+    SecurityIdentityPeriod,
+)
+from fdre.research.historical_universe_sec_identity import SecTradingSymbolEvidence
 
 
 def _evidence() -> SecTradingSymbolEvidence:
