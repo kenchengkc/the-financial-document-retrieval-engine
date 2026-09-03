@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 import pytest
 
 from fdre.research.historical_universe_security_type import (
+    SecSecurityTypeEvidence,
     SecurityTypeAdjudicationTarget,
     extract_schering_plough_preferred_evidence,
     plan_security_type_adjudication,
@@ -22,7 +24,7 @@ SEC_URL = (
 )
 
 
-def _evidence():
+def _evidence() -> SecSecurityTypeEvidence:
     return extract_schering_plough_preferred_evidence(
         b"""
         <html><body>
@@ -115,7 +117,7 @@ def test_rejects_plan_drift() -> None:
 
 def test_rejects_tampered_sec_evidence() -> None:
     payload, plan_id = _payload()
-    evidence = dict(payload["sec_evidence"])  # type: ignore[arg-type]
+    evidence = dict(cast(dict[str, object], payload["sec_evidence"]))
     evidence["payload_sha256"] = "0" * 64
     payload["sec_evidence"] = evidence
 
@@ -125,7 +127,8 @@ def test_rejects_tampered_sec_evidence() -> None:
 
 def test_rejects_attempt_to_reject_verified_identity() -> None:
     payload, plan_id = _payload()
-    decisions = [dict(item) for item in payload["decisions"]]  # type: ignore[union-attr]
+    raw_decisions = cast(list[dict[str, object]], payload["decisions"])
+    decisions = [dict(item) for item in raw_decisions]
     identity = next(item for item in decisions if item["row_kind"] == "identity")
     identity["status"] = "reject_non_common_security"
     identity["rejection_candidate"] = True
@@ -137,7 +140,7 @@ def test_rejects_attempt_to_reject_verified_identity() -> None:
 
 def test_rejects_missing_unique_verified_bridge() -> None:
     payload, plan_id = _payload()
-    discovery = dict(payload["discovery"])  # type: ignore[arg-type]
+    discovery = dict(cast(dict[str, object], payload["discovery"]))
     discovery["bridge_status"] = "ambiguous_overlapping_sgpprb_identities"
     payload["discovery"] = discovery
 
