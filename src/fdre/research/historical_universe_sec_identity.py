@@ -230,22 +230,29 @@ class SecIdentityFilingObservation:
     accession_number: str
     filing_date: date
     form_type: str
-    symbols: tuple[str, ...]
-    evidence_ids: tuple[str, ...]
+    facts: tuple[tuple[str, str], ...]
     inspected_urls: tuple[str, ...]
     error: str | None = None
 
     def __post_init__(self) -> None:
         if self.row_id <= 0:
             raise ValueError("row_id must be positive")
-        if tuple(sorted(set(self.symbols))) != self.symbols:
-            raise ValueError("symbols must be sorted and unique")
-        if tuple(sorted(set(self.evidence_ids))) != self.evidence_ids:
-            raise ValueError("evidence_ids must be sorted and unique")
+        if tuple(sorted(set(self.facts))) != self.facts:
+            raise ValueError("facts must be sorted and unique")
+
+    @property
+    def symbols(self) -> tuple[str, ...]:
+        return tuple(sorted({symbol for symbol, _ in self.facts}))
+
+    @property
+    def evidence_ids(self) -> tuple[str, ...]:
+        return tuple(sorted({evidence_id for _, evidence_id in self.facts}))
 
     def as_dict(self) -> dict[str, object]:
         payload = asdict(self)
         payload["filing_date"] = self.filing_date.isoformat()
+        payload["symbols"] = list(self.symbols)
+        payload["evidence_ids"] = list(self.evidence_ids)
         return payload
 
 
@@ -327,7 +334,8 @@ def plan_sec_identity_support(
                 {
                     evidence_id
                     for item in matching_observations
-                    for evidence_id in item.evidence_ids
+                    for symbol, evidence_id in item.facts
+                    if sec_symbol_match_key(symbol) == target_key
                 }
             )
         )
