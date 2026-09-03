@@ -166,7 +166,7 @@ def test_required_sibling_must_remain_verified() -> None:
 def test_required_sibling_source_hash_is_bound() -> None:
     siblings = list(_siblings())
     siblings[0] = replace(siblings[0], source_hash="0" * 64)
-    with pytest.raises(RuntimeError, match="required sibling membership .* changed"):
+    with pytest.raises(RuntimeError, match=r"required sibling membership .* changed"):
         plan_membership_adjudication(
             _blockers(),
             cases=HU5_MEMBERSHIP_ADJUDICATION_CASES,
