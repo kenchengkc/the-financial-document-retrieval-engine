@@ -149,7 +149,8 @@ def _evidence_from_dict(payload: dict[str, object]) -> SecTradingSymbolEvidence:
     claimed = _as_str(payload.get("evidence_id"), field="evidence.evidence_id")
     if evidence.evidence_id != claimed:
         raise RuntimeError(
-            f"SEC identity evidence hash mismatch: expected {claimed}, computed {evidence.evidence_id}"
+            "SEC identity evidence hash mismatch: "
+            f"expected {claimed}, computed {evidence.evidence_id}"
         )
     return evidence
 
@@ -215,10 +216,13 @@ def _validate_projection(
     computed_plan_id = _projection_plan_id(decision_tuple)
     if computed_plan_id != claimed_plan_id:
         raise RuntimeError(
-            f"SEC identity plan hash mismatch: expected {claimed_plan_id}, computed {computed_plan_id}"
+            "SEC identity plan hash mismatch: "
+            f"expected {claimed_plan_id}, computed {computed_plan_id}"
         )
 
-    status_counts = Counter(_as_str(item.get("status"), field="decision.status") for item in decisions)
+    status_counts = Counter(
+        _as_str(item.get("status"), field="decision.status") for item in decisions
+    )
     raw_status_counts = payload.get("status_counts")
     if not isinstance(raw_status_counts, dict):
         raise RuntimeError("projection status_counts must be an object")
@@ -279,7 +283,9 @@ def _validate_projection(
             if evidence is None:
                 raise RuntimeError(f"row {row_id} references missing SEC evidence {evidence_id}")
             if evidence.row_id != row_id or evidence.cik != cik:
-                raise RuntimeError(f"row {row_id} SEC evidence is bound to a different identity/CIK")
+                raise RuntimeError(
+                    f"row {row_id} SEC evidence is bound to a different identity/CIK"
+                )
             if sec_symbol_match_key(evidence.symbol) != target_key:
                 raise RuntimeError(f"row {row_id} SEC evidence symbol does not match the target")
             if evidence.filing_date < effective_from or (
@@ -394,12 +400,16 @@ def _stage_candidates(
         )
         if existing:
             raise RuntimeError(
-                "SEC identity evidence already exists for this apply: " + ", ".join(sorted(existing))
+                "SEC identity evidence already exists for this apply: "
+                + ", ".join(sorted(existing))
             )
 
     applied_rows: list[dict[str, object]] = []
     evidence_count = 0
-    for decision in sorted(candidates, key=lambda item: _as_int(item.get("row_id"), field="row_id")):
+    for decision in sorted(
+        candidates,
+        key=lambda item: _as_int(item.get("row_id"), field="row_id"),
+    ):
         row = _assert_live_row(session, decision)
         row_id = row.id
         decision_hash = _as_str(decision.get("decision_hash"), field="decision.decision_hash")
@@ -513,7 +523,8 @@ def main() -> int:
             )
             if applied_count != args.expected_promotion_count:
                 raise RuntimeError(
-                    f"staged {applied_count} identity rows; expected {args.expected_promotion_count}"
+                    f"staged {applied_count} identity rows; "
+                    f"expected {args.expected_promotion_count}"
                 )
             expected_evidence_count = sum(
                 len(
@@ -525,7 +536,8 @@ def main() -> int:
             )
             if evidence_count != expected_evidence_count:
                 raise RuntimeError(
-                    f"staged {evidence_count} SEC evidence rows; expected {expected_evidence_count}"
+                    f"staged {evidence_count} SEC evidence rows; "
+                    f"expected {expected_evidence_count}"
                 )
             session.commit()
     finally:
@@ -549,7 +561,10 @@ def main() -> int:
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(
         json.dumps(
             {
