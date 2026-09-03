@@ -1,0 +1,87 @@
+name: One-shot HU-5 identity strict coverage audit
+
+on:
+  push:
+    branches:
+      - research/hu5-identity-strict-gate
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/historical-universe/identity-strict-coverage
+
+    steps:
+      - name: Check required database secret
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+
+      - name: Select database URL
+        run: |
+          set -euo pipefail
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Audit identity-aware strict coverage
+        run: |
+          set -euo pipefail
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.research.historical_universe.historical_universe_identity_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/audit.json"
+
+      - name: Require membership checkpoint remains closed
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads((Path(os.environ["OUTPUT_DIR"]) / "audit.json").read_text())
+          if report["day_count"] != 6088:
+              raise SystemExit(f"unexpected day count: {report['day_count']}")
+          if report["provisional_membership_count"] != 0:
+              raise SystemExit(
+                  "membership checkpoint regressed: "
+                  f"{report['provisional_membership_count']} provisional memberships"
+              )
+          PY
+
+      - name: Upload identity-aware audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-identity-strict-coverage-${{ github.run_id }}
+          path: data/processed/historical-universe/identity-strict-coverage/audit.json
+          if-no-files-found: error
+          retention-days: 30
