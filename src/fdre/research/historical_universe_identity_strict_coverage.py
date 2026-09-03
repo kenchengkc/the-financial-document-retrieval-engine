@@ -2,8 +2,7 @@
 
 A calendar segment is strict-eligible only when every active non-rejected membership is verified
 and each verified membership's stable security has exactly one active non-rejected identity whose
-status is verified. This intentionally treats a provisional competing identity as ambiguity rather
-than silently preferring a verified row.
+status is verified. A provisional competing identity is ambiguity, not a fallback candidate.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import pairwise
 from typing import Literal
@@ -104,6 +103,14 @@ class IdentityCoverageSegment:
     day_count: int
     blocker_membership_ids: tuple[int, ...]
 
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "effective_from": self.effective_from.isoformat(),
+            "effective_to": self.effective_to.isoformat(),
+            "day_count": self.day_count,
+            "blocker_membership_ids": list(self.blocker_membership_ids),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class IdentityStrictCoverageAudit:
@@ -136,15 +143,7 @@ class IdentityStrictCoverageAudit:
             "relevant_provisional_identity_count": len(self.relevant_provisional_identity_ids),
             "relevant_provisional_identity_ids": list(self.relevant_provisional_identity_ids),
             "issues": [item.as_dict() for item in self.issues],
-            "segments": [
-                {
-                    "effective_from": item.effective_from.isoformat(),
-                    "effective_to": item.effective_to.isoformat(),
-                    "day_count": item.day_count,
-                    "blocker_membership_ids": list(item.blocker_membership_ids),
-                }
-                for item in self.segments
-            ],
+            "segments": [item.as_dict() for item in self.segments],
             "blocked_days_by_reason": [
                 {"reason": reason, "day_count": count}
                 for reason, count in self.blocked_days_by_reason
@@ -152,8 +151,8 @@ class IdentityStrictCoverageAudit:
         }
 
 
-def _end(value: date | None, *, window_end_exclusive: date) -> date:
-    return value if value is not None else window_end_exclusive
+def _bounded_end(value: date | None, *, fallback: date) -> date:
+    return value if value is not None else fallback
 
 
 def _active_identity(identity: IdentityCoverageIdentity, when: date) -> bool:
@@ -185,15 +184,16 @@ def _membership_issues(
 ) -> tuple[IdentityCoverageIssue, ...]:
     start = max(membership.effective_from, window_start)
     end = min(
-        _end(membership.effective_to, window_end_exclusive=window_end_exclusive),
+        _bounded_end(membership.effective_to, fallback=window_end_exclusive),
         window_end_exclusive,
     )
     if end <= start:
         return ()
+
     boundaries = {start, end}
     for identity in membership.identities:
         identity_start = max(identity.effective_from, start)
-        identity_end = min(_end(identity.effective_to, window_end_exclusive=end), end)
+        identity_end = min(_bounded_end(identity.effective_to, fallback=end), end)
         if identity_end > identity_start:
             boundaries.update((identity_start, identity_end))
 
@@ -202,11 +202,11 @@ def _membership_issues(
         active = tuple(
             sorted(
                 (
-                    item
-                    for item in membership.identities
-                    if _active_identity(item, segment_start)
+                    identity
+                    for identity in membership.identities
+                    if _active_identity(identity, segment_start)
                 ),
-                key=lambda item: item.identity_id,
+                key=lambda identity: identity.identity_id,
             )
         )
         reason = _issue_reason(membership, active)
@@ -219,11 +219,31 @@ def _membership_issues(
                 effective_from=segment_start,
                 effective_to=segment_end,
                 reason=reason,
-                active_identity_ids=tuple(item.identity_id for item in active),
-                active_symbols=tuple(item.symbol for item in active),
+                active_identity_ids=tuple(identity.identity_id for identity in active),
+                active_symbols=tuple(identity.symbol for identity in active),
             )
         )
     return tuple(issues)
+
+
+def _overlaps_membership(
+    identity: IdentityCoverageIdentity,
+    membership: IdentityCoverageMembership,
+    *,
+    window_start: date,
+    window_end_exclusive: date,
+) -> bool:
+    membership_start = max(membership.effective_from, window_start)
+    membership_end = min(
+        _bounded_end(membership.effective_to, fallback=window_end_exclusive),
+        window_end_exclusive,
+    )
+    identity_start = max(identity.effective_from, window_start)
+    identity_end = min(
+        _bounded_end(identity.effective_to, fallback=window_end_exclusive),
+        window_end_exclusive,
+    )
+    return max(membership_start, identity_start) < min(membership_end, identity_end)
 
 
 def build_identity_strict_coverage_audit(
@@ -256,11 +276,11 @@ def build_identity_strict_coverage_audit(
                     window_end_exclusive=window_end_exclusive,
                 )
             ),
-            key=lambda item: (
-                item.effective_from,
-                item.effective_to,
-                item.membership_id,
-                item.reason,
+            key=lambda issue: (
+                issue.effective_from,
+                issue.effective_to,
+                issue.membership_id,
+                issue.reason,
             ),
         )
     )
@@ -270,18 +290,18 @@ def build_identity_strict_coverage_audit(
         boundaries.update((issue.effective_from, issue.effective_to))
     segments: list[IdentityCoverageSegment] = []
     reason_days: Counter[str] = Counter()
-    for start, end in pairwise(sorted(boundaries)):
+    for segment_start, segment_end in pairwise(sorted(boundaries)):
         active_issues = tuple(
             issue
             for issue in issues
-            if issue.effective_from <= start < issue.effective_to
+            if issue.effective_from <= segment_start < issue.effective_to
         )
         blocker_ids = tuple(sorted({issue.membership_id for issue in active_issues}))
-        segment_day_count = (end - start).days
+        segment_day_count = (segment_end - segment_start).days
         segments.append(
             IdentityCoverageSegment(
-                effective_from=start,
-                effective_to=end,
+                effective_from=segment_start,
+                effective_to=segment_end,
                 day_count=segment_day_count,
                 blocker_membership_ids=blocker_ids,
             )
@@ -289,7 +309,7 @@ def build_identity_strict_coverage_audit(
         for reason in {issue.reason for issue in active_issues}:
             reason_days[reason] += segment_day_count
 
-    blocked_days = sum(item.day_count for item in segments if item.blocker_membership_ids)
+    blocked_days = sum(segment.day_count for segment in segments if segment.blocker_membership_ids)
     day_count = (window_end - window_start).days + 1
     relevant_provisional = tuple(
         sorted(
@@ -298,31 +318,27 @@ def build_identity_strict_coverage_audit(
                 for membership in ordered_memberships
                 for identity in membership.identities
                 if identity.verification_status == "provisional"
-                and identity.effective_from < window_end_exclusive
-                and (identity.effective_to is None or identity.effective_to > window_start)
-                and identity.effective_from
-                < _end(
-                    membership.effective_to,
+                and _overlaps_membership(
+                    identity,
+                    membership,
+                    window_start=window_start,
                     window_end_exclusive=window_end_exclusive,
-                )
-                and (
-                    identity.effective_to is None
-                    or identity.effective_to > membership.effective_from
                 )
             }
         )
     )
     provisional_memberships = sum(
-        item.verification_status == "provisional" for item in ordered_memberships
+        membership.verification_status == "provisional"
+        for membership in ordered_memberships
     )
     payload = {
         "schema_version": IDENTITY_STRICT_COVERAGE_SCHEMA_VERSION,
         "universe_code": normalized,
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
-        "memberships": [item.as_dict() for item in ordered_memberships],
-        "issues": [item.as_dict() for item in issues],
-        "segments": [asdict(item) for item in segments],
+        "memberships": [membership.as_dict() for membership in ordered_memberships],
+        "issues": [issue.as_dict() for issue in issues],
+        "segments": [segment.as_dict() for segment in segments],
     }
     return IdentityStrictCoverageAudit(
         universe_code=normalized,
