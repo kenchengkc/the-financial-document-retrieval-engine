@@ -34,15 +34,17 @@ def _payload() -> bytes:
 def _target(
     *,
     row_kind: AdjudicationRowKind = "membership",
+    row_id: int | None = None,
     symbol: str = "SGPPRB",
     cik: str = "0000310158",
     status: str = "provisional",
     effective_from: date = date(2009, 12, 31),
     effective_to: date | None = date(2010, 1, 22),
 ) -> SecurityTypeAdjudicationTarget:
+    resolved_row_id = row_id if row_id is not None else (580 if row_kind == "membership" else 581)
     return SecurityTypeAdjudicationTarget(
         row_kind=row_kind,
-        row_id=580 if row_kind == "membership" else 581,
+        row_id=resolved_row_id,
         security_id=798,
         cik=cik,
         symbol=symbol,
@@ -121,9 +123,9 @@ def test_cik_symbol_or_status_mismatch_fails_closed() -> None:
     evidence = extract_schering_plough_preferred_evidence(_payload(), source_url=SEC_URL)
     decisions = plan_security_type_adjudication(
         (
-            _target(symbol="SGP"),
-            _target(cik="0000310159"),
-            _target(status="verified"),
+            _target(row_id=580, symbol="SGP"),
+            _target(row_id=582, cik="0000310159"),
+            _target(row_id=583, status="verified"),
         ),
         evidence,
     )
