@@ -2,6 +2,12 @@ name: Historical Universe strict coverage
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_supported:
+        description: "Commit exact fully-supported membership upgrades to production"
+        required: true
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -95,6 +101,29 @@ jobs:
             --window-end 2026-09-01 \
             --output "${OUTPUT_DIR}/state-support-projection.json"
 
+      - name: Apply independently corroborated memberships
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_supported }}
+        env:
+          FDRE_ALLOW_PROD: "1"
+        run: |
+          PLAN_ID="$(python -c 'import json; from pathlib import Path; print(json.loads(Path("data/processed/historical-universe/strict-coverage/state-support-projection.json").read_text())["plan_id"])')"
+          python -m scripts.research.historical_universe.historical_universe_state_support \
+            --database-url "${DATABASE_URL}" \
+            --ticker-lineages data/raw/historical-universe/sp500_ticker_start_end.csv \
+            --ticker-lineages-ref "${TICKER_LINEAGES_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --apply \
+            --expected-plan-id "${PLAN_ID}" \
+            --output "${OUTPUT_DIR}/state-support-apply.json"
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/strict-coverage-after-apply.json"
+
       - name: Summarize strict coverage
         run: |
           python - <<'PY'
@@ -120,9 +149,23 @@ jobs:
                   f"- Fully supported identity updates: **{projection['projected_identity_updates']}**\n"
               )
               handle.write(
-                  f"- Projected strict-eligible days: **{gate['strict_eligible_day_count']} / {gate['day_count']}**\n\n"
+                  f"- Projected strict-eligible days: **{gate['strict_eligible_day_count']} / {gate['day_count']}**\n"
               )
-              handle.write("#### Longest projected strict spans\n\n")
+              apply_path = root / "state-support-apply.json"
+              after_path = root / "strict-coverage-after-apply.json"
+              if apply_path.exists() and after_path.exists():
+                  applied = json.loads(apply_path.read_text())
+                  after = json.loads(after_path.read_text())
+                  handle.write(
+                      f"- Applied supported memberships: **{applied['applied_membership_updates']}**\n"
+                  )
+                  handle.write(
+                      f"- Remaining provisional memberships: **{after['provisional_membership_count']}**\n"
+                  )
+                  handle.write(
+                      f"- Post-apply strict-eligible days: **{after['strict_eligible_day_count']} / {after['day_count']}**\n"
+                  )
+              handle.write("\n#### Longest projected strict spans\n\n")
               handle.write("| Start | End | Days |\n")
               handle.write("|---|---|---:|\n")
               for row in gate["eligible_spans"][:10]:
