@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from scripts import retrieval_pipeline
+import scripts.pipelines.retrieval_pipeline as retrieval_pipeline
 from sqlalchemy.orm import Session
 
 from fdre.evals.datasets import EvalQuestion

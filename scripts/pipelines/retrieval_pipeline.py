@@ -19,7 +19,6 @@ from apps.api.app.db import create_db_engine
 from apps.api.app.models import Chunk, Company, Document, Embedding, FinancialFact
 from apps.api.app.services.operations_service import build_data_quality_report
 from fdre.chunking import rebuild_document_chunks
-from scripts.ingestion.seed_demo import seed_demo_document
 from fdre.evals.datasets import (
     EvalQuestion,
     compute_dataset_sha256,
@@ -75,6 +74,7 @@ from fdre.retrieval.preprocess import load_company_references, preprocess_query
 from fdre.retrieval.query import SearchFilters
 from fdre.retrieval.rerank import reranker_from_name
 from fdre.retrieval.sparse import SparseRetriever
+from scripts.ingestion.seed_demo import seed_demo_document
 
 
 def chunk_selected_documents(
@@ -93,9 +93,7 @@ def chunk_selected_documents(
     for document in documents:
         if document.chunks and not force_rechunk:
             continue
-        chunk_count += len(
-            rebuild_document_chunks(session, document.id, max_tokens=max_tokens)
-        )
+        chunk_count += len(rebuild_document_chunks(session, document.id, max_tokens=max_tokens))
     return len(documents), chunk_count
 
 
@@ -345,9 +343,7 @@ def main() -> None:
             if args.require_reviewed:
                 validate_reviewed_benchmark(questions)
             if args.split != "all":
-                questions = [
-                    question for question in questions if question.split == args.split
-                ]
+                questions = [question for question in questions if question.split == args.split]
             requested_ks = tuple(args.ks) if args.ks else (args.k,)
             metrics_by_k = run_retrieval_eval(
                 session,
@@ -430,8 +426,7 @@ def main() -> None:
                     confidence_level=args.confidence_level,
                     random_seed=args.random_seed,
                     walk_forward_splits=[
-                        date.fromisoformat(value)
-                        for value in args.walk_forward_splits or []
+                        date.fromisoformat(value) for value in args.walk_forward_splits or []
                     ],
                 ),
                 dataset_version=dataset_version,
@@ -533,9 +528,7 @@ def run_retrieval_eval(
             candidates=candidates,
             latency_ms=(perf_counter() - started) * 1000,
             provider_cost_usd=(
-                estimated_tokens
-                * settings.embedding_cost_per_million_tokens
-                / 1_000_000
+                estimated_tokens * settings.embedding_cost_per_million_tokens / 1_000_000
                 if variant != "sparse"
                 else 0.0
             ),
@@ -592,9 +585,7 @@ def build_benchmark_metadata(
         "reranker_model": settings.reranker_model,
         "retrieval_k": max(ks),
         "retrieval_ks": list(ks),
-        "embedding_cost_per_million_tokens": (
-            settings.embedding_cost_per_million_tokens
-        ),
+        "embedding_cost_per_million_tokens": (settings.embedding_cost_per_million_tokens),
     }
 
 
@@ -715,9 +706,7 @@ def _fundamental_metric(
     """Compute a higher-is-better point-in-time score for one annual filing."""
     if signal_name == "earnings_quality":
         income = _first_series(values, ("NetIncomeLoss", "ProfitLoss"))
-        cash_flow = _first_series(
-            values, ("NetCashProvidedByUsedInOperatingActivities",)
-        )
+        cash_flow = _first_series(values, ("NetCashProvidedByUsedInOperatingActivities",))
         assets = _first_series(values, ("Assets",))
         if not income or not cash_flow or not assets:
             return None
@@ -725,9 +714,7 @@ def _fundamental_metric(
         cash_flow_by_period = dict(cash_flow)
         assets_by_period = dict(assets)
         earnings_periods = (
-            income_by_period.keys()
-            & cash_flow_by_period.keys()
-            & assets_by_period.keys()
+            income_by_period.keys() & cash_flow_by_period.keys() & assets_by_period.keys()
         )
         if not earnings_periods:
             return None
@@ -776,9 +763,7 @@ def _fundamental_metric(
             return None
         income_by_period = dict(income)
         revenue_by_period = dict(revenue)
-        margin_periods = sorted(
-            income_by_period.keys() & revenue_by_period.keys(), reverse=True
-        )
+        margin_periods = sorted(income_by_period.keys() & revenue_by_period.keys(), reverse=True)
         if len(margin_periods) < 2:
             return None
         current, prior = margin_periods[:2]
@@ -786,10 +771,7 @@ def _fundamental_metric(
         prior_revenue = revenue_by_period[prior]
         if current_revenue <= 0 or prior_revenue <= 0:
             return None
-        return (
-            income_by_period[current] / current_revenue
-            - income_by_period[prior] / prior_revenue
-        )
+        return income_by_period[current] / current_revenue - income_by_period[prior] / prior_revenue
     concepts = (
         ("Assets",)
         if signal_name == "asset_growth"
@@ -855,9 +837,7 @@ def _fundamental_dataset(
         if not _is_annual_comparative_fact(concept, period_start, period_end):
             continue
         assert period_end is not None
-        by_doc.setdefault(did, {}).setdefault(concept, []).append(
-            (period_end, float(value))
-        )
+        by_doc.setdefault(did, {}).setdefault(concept, []).append((period_end, float(value)))
     for concept_values in by_doc.values():
         for series in concept_values.values():
             # Newest period first; collapse duplicate period_ends to one value.
@@ -889,20 +869,14 @@ def _fundamental_dataset(
         prev = latest_by_ticker.get(row.ticker)
         if prev is None or available_at > prev[0]:
             latest_by_ticker[row.ticker] = (available_at, score, row.name)
-    dataset_version = hashlib.sha256(
-        "|".join(used_docs).encode("utf-8")
-    ).hexdigest()[:16]
+    dataset_version = hashlib.sha256("|".join(used_docs).encode("utf-8")).hexdigest()[:16]
     ranked = sorted(latest_by_ticker.items(), key=lambda kv: kv[1][1])
     top_n = min(8, len(ranked) // 2)
     constituents: list[SignalConstituent] = []
     for ticker, (_, score, name) in reversed(ranked[-top_n:] if top_n else []):
-        constituents.append(
-            SignalConstituent(ticker=ticker, name=name, value=score, side="long")
-        )
+        constituents.append(SignalConstituent(ticker=ticker, name=name, value=score, side="long"))
     for ticker, (_, score, name) in ranked[:top_n]:
-        constituents.append(
-            SignalConstituent(ticker=ticker, name=name, value=score, side="short")
-        )
+        constituents.append(SignalConstituent(ticker=ticker, name=name, value=score, side="short"))
     return events, constituents, dataset_version
 
 
@@ -938,9 +912,7 @@ def _panel_signal_events(
             delay = row.filing_delay_days
             history = delay_history[(row.ticker, row.form_type)]
             value = (
-                float(delay) - median(history)
-                if delay is not None and len(history) >= 2
-                else None
+                float(delay) - median(history) if delay is not None and len(history) >= 2 else None
             )
             if delay is not None:
                 history.append(float(delay))
@@ -974,11 +946,7 @@ def _neutralize_signal_events(
             available_at_period=period_label(event.available_at.date()),
             available_at=event.available_at,
             max_source_available_at=event.max_source_available_at,
-            raw=(
-                {signal_name: event.feature_value}
-                if event.feature_value is not None
-                else {}
-            ),
+            raw=({signal_name: event.feature_value} if event.feature_value is not None else {}),
         )
         for event in events
     ]
@@ -994,8 +962,7 @@ def _neutralize_signal_events(
             .all()
         )
         sector_by_accession = {
-            event.accession_number: sectors.get(event.ticker) or "Unknown"
-            for event in events
+            event.accession_number: sectors.get(event.ticker) or "Unknown" for event in events
         }
     standardized = standardize_by_period(
         composite_events,
@@ -1004,11 +971,7 @@ def _neutralize_signal_events(
     )
     neutralized = [
         event.model_copy(
-            update={
-                "feature_value": standardized.get(event.accession_number, {}).get(
-                    signal_name
-                )
-            }
+            update={"feature_value": standardized.get(event.accession_number, {}).get(signal_name)}
         )
         for event in events
     ]
@@ -1016,10 +979,7 @@ def _neutralize_signal_events(
 
 
 def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, Any]:
-    if (
-        args.max_uncached_market_fetches is not None
-        and args.max_uncached_market_fetches < 0
-    ):
+    if args.max_uncached_market_fetches is not None and args.max_uncached_market_fetches < 0:
         raise SystemExit("--max-uncached-market-fetches must be non-negative.")
     spec = get_signal_spec(args.signal)
     outcome_name = args.outcome or spec.default_outcome
@@ -1039,9 +999,7 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
     constituents: list[SignalConstituent] = []
     if args.signal in _FUNDAMENTAL_CONCEPTS:
         # Fundamental signals come from structured XBRL facts, not the panel.
-        events, constituents, dataset_version = _fundamental_dataset(
-            session, tickers, args.signal
-        )
+        events, constituents, dataset_version = _fundamental_dataset(session, tickers, args.signal)
         feature_version = _FUNDAMENTAL_FEATURE_VERSIONS[args.signal]
     else:
         panel = build_research_panel(
@@ -1067,9 +1025,7 @@ def _run_signal_study(session: Session, args: argparse.Namespace) -> dict[str, A
     )
     scored = [event for event in events if event.feature_value is not None]
     if len(scored) < args.n_quantiles * 4:
-        raise SystemExit(
-            f"Only {len(scored)} scored events; ingest more filing history first."
-        )
+        raise SystemExit(f"Only {len(scored)} scored events; ingest more filing history first.")
     event_dates = [event.available_at.date() for event in scored]
     start = min(event_dates) - timedelta(days=10)
     maximum_session = max(_event_window(value).end for value in window_values)
@@ -1190,9 +1146,7 @@ def _run_prune_signal_studies(session: Session) -> dict[str, Any]:
 
     experiments = list(
         session.scalars(
-            select(ResearchExperiment).where(
-                ResearchExperiment.experiment_type == "signal_study"
-            )
+            select(ResearchExperiment).where(ResearchExperiment.experiment_type == "signal_study")
         )
     )
 
@@ -1249,9 +1203,7 @@ def _run_backfill_sectors(session: Session, args: argparse.Namespace) -> dict[st
 
     statement = select(Company).order_by(Company.ticker)
     if args.tickers:
-        statement = statement.where(
-            Company.ticker.in_([ticker.upper() for ticker in args.tickers])
-        )
+        statement = statement.where(Company.ticker.in_([ticker.upper() for ticker in args.tickers]))
     elif not args.overwrite:
         statement = statement.where(Company.sector.is_(None))
     companies = list(session.scalars(statement.limit(args.limit)))
@@ -1407,11 +1359,7 @@ def _signal_feature_value(row: Any, signal_name: str) -> float | None:
             return None
         return float((row.risk_added_passages or 0) - (row.risk_removed_passages or 0))
     if signal_name == "filing_lateness":
-        return (
-            float(row.filing_delay_days)
-            if row.filing_delay_days is not None
-            else None
-        )
+        return float(row.filing_delay_days) if row.filing_delay_days is not None else None
     return cast(float | None, row.disclosure_similarity)
 
 

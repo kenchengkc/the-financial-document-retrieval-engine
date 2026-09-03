@@ -10,9 +10,7 @@ TEXT_SUFFIXES = {".ini", ".json", ".md", ".py", ".toml", ".yaml", ".yml"}
 SCAN_ROOTS = (".github", "apps", "docs", "scripts", "src", "tests")
 ROOT_TEXT_FILES = ("AGENTS.md", "README.md", "pyproject.toml")
 FLAT_SCRIPT_PATH = re.compile(r"(?<![A-Za-z0-9_])scripts/([A-Za-z0-9_]+\.py)")
-FLAT_SCRIPT_MODULE = re.compile(
-    r"(?<![A-Za-z0-9_])scripts\.([A-Za-z0-9_]+)(?=[^A-Za-z0-9_.]|$)"
-)
+FLAT_SCRIPT_MODULE = re.compile(r"(?<![A-Za-z0-9_])scripts\.([A-Za-z0-9_]+)(?=[^A-Za-z0-9_.]|$)")
 ALLOWED_SCRIPT_ROOT_FILES = {"__init__.py"}
 ALLOWED_DOC_ROOT_MARKDOWN = {"README.md", "roadmap.md"}
 
@@ -55,7 +53,8 @@ def architecture_violations() -> tuple[str, ...]:
         text = path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), start=1):
             if FLAT_SCRIPT_PATH.search(line) or FLAT_SCRIPT_MODULE.search(line):
-                violations.append(f"stale flat-script reference: {relative}:{line_number}: {line.strip()}")
+                message = f"stale flat-script reference: {relative}:{line_number}: {line.strip()}"
+                violations.append(message)
 
     return tuple(violations)
 

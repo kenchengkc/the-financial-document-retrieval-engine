@@ -22,7 +22,7 @@ from fdre.research.archive import (
     select_archive_issuers,
 )
 
-FIXTURE_PATH = Path(__file__).resolve().parents[2] / "data/sample/sec_filing.html"
+FIXTURE_PATH = Path(__file__).resolve().parents[3] / "data/sample/sec_filing.html"
 OBSERVED_AT = datetime(2026, 9, 1, tzinfo=UTC)
 
 
