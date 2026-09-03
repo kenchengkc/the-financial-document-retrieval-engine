@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date
+from typing import cast
 
 import pytest
 
 from fdre.research.historical_universe_membership_continuity import (
+    ContinuityAction,
+    ContinuityMethod,
     MembershipContinuityDecision,
     membership_continuity_plan_id,
 )
@@ -32,15 +37,12 @@ def _decision(*, action: str = "verify") -> MembershipContinuityDecision:
         effective_from=date(2020, 1, 2),
         effective_to=None,
         prior_source_hash="a" * 64,
-        action=action,  # type: ignore[arg-type]
-        method=method,  # type: ignore[arg-type]
+        action=cast(ContinuityAction, action),
+        method=cast(ContinuityMethod, method),
         evidence_ids=evidence_ids,
         reason=reason,
         decision_hash="",
     )
-    import hashlib
-    import json
-
     payload = {
         "schema_version": "fdre-hu5-membership-continuity-v1",
         "membership_id": base.membership_id,
