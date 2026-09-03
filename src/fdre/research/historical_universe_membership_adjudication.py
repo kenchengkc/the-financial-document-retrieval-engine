@@ -224,7 +224,8 @@ def _validate_case_shape(case: MembershipAdjudicationCase) -> None:
     for sibling in case.siblings:
         if normalize_cik(sibling.cik) != normalize_cik(case.cik):
             raise ValueError(
-                f"membership {case.membership_id} sibling {sibling.membership_id} has a different CIK"
+                f"membership {case.membership_id} sibling {sibling.membership_id} "
+                "has a different CIK"
             )
         if sibling.role == "predecessor":
             if sibling.effective_to is None or sibling.effective_to != case.target_effective_from:
