@@ -1,0 +1,85 @@
+name: HU-5 membership continuity projection
+
+on:
+  push:
+    branches:
+      - research/hu5-membership-continuity
+    paths:
+      - ".github/workflows/hu5-membership-continuity-projection.yml"
+      - "scripts/research/historical_universe/historical_universe_membership_continuity.py"
+      - "src/fdre/research/historical_universe_membership_continuity.py"
+      - "tests/unit/fdre/test_historical_universe_membership_continuity.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-hu5-membership-continuity-projection
+  cancel-in-progress: false
+
+jobs:
+  projection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      CURRENT_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
+      OUTPUT_DIR: data/processed/historical-universe/hu5-membership-continuity
+
+    steps:
+      - name: Check database secret
+        run: |
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "."
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Fetch pinned current constituent anchor
+        run: |
+          mkdir -p data/raw/historical-universe "${OUTPUT_DIR}"
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/fja05680/sp500/${CURRENT_REF}/sp500.csv" \
+            --output data/raw/historical-universe/sp500-current.csv
+          test -s data/raw/historical-universe/sp500-current.csv
+
+      - name: Project continuity decisions
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_membership_continuity \
+            --database-url "${DATABASE_URL}" \
+            --current-constituents data/raw/historical-universe/sp500-current.csv \
+            --current-constituents-ref "${CURRENT_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/projection.json"
+
+      - name: Upload projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-membership-continuity-${{ github.run_id }}
+          path: "${{ env.OUTPUT_DIR }}/projection.json"
+          if-no-files-found: error
