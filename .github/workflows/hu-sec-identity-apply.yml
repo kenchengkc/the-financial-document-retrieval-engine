@@ -1,0 +1,198 @@
+name: Historical Universe SEC identity apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_plan_id:
+        description: "Exact SEC identity projection plan to replay"
+        required: true
+        default: "7f3ca7ec6238e768242c22295af561a309a3118b55055db029cccb33208b23ad"
+        type: string
+      expected_promotion_count:
+        description: "Exact number of identity rows expected to promote"
+        required: true
+        default: "521"
+        type: string
+      apply_supported:
+        description: "Commit the exact validated identity promotions to production"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/historical-universe/sec-identity-apply
+      TICKER_LINEAGES_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
+
+    steps:
+      - name: Check required secrets
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ -z "${SEC_USER_AGENT}" ]; then
+            echo "::error::SEC_USER_AGENT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Download pinned ticker-state history
+        run: |
+          mkdir -p data/raw/historical-universe
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/fja05680/sp500/${TICKER_LINEAGES_REF}/sp500_ticker_start_end.csv" \
+            --output data/raw/historical-universe/sp500_ticker_start_end.csv
+          test -s data/raw/historical-universe/sp500_ticker_start_end.csv
+
+      - name: Replay SEC identity projection
+        run: |
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.research.historical_universe.historical_universe_sec_identity \
+            --database-url "${DATABASE_URL}" \
+            --ticker-lineages data/raw/historical-universe/sp500_ticker_start_end.csv \
+            --ticker-lineages-ref "${TICKER_LINEAGES_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --max-filings-per-identity 2 \
+            --output "${OUTPUT_DIR}/projection.json"
+
+      - name: Verify frozen projection
+        env:
+          EXPECTED_PLAN_ID: ${{ inputs.expected_plan_id }}
+          EXPECTED_PROMOTION_COUNT: ${{ inputs.expected_promotion_count }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(
+              Path("data/processed/historical-universe/sec-identity-apply/projection.json").read_text()
+          )
+          expected_count = int(os.environ["EXPECTED_PROMOTION_COUNT"])
+          if report["plan_id"] != os.environ["EXPECTED_PLAN_ID"]:
+              raise SystemExit(
+                  f"plan drift: expected {os.environ['EXPECTED_PLAN_ID']}, got {report['plan_id']}"
+              )
+          if report["promotion_candidate_count"] != expected_count:
+              raise SystemExit(
+                  "promotion count drift: "
+                  f"expected {expected_count}, got {report['promotion_candidate_count']}"
+              )
+          if report["filing_error_count"] != 0:
+              raise SystemExit("projection contains SEC filing fetch/extraction errors")
+          if report["status_counts"].get("sec_symbol_conflict", 0) != 0:
+              raise SystemExit("projection contains SEC symbol conflicts")
+          PY
+
+      - name: Migrate durable identity evidence schema
+        if: ${{ inputs.apply_supported }}
+        run: alembic upgrade head
+
+      - name: Apply exact SEC-backed identity promotions
+        if: ${{ inputs.apply_supported }}
+        env:
+          FDRE_ALLOW_PROD: "1"
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_sec_identity_apply \
+            --database-url "${DATABASE_URL}" \
+            --projection "${OUTPUT_DIR}/projection.json" \
+            --expected-plan-id "${{ inputs.expected_plan_id }}" \
+            --expected-promotion-count "${{ inputs.expected_promotion_count }}" \
+            --apply \
+            --output "${OUTPUT_DIR}/apply.json"
+
+      - name: Audit strict coverage after apply
+        if: ${{ inputs.apply_supported }}
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/strict-coverage-after-apply.json"
+
+      - name: Summarize result
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("data/processed/historical-universe/sec-identity-apply")
+          projection = json.loads((root / "projection.json").read_text())
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("### HU SEC identity evidence replay\n\n")
+              handle.write(f"- Plan ID: `{projection['plan_id']}`\n")
+              handle.write(
+                  f"- Promotion candidates: **{projection['promotion_candidate_count']}**\n"
+              )
+              handle.write(
+                  f"- SEC-symbol-missing: **{projection['status_counts'].get('sec_symbol_missing', 0)}**\n"
+              )
+              handle.write(
+                  f"- State/boundary-blocked: **{projection['status_counts'].get('state_not_fully_supported', 0)}**\n"
+              )
+              handle.write(
+                  f"- SEC symbol conflicts: **{projection['status_counts'].get('sec_symbol_conflict', 0)}**\n"
+              )
+              apply_path = root / "apply.json"
+              coverage_path = root / "strict-coverage-after-apply.json"
+              if apply_path.exists():
+                  applied = json.loads(apply_path.read_text())
+                  handle.write(
+                      f"- Applied identity updates: **{applied['applied_identity_updates']}**\n"
+                  )
+                  handle.write(
+                      "- Persisted SEC evidence rows: "
+                      f"**{applied['persisted_sec_evidence_count']}**\n"
+                  )
+              if coverage_path.exists():
+                  coverage = json.loads(coverage_path.read_text())
+                  handle.write(
+                      "- Remaining provisional identities: "
+                      f"**{coverage['provisional_identity_count']}**\n"
+                  )
+          PY
+
+      - name: Upload audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu-sec-identity-apply-${{ github.run_id }}
+          path: data/processed/historical-universe/sec-identity-apply
+          if-no-files-found: error
