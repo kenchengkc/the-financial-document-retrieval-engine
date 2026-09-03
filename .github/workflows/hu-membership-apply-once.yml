@@ -1,0 +1,197 @@
+name: One-shot HU membership apply
+
+on:
+  push:
+    branches:
+      - ops/hu-membership-apply-2026-09-02
+    paths:
+      - ".github/workflows/hu-membership-apply-once.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-hu-membership-apply-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ contains(github.event.head_commit.message, 'ops: apply HU memberships') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/historical-universe/strict-coverage-apply-once
+      TICKER_LINEAGES_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
+
+    steps:
+      - name: Check required database secret
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "."
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Download pinned independent ticker history
+        run: |
+          mkdir -p data/raw/historical-universe
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/fja05680/sp500/${TICKER_LINEAGES_REF}/sp500_ticker_start_end.csv" \
+            --output data/raw/historical-universe/sp500_ticker_start_end.csv
+          test -s data/raw/historical-universe/sp500_ticker_start_end.csv
+
+      - name: Audit production state before apply
+        run: |
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/strict-coverage-before.json"
+
+      - name: Recompute exact independent support plan
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_state_support \
+            --database-url "${DATABASE_URL}" \
+            --ticker-lineages data/raw/historical-universe/sp500_ticker_start_end.csv \
+            --ticker-lineages-ref "${TICKER_LINEAGES_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/state-support-projection.json"
+
+      - name: Enforce frozen preconditions
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["OUTPUT_DIR"])
+          before = json.loads((root / "strict-coverage-before.json").read_text())
+          projection = json.loads((root / "state-support-projection.json").read_text())
+
+          expected = {
+              "day_count": 6088,
+              "blocked_day_count": 6088,
+              "provisional_membership_count": 95,
+          }
+          for key, value in expected.items():
+              actual = before[key]
+              if actual != value:
+                  raise SystemExit(f"precondition changed: {key} expected {value}, got {actual}")
+          if projection["projected_membership_updates"] != 56:
+              raise SystemExit(
+                  "precondition changed: expected 56 promotable memberships, got "
+                  f"{projection['projected_membership_updates']}"
+              )
+          if projection["projected_identity_updates"] != 0:
+              raise SystemExit(
+                  "unsafe state: identity promotions must remain zero, got "
+                  f"{projection['projected_identity_updates']}"
+              )
+
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"HU_PLAN_ID={projection['plan_id']}\n")
+          PY
+
+      - name: Apply exactly supported memberships
+        env:
+          FDRE_ALLOW_PROD: "1"
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_state_support \
+            --database-url "${DATABASE_URL}" \
+            --ticker-lineages data/raw/historical-universe/sp500_ticker_start_end.csv \
+            --ticker-lineages-ref "${TICKER_LINEAGES_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --apply \
+            --expected-plan-id "${HU_PLAN_ID}" \
+            --output "${OUTPUT_DIR}/state-support-apply.json"
+
+      - name: Audit production state after apply
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/strict-coverage-after.json"
+
+      - name: Verify committed result
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["OUTPUT_DIR"])
+          before = json.loads((root / "strict-coverage-before.json").read_text())
+          applied = json.loads((root / "state-support-apply.json").read_text())
+          after = json.loads((root / "strict-coverage-after.json").read_text())
+
+          if applied["applied_membership_updates"] != 56:
+              raise SystemExit(
+                  "apply count mismatch: expected 56, got "
+                  f"{applied['applied_membership_updates']}"
+              )
+          if applied["applied_identity_updates"] != 0:
+              raise SystemExit("identity rows were unexpectedly promoted")
+          expected_remaining = before["provisional_membership_count"] - applied["applied_membership_updates"]
+          if expected_remaining != 39:
+              raise SystemExit(f"internal expected remaining count changed: {expected_remaining}")
+          if after["provisional_membership_count"] != expected_remaining:
+              raise SystemExit(
+                  "post-apply blocker count mismatch: expected "
+                  f"{expected_remaining}, got {after['provisional_membership_count']}"
+              )
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("### Historical Universe production membership apply\n\n")
+              handle.write(f"- Plan ID: `{applied['plan_id']}`\n")
+              handle.write(f"- Applied membership upgrades: **{applied['applied_membership_updates']}**\n")
+              handle.write(f"- Applied identity upgrades: **{applied['applied_identity_updates']}**\n")
+              handle.write(
+                  f"- Provisional memberships: **{before['provisional_membership_count']} → "
+                  f"{after['provisional_membership_count']}**\n"
+              )
+              handle.write(
+                  f"- Strict-eligible days after apply: **{after['strict_eligible_day_count']} / "
+                  f"{after['day_count']}**\n"
+              )
+          PY
+
+      - name: Upload immutable apply artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu-membership-apply-${{ github.run_id }}
+          path: "${{ env.OUTPUT_DIR }}"
+          if-no-files-found: error
