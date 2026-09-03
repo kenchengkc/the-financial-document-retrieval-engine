@@ -1,9 +1,10 @@
-"""Project exact SEC-backed rejection of non-common Historical Universe contamination.
+"""Project SEC-backed adjudication of the known SGPPRB Historical Universe blocker.
 
-The command is deliberately read-only. It requires one unambiguous provisional SGPPRB identity
-and one overlapping provisional S&P 500 membership for the same security, independently fetches
-immutable SEC evidence that the listed security was preferred stock rather than common stock,
-stages both rejections only long enough to measure HU-5 strict-coverage impact, and rolls back.
+The command is deliberately read-only and assumption-light. It anchors discovery on the known
+provisional S&P 500 blocker membership, records the live security/company binding and every
+identity period on that security, and only creates rejection candidates if exactly one overlapping
+SGPPRB identity provides an unambiguous bridge to immutable SEC security-type evidence. Any
+candidate rejections are staged solely to measure HU-5 strict-coverage impact and then rolled back.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from fdre.ingestion.sec_client import SECClient
 from fdre.research.historical_universe_identity import normalize_cik
 from fdre.research.historical_universe_security_type import (
     SecSecurityTypeEvidence,
+    SecurityTypeAdjudicationDecision,
     SecurityTypeAdjudicationTarget,
     extract_schering_plough_preferred_evidence,
     plan_security_type_adjudication,
@@ -36,7 +38,8 @@ from fdre.research.historical_universe_security_type import (
 )
 from fdre.research.hu5_universe import build_hu5_universe_gate, load_hu5_universe_records
 
-PROJECTION_SCHEMA_VERSION = "fdre-hu-security-type-adjudication-projection-v1"
+PROJECTION_SCHEMA_VERSION = "fdre-hu-security-type-adjudication-projection-v2"
+BLOCKER_MEMBERSHIP_ID = 580
 TARGET_CIK = "0000310158"
 TARGET_SYMBOL = "SGPPRB"
 SEC_SOURCE_URL = (
@@ -57,6 +60,37 @@ def _overlaps(
     return (right_end is None or left_start < right_end) and (
         left_end is None or right_start < left_end
     )
+
+
+def _identity_dict(row: SecurityIdentityPeriod) -> dict[str, object]:
+    return {
+        "row_id": row.id,
+        "security_id": row.security_id,
+        "symbol": row.symbol,
+        "symbol_key": security_symbol_key(row.symbol),
+        "effective_from": row.effective_from.isoformat(),
+        "effective_to": row.effective_to.isoformat() if row.effective_to else None,
+        "source": row.source,
+        "source_url": row.source_url,
+        "source_hash": row.source_hash,
+        "verification_status": row.verification_status,
+        "confidence": float(row.confidence),
+    }
+
+
+def _membership_dict(row: UniverseMembership) -> dict[str, object]:
+    return {
+        "row_id": row.id,
+        "universe_code": row.universe_code,
+        "security_id": row.security_id,
+        "effective_from": row.effective_from.isoformat(),
+        "effective_to": row.effective_to.isoformat() if row.effective_to else None,
+        "source": row.source,
+        "source_url": row.source_url,
+        "source_hash": row.source_hash,
+        "verification_status": row.verification_status,
+        "confidence": float(row.confidence),
+    }
 
 
 def _target_from_identity(
@@ -96,71 +130,95 @@ def _target_from_membership(
     )
 
 
-def load_exact_sgpprb_targets(
+def discover_sgpprb_blocker(
     session: Session,
 ) -> tuple[
-    tuple[SecurityTypeAdjudicationTarget, ...],
-    SecurityIdentityPeriod,
     UniverseMembership,
+    Security,
+    Company,
+    tuple[SecurityIdentityPeriod, ...],
+    tuple[SecurityIdentityPeriod, ...],
 ]:
-    """Load the one exact provisional SGPPRB identity and overlapping S&P membership."""
+    """Load blocker row 580 and expose its live issuer/identity shape without inference."""
 
-    identity_rows = session.execute(
-        select(SecurityIdentityPeriod, Company.cik)
-        .join(Security, Security.id == SecurityIdentityPeriod.security_id)
-        .join(Company, Company.id == Security.company_id)
-        .where(
-            SecurityIdentityPeriod.verification_status == "provisional",
-            Company.cik == TARGET_CIK,
-        )
-        .order_by(SecurityIdentityPeriod.id)
-    ).all()
-    exact_identities = [
-        (row, normalize_cik(str(cik)))
-        for row, cik in identity_rows
-        if security_symbol_key(row.symbol) == TARGET_SYMBOL
-    ]
-    if len(exact_identities) != 1:
+    membership = session.get(UniverseMembership, BLOCKER_MEMBERSHIP_ID)
+    if membership is None:
+        raise RuntimeError(f"known HU blocker membership {BLOCKER_MEMBERSHIP_ID} no longer exists")
+    if membership.universe_code != "sp500":
         raise RuntimeError(
-            "SGPPRB adjudication requires exactly one provisional identity; "
-            f"found {len(exact_identities)}"
+            f"membership {BLOCKER_MEMBERSHIP_ID} universe changed to {membership.universe_code!r}"
         )
-    identity, cik = exact_identities[0]
-    if cik != TARGET_CIK:
-        raise RuntimeError(f"SGPPRB identity issuer CIK changed: {cik}")
+    security = session.get(Security, membership.security_id)
+    if security is None:
+        raise RuntimeError(f"security {membership.security_id} no longer exists")
+    company = session.get(Company, security.company_id)
+    if company is None:
+        raise RuntimeError(f"company {security.company_id} no longer exists")
 
-    membership_rows = tuple(
+    identities = tuple(
         session.scalars(
-            select(UniverseMembership)
-            .where(
-                UniverseMembership.universe_code == "sp500",
-                UniverseMembership.security_id == identity.security_id,
-                UniverseMembership.verification_status == "provisional",
-            )
-            .order_by(UniverseMembership.id)
+            select(SecurityIdentityPeriod)
+            .where(SecurityIdentityPeriod.security_id == security.id)
+            .order_by(SecurityIdentityPeriod.effective_from, SecurityIdentityPeriod.id)
         )
     )
-    exact_memberships = [
+    overlapping_sgpprb = tuple(
         row
-        for row in membership_rows
-        if _overlaps(
+        for row in identities
+        if security_symbol_key(row.symbol) == TARGET_SYMBOL
+        and _overlaps(
             row.effective_from,
             row.effective_to,
-            identity.effective_from,
-            identity.effective_to,
+            membership.effective_from,
+            membership.effective_to,
         )
-    ]
-    if len(exact_memberships) != 1:
-        raise RuntimeError(
-            "SGPPRB adjudication requires exactly one overlapping provisional S&P 500 membership; "
-            f"found {len(exact_memberships)}"
-        )
-    membership = exact_memberships[0]
-    targets = (
-        _target_from_identity(identity, cik=cik),
-        _target_from_membership(membership, cik=cik, symbol=identity.symbol),
     )
-    return targets, identity, membership
+    return membership, security, company, identities, overlapping_sgpprb
+
+
+def _adjudication_targets(
+    membership: UniverseMembership,
+    overlapping_sgpprb: tuple[SecurityIdentityPeriod, ...],
+    *,
+    issuer_cik: str,
+) -> tuple[SecurityTypeAdjudicationTarget, ...]:
+    """Build targets only when one identity unambiguously binds row 580 to SGPPRB."""
+
+    if len(overlapping_sgpprb) != 1:
+        return ()
+    identity = overlapping_sgpprb[0]
+    return (
+        _target_from_identity(identity, cik=issuer_cik),
+        _target_from_membership(membership, cik=issuer_cik, symbol=identity.symbol),
+    )
+
+
+def _stage_rejections(
+    session: Session,
+    decisions: tuple[SecurityTypeAdjudicationDecision, ...],
+) -> int:
+    staged = 0
+    for decision in decisions:
+        if not decision.rejection_candidate:
+            continue
+        if decision.row_kind == "membership":
+            row = session.get(UniverseMembership, decision.row_id)
+        else:
+            row = session.get(SecurityIdentityPeriod, decision.row_id)
+        if row is None:
+            raise RuntimeError(f"adjudication row disappeared: {decision.row_kind}:{decision.row_id}")
+        if row.verification_status != "provisional":
+            raise RuntimeError(
+                f"adjudication row is no longer provisional: {decision.row_kind}:{decision.row_id}"
+            )
+        if row.source_hash != decision.prior_source_hash:
+            raise RuntimeError(
+                f"adjudication row source changed: {decision.row_kind}:{decision.row_id}"
+            )
+        row.verification_status = "rejected"
+        staged += 1
+    session.flush()
+    return staged
 
 
 def fetch_sec_security_type_evidence(
@@ -176,7 +234,7 @@ def fetch_sec_security_type_evidence(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Read-only projection of SEC-backed SGPPRB security-type adjudication."
+        description="Read-only discovery/projection for SEC-backed SGPPRB adjudication."
     )
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--sec-source-url", default=SEC_SOURCE_URL)
@@ -196,14 +254,17 @@ def main() -> int:
     engine = create_db_engine(args.database_url)
     try:
         with Session(engine) as session:
-            targets, identity, membership = load_exact_sgpprb_targets(session)
+            membership, security, company, identities, overlapping_sgpprb = discover_sgpprb_blocker(
+                session
+            )
+            issuer_cik = normalize_cik(company.cik)
+            targets = _adjudication_targets(
+                membership,
+                overlapping_sgpprb,
+                issuer_cik=issuer_cik,
+            )
             decisions = plan_security_type_adjudication(targets, evidence)
             rejection_count = sum(item.rejection_candidate for item in decisions)
-            if rejection_count != 2:
-                raise RuntimeError(
-                    "SGPPRB projection must reject exactly one identity and one membership; "
-                    f"projected {rejection_count}"
-                )
             status_counts = Counter(item.status for item in decisions)
             plan_id = security_type_plan_id(decisions)
 
@@ -220,10 +281,7 @@ def main() -> int:
                 window_end=args.window_end,
             )
 
-            identity.verification_status = "rejected"
-            membership.verification_status = "rejected"
-            session.flush()
-
+            staged_count = _stage_rejections(session, decisions)
             after_records = load_hu5_universe_records(
                 session,
                 universe_code="sp500",
@@ -240,16 +298,47 @@ def main() -> int:
     finally:
         engine.dispose()
 
+    if len(overlapping_sgpprb) == 1:
+        bridge_status = "unique_sgpprb_identity"
+    elif not overlapping_sgpprb:
+        bridge_status = "no_overlapping_sgpprb_identity"
+    else:
+        bridge_status = "ambiguous_overlapping_sgpprb_identities"
+
     payload = {
         "schema_version": PROJECTION_SCHEMA_VERSION,
         "mode": "projection",
         "applied": False,
         "plan_id": plan_id,
-        "target_cik": TARGET_CIK,
+        "known_blocker_membership_id": BLOCKER_MEMBERSHIP_ID,
+        "target_sec_cik": TARGET_CIK,
         "target_symbol": TARGET_SYMBOL,
         "sec_evidence": evidence.as_dict(),
+        "discovery": {
+            "membership": _membership_dict(membership),
+            "security": {
+                "security_id": security.id,
+                "company_id": security.company_id,
+                "security_type": security.security_type,
+                "share_class": security.share_class,
+            },
+            "company": {
+                "company_id": company.id,
+                "cik": issuer_cik,
+                "ticker": company.ticker,
+                "name": company.name,
+            },
+            "identity_periods": [_identity_dict(row) for row in identities],
+            "overlapping_sgpprb_identity_count": len(overlapping_sgpprb),
+            "overlapping_sgpprb_identities": [
+                _identity_dict(row) for row in overlapping_sgpprb
+            ],
+            "bridge_status": bridge_status,
+            "issuer_matches_sec_evidence": issuer_cik == evidence.cik,
+        },
         "target_count": len(targets),
         "rejection_candidate_count": rejection_count,
+        "staged_rejection_count": staged_count,
         "status_counts": dict(sorted(status_counts.items())),
         "decisions": [item.as_dict() for item in decisions],
         "strict_coverage_before": {
@@ -267,10 +356,11 @@ def main() -> int:
             "day_count": after_gate.day_count,
         },
         "interpretation": (
-            "Read-only projection. Exact live SGPPRB identity and membership rows were matched to "
-            "immutable SEC evidence that SGP PrB was preferred stock while SGP was the issuer's "
-            "common-share symbol. Both rows were staged as rejected only to measure HU-5 impact "
-            "and the transaction was rolled back."
+            "Read-only discovery and projection anchored on known blocker membership 580. The live "
+            "issuer and every identity period on that security are recorded before adjudication. "
+            "Rejection is permitted only through one unambiguous overlapping SGPPRB identity and "
+            "exact CIK/symbol/status matching to immutable SEC evidence; staged changes are rolled "
+            "back before exit."
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -279,7 +369,13 @@ def main() -> int:
         json.dumps(
             {
                 "plan_id": plan_id,
+                "membership_id": membership.id,
+                "security_id": security.id,
+                "company_cik": issuer_cik,
+                "bridge_status": bridge_status,
+                "overlapping_sgpprb_identity_count": len(overlapping_sgpprb),
                 "rejection_candidate_count": rejection_count,
+                "staged_rejection_count": staged_count,
                 "strict_eligible_days_before": before_gate.strict_eligible_day_count,
                 "strict_eligible_days_projected": after_gate.strict_eligible_day_count,
             },
