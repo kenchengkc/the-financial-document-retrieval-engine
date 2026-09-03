@@ -95,6 +95,28 @@ def test_exact_membership_and_identity_rows_are_rejection_candidates() -> None:
     assert all(item.effective_to == date(2010, 1, 22) for item in decisions)
 
 
+def test_verified_identity_stays_unresolved_while_provisional_membership_rejects() -> None:
+    evidence = extract_schering_plough_preferred_evidence(_payload(), source_url=SEC_URL)
+    decisions = plan_security_type_adjudication(
+        (
+            _target(row_kind="identity", status="verified", effective_to=date(2010, 1, 23)),
+            _target(),
+        ),
+        evidence,
+    )
+
+    by_kind = {item.row_kind: item for item in decisions}
+    identity = by_kind["identity"]
+    membership = by_kind["membership"]
+
+    assert identity.status == "unresolved"
+    assert identity.rejection_candidate is False
+    assert identity.evidence_id is None
+    assert membership.status == "reject_non_common_security"
+    assert membership.rejection_candidate is True
+    assert membership.evidence_id == evidence.evidence_id
+
+
 def test_cik_symbol_or_status_mismatch_fails_closed() -> None:
     evidence = extract_schering_plough_preferred_evidence(_payload(), source_url=SEC_URL)
     decisions = plan_security_type_adjudication(
