@@ -140,7 +140,7 @@ def xbrl_instance_filenames(index_payload: dict[str, object]) -> tuple[str, ...]
             or lowered in excluded_names
             or lowered.endswith(excluded_suffixes)
             or lowered.startswith("filingsummary")
-            or lowered.startswith("r") and lowered[1:-4].isdigit()
+            or (lowered.startswith("r") and lowered[1:-4].isdigit())
         ):
             continue
         raw_size = item.get("size")
