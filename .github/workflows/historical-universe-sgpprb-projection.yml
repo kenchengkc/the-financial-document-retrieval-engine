@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/historical-universe-sgpprb-projection.yml"
       - "scripts/research/historical_universe/historical_universe_security_type_projection.py"
+      - "scripts/research/historical_universe/historical_universe_sgpprb_discovery.py"
       - "src/fdre/research/historical_universe_security_type.py"
       - "src/fdre/research/hu5_universe.py"
       - "apps/api/app/models/historical_universe.py"
@@ -68,7 +69,7 @@ jobs:
       - name: Discover and project SEC-backed SGPPRB adjudication
         run: |
           mkdir -p "${OUTPUT_DIR}"
-          python -m scripts.research.historical_universe.historical_universe_security_type_projection \
+          python -m scripts.research.historical_universe.historical_universe_sgpprb_discovery \
             --database-url "${DATABASE_URL}" \
             --window-start 2010-01-01 \
             --window-end 2026-09-01 \
