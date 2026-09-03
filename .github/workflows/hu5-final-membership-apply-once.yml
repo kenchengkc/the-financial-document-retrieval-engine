@@ -1,0 +1,151 @@
+name: HU-5 final membership apply
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: >-
+      github.actor == 'kenchengkc' &&
+      github.event.issue.number == 84 &&
+      github.event.comment.body == '/hu5-apply-final-memberships 0191407cf3ae293afb8f34a47c6dcff5210e39939579e1ec3654722462612c9b 6 6 3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/historical-universe/final-membership-apply
+      EXPECTED_MANIFEST_ID: 0b625a3c0f8aca2dee57bc7754d9e1a6c163cfc1401c3543e6604b43a4257916
+      EXPECTED_PLAN_ID: 0191407cf3ae293afb8f34a47c6dcff5210e39939579e1ec3654722462612c9b
+      EXPECTED_VERIFY_COUNT: "6"
+      EXPECTED_CORRECT_COUNT: "6"
+      EXPECTED_REJECT_COUNT: "3"
+
+    steps:
+      - name: Check required database secret
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+
+      - name: Select database URL
+        run: |
+          set -euo pipefail
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Replay frozen membership adjudication
+        run: |
+          set -euo pipefail
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.research.historical_universe.historical_universe_membership_adjudication \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/projection.json"
+
+      - name: Verify exact frozen projection
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ["OUTPUT_DIR"] + "/projection.json").read_text())
+          expected_counts = {
+              "verify": int(os.environ["EXPECTED_VERIFY_COUNT"]),
+              "correct_and_verify": int(os.environ["EXPECTED_CORRECT_COUNT"]),
+              "reject": int(os.environ["EXPECTED_REJECT_COUNT"]),
+          }
+          if report["manifest_id"] != os.environ["EXPECTED_MANIFEST_ID"]:
+              raise SystemExit("membership adjudication manifest drift")
+          if report["plan_id"] != os.environ["EXPECTED_PLAN_ID"]:
+              raise SystemExit("membership adjudication plan drift")
+          if report["blocker_count"] != 15:
+              raise SystemExit(f"expected 15 blockers, got {report['blocker_count']}")
+          if report["decision_counts"] != expected_counts:
+              raise SystemExit(
+                  f"decision count drift: expected {expected_counts}, got {report['decision_counts']}"
+              )
+          PY
+
+      - name: Apply exact reviewed membership decisions
+        env:
+          FDRE_ALLOW_PROD: "1"
+        run: |
+          set -euo pipefail
+          python -m scripts.research.historical_universe.historical_universe_membership_adjudication_apply \
+            --database-url "${DATABASE_URL}" \
+            --projection "${OUTPUT_DIR}/projection.json" \
+            --expected-plan-id "${EXPECTED_PLAN_ID}" \
+            --expected-verify-count "${EXPECTED_VERIFY_COUNT}" \
+            --expected-correct-count "${EXPECTED_CORRECT_COUNT}" \
+            --expected-reject-count "${EXPECTED_REJECT_COUNT}" \
+            --apply \
+            --output "${OUTPUT_DIR}/apply.json"
+
+      - name: Audit membership-only strict coverage
+        run: |
+          set -euo pipefail
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/strict-coverage.json"
+
+      - name: Require 6088 of 6088 membership coverage
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["OUTPUT_DIR"])
+          applied = json.loads((root / "apply.json").read_text())
+          audit = json.loads((root / "strict-coverage.json").read_text())
+          if applied["remaining_provisional_memberships"] != 0:
+              raise SystemExit("apply reports remaining provisional memberships")
+          expected = {
+              "day_count": 6088,
+              "blocked_day_count": 0,
+              "strict_eligible_day_count": 6088,
+              "provisional_membership_count": 0,
+          }
+          actual = {key: audit[key] for key in expected}
+          if actual != expected:
+              raise SystemExit(f"membership strict gate failed: expected {expected}, got {actual}")
+          PY
+
+      - name: Upload final membership apply evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-final-membership-apply-${{ github.run_id }}
+          path: data/processed/historical-universe/final-membership-apply
+          if-no-files-found: error
+          retention-days: 30
