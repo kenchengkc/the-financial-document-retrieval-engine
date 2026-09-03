@@ -7,30 +7,9 @@ on:
       - main
 
 permissions:
-  actions: write
   contents: read
 
 jobs:
-  prune-hu5-adjudication-history:
-    name: Prune temporary HU-5 adjudication history
-    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'research/hu5-membership-adjudication' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete temporary projection runs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
-            --jq '.workflow_runs[] | [.id, .name, .path] | @tsv' |
-          while IFS=$'\t' read -r run_id workflow_name workflow_path; do
-            if [ "${workflow_name}" = "HU-5 membership adjudication projection" ] || \
-               [ "${workflow_path}" = ".github/workflows/hu5-membership-adjudication-projection-once.yml" ]; then
-              echo "Deleting temporary projection run ${run_id}"
-              gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-            fi
-          done
-
   backend:
     name: Backend checks
     runs-on: ubuntu-latest
