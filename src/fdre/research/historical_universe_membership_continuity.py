@@ -8,7 +8,7 @@ The planner intentionally resolves only two high-confidence shapes:
   membership for the same issuer, which identifies a duplicate ticker/security split rather
   than an independent constituent.
 
-Everything else stays unresolved for narrower historical-event adjudication.  In particular,
+Everything else stays unresolved for narrower historical-event adjudication. In particular,
 sharing a CIK is never sufficient to collapse simultaneous share classes.
 """
 
@@ -313,7 +313,9 @@ def plan_membership_continuity(
         if not covering:
             reason_parts.append("no verified sibling covers the whole interval")
         elif len(covering_security_ids) > 1 or len(covering) > 1:
-            reason_parts.append("multiple sibling memberships cover interval; share-class ambiguity")
+            reason_parts.append(
+                "multiple sibling memberships cover interval; share-class ambiguity"
+            )
         decisions.append(
             _decision(
                 blocker,
@@ -332,10 +334,11 @@ def membership_continuity_plan_id(
     *,
     current_source_ref: str,
 ) -> str:
+    ordered = sorted(decisions, key=lambda row: row.membership_id)
     return _hash(
         {
             "schema_version": MEMBERSHIP_CONTINUITY_SCHEMA_VERSION,
             "current_source_ref": current_source_ref,
-            "decisions": [item.as_dict() for item in sorted(decisions, key=lambda row: row.membership_id)],
+            "decisions": [item.as_dict() for item in ordered],
         }
     )
