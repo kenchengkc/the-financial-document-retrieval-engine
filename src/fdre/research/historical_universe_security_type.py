@@ -125,7 +125,8 @@ def extract_schering_plough_preferred_evidence(
     )
     if preferred_definition is None or preferred_listing is None or common_listing is None:
         raise ValueError(
-            "SEC payload does not explicitly bind SGP PrB to preferred stock and SGP to common shares"
+            "SEC payload does not explicitly bind SGP PrB to preferred stock "
+            "and SGP to common shares"
         )
     return SecSecurityTypeEvidence(
         cik="0000310158",
