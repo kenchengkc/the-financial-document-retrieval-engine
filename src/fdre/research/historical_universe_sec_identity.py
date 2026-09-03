@@ -44,7 +44,7 @@ SecIdentitySupportStatus = Literal[
 ]
 
 _EXCHANGE_SUFFIX_RE = re.compile(r"\s+\(([A-Z]{2,10})\)\s*$", re.IGNORECASE)
-_EDGE_QUOTES = "\"'“”‘’`"
+_EDGE_QUOTES = "\"'`\u201c\u201d\u2018\u2019"
 
 
 def _digest(payload: object) -> str:
