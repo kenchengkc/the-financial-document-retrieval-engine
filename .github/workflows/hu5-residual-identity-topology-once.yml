@@ -3,7 +3,7 @@ name: One-shot HU-5 residual identity topology
 on:
   push:
     branches:
-      - research/hu5-residual-identity-topology
+      - ops/manual-hu5-residual-identity-topology-only
 
 permissions:
   contents: read
