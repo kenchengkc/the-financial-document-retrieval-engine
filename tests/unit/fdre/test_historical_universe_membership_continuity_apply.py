@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
 import hashlib
 import json
+from datetime import date
 from typing import cast
 
 import pytest
@@ -17,7 +17,6 @@ from fdre.research.historical_universe_membership_continuity_apply import (
     applied_membership_source_hash,
     validate_membership_continuity_projection,
 )
-
 
 REF = "c" * 40
 
