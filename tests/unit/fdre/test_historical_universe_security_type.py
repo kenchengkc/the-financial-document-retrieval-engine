@@ -37,6 +37,8 @@ def _target(
     symbol: str = "SGPPRB",
     cik: str = "0000310158",
     status: str = "provisional",
+    effective_from: date = date(2009, 12, 31),
+    effective_to: date | None = date(2010, 1, 22),
 ) -> SecurityTypeAdjudicationTarget:
     return SecurityTypeAdjudicationTarget(
         row_kind=row_kind,
@@ -44,8 +46,8 @@ def _target(
         security_id=798,
         cik=cik,
         symbol=symbol,
-        effective_from=date(2009, 12, 31),
-        effective_to=date(2010, 1, 22),
+        effective_from=effective_from,
+        effective_to=effective_to,
         prior_source_hash="a" * 64,
         verification_status=status,
     )
@@ -117,3 +119,20 @@ def test_security_type_plan_is_replay_deterministic() -> None:
     replay = plan_security_type_adjudication(targets, evidence)
 
     assert security_type_plan_id(first) == security_type_plan_id(replay)
+
+
+def test_security_type_plan_changes_if_effective_interval_changes() -> None:
+    evidence = extract_schering_plough_preferred_evidence(_payload(), source_url=SEC_URL)
+    original = plan_security_type_adjudication(
+        (_target(), _target(row_kind="identity")),
+        evidence,
+    )
+    shifted = plan_security_type_adjudication(
+        (
+            _target(effective_from=date(2010, 1, 1)),
+            _target(row_kind="identity", effective_from=date(2010, 1, 1)),
+        ),
+        evidence,
+    )
+
+    assert security_type_plan_id(original) != security_type_plan_id(shifted)
