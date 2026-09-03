@@ -27,14 +27,19 @@ jobs:
     env:
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       PYTHONPATH: .
       OUTPUT_DIR: data/processed/historical-universe/sgpprb-adjudication
 
     steps:
-      - name: Check required database secret
+      - name: Check required secrets
         run: |
           if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
             echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ -z "${SEC_USER_AGENT}" ]; then
+            echo "::error::SEC_USER_AGENT is required for live SEC requests."
             exit 1
           fi
 
