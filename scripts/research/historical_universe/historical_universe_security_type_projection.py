@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from collections import Counter
 from datetime import date
 from pathlib import Path
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -26,8 +24,10 @@ from apps.api.app.models.historical_universe import (
     SecurityIdentityPeriod,
     UniverseMembership,
 )
+from fdre.ingestion.sec_client import SECClient
 from fdre.research.historical_universe_identity import normalize_cik
 from fdre.research.historical_universe_security_type import (
+    SecSecurityTypeEvidence,
     SecurityTypeAdjudicationTarget,
     extract_schering_plough_preferred_evidence,
     plan_security_type_adjudication,
@@ -41,10 +41,6 @@ TARGET_CIK = "0000310158"
 TARGET_SYMBOL = "SGPPRB"
 SEC_SOURCE_URL = (
     "https://www.sec.gov/Archives/edgar/data/310158/000095012307011295/y37189bte424b2.htm"
-)
-DEFAULT_SEC_USER_AGENT = (
-    "FDRE historical-universe research "
-    "https://github.com/kenchengkc/the-financial-document-retrieval-engine"
 )
 
 
@@ -170,19 +166,12 @@ def load_exact_sgpprb_targets(
 def fetch_sec_security_type_evidence(
     *,
     source_url: str,
-    user_agent: str,
-) -> object:
-    with httpx.Client(
-        headers={"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"},
-        follow_redirects=True,
-        timeout=30.0,
-    ) as client:
-        response = client.get(source_url)
-        response.raise_for_status()
-        return extract_schering_plough_preferred_evidence(
-            response.content,
-            source_url=str(response.url),
-        )
+) -> SecSecurityTypeEvidence:
+    """Fetch the immutable SEC prospectus using the repository's compliant SEC client."""
+
+    with SECClient.from_settings() as client:
+        payload = client.get_bytes(source_url)
+    return extract_schering_plough_preferred_evidence(payload, source_url=source_url)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -191,10 +180,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--sec-source-url", default=SEC_SOURCE_URL)
-    parser.add_argument(
-        "--sec-user-agent",
-        default=os.environ.get("SEC_USER_AGENT", DEFAULT_SEC_USER_AGENT),
-    )
     parser.add_argument("--window-start", type=_date, default=date(2010, 1, 1))
     parser.add_argument("--window-end", type=_date, default=date(2026, 9, 1))
     parser.add_argument("--output", type=Path, required=True)
@@ -206,18 +191,13 @@ def main() -> int:
     if args.window_end < args.window_start:
         raise RuntimeError("window end must not precede window start")
 
-    evidence = fetch_sec_security_type_evidence(
-        source_url=args.sec_source_url,
-        user_agent=args.sec_user_agent,
-    )
-    if not hasattr(evidence, "evidence_id"):
-        raise RuntimeError("invalid SEC security-type evidence result")
+    evidence = fetch_sec_security_type_evidence(source_url=args.sec_source_url)
 
     engine = create_db_engine(args.database_url)
     try:
         with Session(engine) as session:
             targets, identity, membership = load_exact_sgpprb_targets(session)
-            decisions = plan_security_type_adjudication(targets, evidence)  # type: ignore[arg-type]
+            decisions = plan_security_type_adjudication(targets, evidence)
             rejection_count = sum(item.rejection_candidate for item in decisions)
             if rejection_count != 2:
                 raise RuntimeError(
@@ -267,7 +247,7 @@ def main() -> int:
         "plan_id": plan_id,
         "target_cik": TARGET_CIK,
         "target_symbol": TARGET_SYMBOL,
-        "sec_evidence": evidence.as_dict(),  # type: ignore[union-attr]
+        "sec_evidence": evidence.as_dict(),
         "target_count": len(targets),
         "rejection_candidate_count": rejection_count,
         "status_counts": dict(sorted(status_counts.items())),
