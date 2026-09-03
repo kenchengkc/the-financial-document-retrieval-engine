@@ -7,6 +7,7 @@ import pytest
 
 from fdre.research.historical_universe_membership_adjudication import (
     LiveSiblingMembership,
+    MembershipAdjudicationCase,
     membership_adjudication_manifest_id,
     membership_adjudication_plan_id,
     plan_membership_adjudication,
@@ -46,7 +47,9 @@ def _blocker(case_index: int) -> ProvisionalMembershipBlocker:
 
 
 def _blockers() -> tuple[ProvisionalMembershipBlocker, ...]:
-    return tuple(_blocker(index) for index in range(len(HU5_MEMBERSHIP_ADJUDICATION_CASES)))
+    return tuple(
+        _blocker(index) for index in range(len(HU5_MEMBERSHIP_ADJUDICATION_CASES))
+    )
 
 
 def _siblings(*, status: str = "verified") -> tuple[LiveSiblingMembership, ...]:
@@ -69,9 +72,20 @@ def _siblings(*, status: str = "verified") -> tuple[LiveSiblingMembership, ...]:
     )
 
 
-def _case(membership_id: int):  # type: ignore[no-untyped-def]
+def _case(membership_id: int) -> MembershipAdjudicationCase:
     return next(
-        item for item in HU5_MEMBERSHIP_ADJUDICATION_CASES if item.membership_id == membership_id
+        item
+        for item in HU5_MEMBERSHIP_ADJUDICATION_CASES
+        if item.membership_id == membership_id
+    )
+
+
+def _replace_case(
+    replacement: MembershipAdjudicationCase,
+) -> tuple[MembershipAdjudicationCase, ...]:
+    return tuple(
+        replacement if item.membership_id == replacement.membership_id else item
+        for item in HU5_MEMBERSHIP_ADJUDICATION_CASES
     )
 
 
@@ -81,7 +95,8 @@ def test_manifest_covers_exact_final_membership_inventory() -> None:
     assert len(set(ids)) == 15
     assert sum(item.action == "verify" for item in HU5_MEMBERSHIP_ADJUDICATION_CASES) == 6
     assert sum(
-        item.action == "correct_and_verify" for item in HU5_MEMBERSHIP_ADJUDICATION_CASES
+        item.action == "correct_and_verify"
+        for item in HU5_MEMBERSHIP_ADJUDICATION_CASES
     ) == 6
     assert sum(item.action == "reject" for item in HU5_MEMBERSHIP_ADJUDICATION_CASES) == 3
 
@@ -162,11 +177,10 @@ def test_required_sibling_source_hash_is_bound() -> None:
 def test_verify_action_cannot_change_boundaries() -> None:
     act = _case(685)
     invalid = replace(act, target_effective_from=date(2013, 1, 25))
-    cases = tuple(invalid if item.membership_id == 685 else item for item in HU5_MEMBERSHIP_ADJUDICATION_CASES)
     with pytest.raises(ValueError, match="cannot change boundaries"):
         plan_membership_adjudication(
             _blockers(),
-            cases=cases,
+            cases=_replace_case(invalid),
             live_siblings=_siblings(),
         )
 
@@ -178,11 +192,10 @@ def test_correction_requires_a_real_boundary_change() -> None:
         target_effective_from=wcg.prior_effective_from,
         target_effective_to=wcg.prior_effective_to,
     )
-    cases = tuple(invalid if item.membership_id == 814 else item for item in HU5_MEMBERSHIP_ADJUDICATION_CASES)
     with pytest.raises(ValueError, match="must change a boundary"):
         plan_membership_adjudication(
             _blockers(),
-            cases=cases,
+            cases=_replace_case(invalid),
             live_siblings=_siblings(),
         )
 
@@ -190,11 +203,10 @@ def test_correction_requires_a_real_boundary_change() -> None:
 def test_duplicate_cover_is_rejection_only() -> None:
     ua_c = _case(834)
     invalid = replace(ua_c, action="verify")
-    cases = tuple(invalid if item.membership_id == 834 else item for item in HU5_MEMBERSHIP_ADJUDICATION_CASES)
     with pytest.raises(ValueError, match="duplicate cover only supports rejection"):
         plan_membership_adjudication(
             _blockers(),
-            cases=cases,
+            cases=_replace_case(invalid),
             live_siblings=_siblings(),
         )
 
