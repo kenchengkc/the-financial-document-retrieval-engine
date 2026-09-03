@@ -74,6 +74,15 @@ def _as_str_tuple(value: object, *, field: str) -> tuple[str, ...]:
     return result
 
 
+def _as_ordered_unique_str_tuple(value: object, *, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise RuntimeError(f"projection {field} must be a string list")
+    result = tuple(value)
+    if len(set(result)) != len(result):
+        raise RuntimeError(f"projection {field} must be unique")
+    return result
+
+
 def _decision_hash(decision: dict[str, object]) -> str:
     payload = {
         "schema_version": SEC_IDENTITY_DECISION_SCHEMA_VERSION,
@@ -100,10 +109,10 @@ def _decision_hash(decision: dict[str, object]) -> str:
         "sec_evidence_ids": _as_str_tuple(
             decision.get("sec_evidence_ids"), field="decision.sec_evidence_ids"
         ),
-        "conflicting_accessions": _as_str_tuple(
+        "conflicting_accessions": _as_ordered_unique_str_tuple(
             decision.get("conflicting_accessions"), field="decision.conflicting_accessions"
         ),
-        "inspected_accessions": _as_str_tuple(
+        "inspected_accessions": _as_ordered_unique_str_tuple(
             decision.get("inspected_accessions"), field="decision.inspected_accessions"
         ),
     }
@@ -269,7 +278,7 @@ def _validate_projection(
         )
         if len(state_decision_hash) != 64 or len(state_lineage_id) != 64:
             raise RuntimeError(f"row {row_id} has invalid state provenance hashes")
-        if _as_str_tuple(
+        if _as_ordered_unique_str_tuple(
             decision.get("conflicting_accessions"), field="decision.conflicting_accessions"
         ):
             raise RuntimeError(f"fully supported row {row_id} contains a conflict")
