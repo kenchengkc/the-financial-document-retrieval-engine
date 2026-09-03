@@ -9,8 +9,10 @@ from fdre.research.historical_universe_sec_identity import (
     SecIdentityFilingObservation,
     extract_trading_symbols,
     filing_directory_index_url,
+    normalize_sec_trading_symbol,
     plan_sec_identity_support,
     sec_identity_plan_id,
+    sec_symbol_match_key,
     xbrl_instance_filenames,
 )
 from fdre.research.historical_universe_state_support import (
@@ -96,6 +98,18 @@ def test_free_text_trading_symbol_label_is_not_evidence() -> None:
     assert extract_trading_symbols("<html><body>Trading Symbol: ABC</body></html>") == ()
 
 
+def test_sec_symbol_normalization_only_removes_presentation_wrappers() -> None:
+    assert normalize_sec_trading_symbol("“CBRE”") == "CBRE"
+    assert normalize_sec_trading_symbol("BAX (NYSE)") == "BAX"
+    assert normalize_sec_trading_symbol("BAX 29") == "BAX 29"
+
+
+def test_sec_symbol_match_key_handles_share_class_punctuation() -> None:
+    assert sec_symbol_match_key("BF-B") == sec_symbol_match_key("BFB")
+    assert sec_symbol_match_key("BRK.B") == sec_symbol_match_key("BRKB")
+    assert sec_symbol_match_key("BAX") != sec_symbol_match_key("BAX 29")
+
+
 def test_sec_directory_url_is_strict() -> None:
     assert filing_directory_index_url(
         "https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/aapl-20230930.htm"
@@ -131,6 +145,32 @@ def test_exact_sec_symbol_plus_full_state_is_promotion_candidate() -> None:
     assert decision.status == "fully_supported"
     assert decision.promotion_candidate is True
     assert decision.sec_evidence_ids == ("c" * 64,)
+
+
+def test_share_class_sec_symbol_equivalence_is_supported() -> None:
+    interval = _interval(symbol="BF-B")
+    states = plan_state_support((interval,), (_lineage(symbol="BF-B"),))
+    decision = plan_sec_identity_support(
+        (interval,),
+        states,
+        (_observation(symbols=("BFA", "BFB", "BF26")),),
+    )[0]
+
+    assert decision.status == "fully_supported"
+    assert decision.promotion_candidate is True
+
+
+def test_matching_common_stock_fact_ignores_unrelated_registered_security_symbols() -> None:
+    interval = _interval(symbol="BAX")
+    states = plan_state_support((interval,), (_lineage(symbol="BAX"),))
+    decision = plan_sec_identity_support(
+        (interval,),
+        states,
+        (_observation(symbols=("BAX", "BAX 29")),),
+    )[0]
+
+    assert decision.status == "fully_supported"
+    assert decision.promotion_candidate is True
 
 
 def test_conflicting_sec_symbol_fails_closed() -> None:
