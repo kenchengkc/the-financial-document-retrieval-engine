@@ -3,12 +3,7 @@ name: One-shot HU SEC filing identity projection
 on:
   push:
     branches:
-      - research/hu-sec-filing-identity-projection
-    paths:
-      - ".github/workflows/hu-sec-filing-identity-projection-once.yml"
-      - "scripts/research/historical_universe/historical_universe_sec_identity.py"
-      - "src/fdre/research/historical_universe_sec_identity.py"
-      - "tests/unit/fdre/test_historical_universe_sec_identity.py"
+      - ops/manual-hu-sec-filing-identity-projection-only
 
 permissions:
   contents: read
