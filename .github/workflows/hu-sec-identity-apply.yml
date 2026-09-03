@@ -18,12 +18,20 @@ on:
         required: true
         default: false
         type: boolean
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
 
 jobs:
   apply:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == 'kenchengkc' &&
+       github.event.issue.number == 84 &&
+       github.event.comment.body == '/hu5-apply-sec-identities 7f3ca7ec6238e768242c22295af561a309a3118b55055db029cccb33208b23ad 521')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -33,8 +41,25 @@ jobs:
       PYTHONPATH: .
       OUTPUT_DIR: data/processed/historical-universe/sec-identity-apply
       TICKER_LINEAGES_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
+      FROZEN_PLAN_ID: 7f3ca7ec6238e768242c22295af561a309a3118b55055db029cccb33208b23ad
+      FROZEN_PROMOTION_COUNT: "521"
 
     steps:
+      - name: Resolve guarded request
+        if: ${{ github.event_name == 'issue_comment' }}
+        run: |
+          echo "EXPECTED_PLAN_ID=${FROZEN_PLAN_ID}" >> "${GITHUB_ENV}"
+          echo "EXPECTED_PROMOTION_COUNT=${FROZEN_PROMOTION_COUNT}" >> "${GITHUB_ENV}"
+
+      - name: Resolve manual request
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          DISPATCH_EXPECTED_PLAN_ID: ${{ inputs.expected_plan_id }}
+          DISPATCH_EXPECTED_PROMOTION_COUNT: ${{ inputs.expected_promotion_count }}
+        run: |
+          echo "EXPECTED_PLAN_ID=${DISPATCH_EXPECTED_PLAN_ID}" >> "${GITHUB_ENV}"
+          echo "EXPECTED_PROMOTION_COUNT=${DISPATCH_EXPECTED_PROMOTION_COUNT}" >> "${GITHUB_ENV}"
+
       - name: Check required secrets
         run: |
           if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
@@ -43,6 +68,10 @@ jobs:
           fi
           if [ -z "${SEC_USER_AGENT}" ]; then
             echo "::error::SEC_USER_AGENT is required."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_PLAN_ID}" ] || [ -z "${EXPECTED_PROMOTION_COUNT}" ]; then
+            echo "::error::Guarded plan ID and promotion count are required."
             exit 1
           fi
 
@@ -91,9 +120,6 @@ jobs:
             --output "${OUTPUT_DIR}/projection.json"
 
       - name: Verify frozen projection
-        env:
-          EXPECTED_PLAN_ID: ${{ inputs.expected_plan_id }}
-          EXPECTED_PROMOTION_COUNT: ${{ inputs.expected_promotion_count }}
         run: |
           python - <<'PY'
           import json
@@ -120,24 +146,24 @@ jobs:
           PY
 
       - name: Migrate durable identity evidence schema
-        if: ${{ inputs.apply_supported }}
+        if: ${{ github.event_name == 'issue_comment' || inputs.apply_supported }}
         run: alembic upgrade head
 
       - name: Apply exact SEC-backed identity promotions
-        if: ${{ inputs.apply_supported }}
+        if: ${{ github.event_name == 'issue_comment' || inputs.apply_supported }}
         env:
           FDRE_ALLOW_PROD: "1"
         run: |
           python -m scripts.research.historical_universe.historical_universe_sec_identity_apply \
             --database-url "${DATABASE_URL}" \
             --projection "${OUTPUT_DIR}/projection.json" \
-            --expected-plan-id "${{ inputs.expected_plan_id }}" \
-            --expected-promotion-count "${{ inputs.expected_promotion_count }}" \
+            --expected-plan-id "${EXPECTED_PLAN_ID}" \
+            --expected-promotion-count "${EXPECTED_PROMOTION_COUNT}" \
             --apply \
             --output "${OUTPUT_DIR}/apply.json"
 
       - name: Audit strict coverage after apply
-        if: ${{ inputs.apply_supported }}
+        if: ${{ github.event_name == 'issue_comment' || inputs.apply_supported }}
         run: |
           python -m scripts.research.historical_universe.historical_universe_strict_coverage \
             --database-url "${DATABASE_URL}" \
