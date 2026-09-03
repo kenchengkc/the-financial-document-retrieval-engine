@@ -17,11 +17,23 @@ FDRE is financial research infrastructure, not a generic chatbot or trading syst
 
 - `apps/api/`: FastAPI routes, schemas, services, models, migrations, and API tests.
 - `apps/web/`: Next.js research interface and Playwright tests.
-- `src/`: reusable ingestion, parsing, retrieval, graph, evaluation, and research code.
-- `scripts/retrieval_pipeline.py`: primary artifact/research CLI.
-- `scripts/ingest_ticker_batch.py`: resumable operational ingestion.
+- `src/fdre/`: reusable ingestion, parsing, retrieval, graph, evaluation, universe, and research code.
+- `scripts/benchmarks/`: retrieval and cross-sectional benchmark tooling.
+- `scripts/ingestion/`: operational SEC ingestion, repair, and catalog utilities.
+- `scripts/pipelines/`: top-level orchestration entry points.
+- `scripts/research/`: reproducible research and experiment entry points.
+- `scripts/research/historical_universe/`: Historical Universe audits, materialization, and gates.
+- `tests/unit/fdre/`: reusable-library unit tests; application tests remain colocated under `apps/`.
 - `data/sample/`: small deterministic fixtures only.
-- `docs/`: architecture, roadmap, and benchmark reports.
+- `docs/architecture/`: system and lineage architecture.
+- `docs/evaluations/`: evaluation plans and benchmark results.
+- `docs/research/`: research-system specifications and archive documentation.
+
+Canonical operational entry points include:
+
+- `python -m scripts.pipelines.retrieval_pipeline`
+- `python -m scripts.ingestion.ingest_ticker_batch`
+- `python -m scripts.research.historical_universe.universe_snapshot`
 
 ## Code
 

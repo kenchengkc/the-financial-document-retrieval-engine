@@ -170,14 +170,14 @@ jobs:
           if [ "${FAIL_ON_MISSING_MARKET_DATA}" = "true" ]; then
             cache_args+=(--fail-on-missing-market-data)
           fi
-          python -m scripts.retrieval_pipeline signal-study \
+          python -m scripts.pipelines.retrieval_pipeline signal-study \
             "${study_args[@]}" \
             "${cache_args[@]}"
 
       - name: Manifest reproducible market cache
         if: always()
         run: |
-          python -m scripts.market_cache_manifest \
+          python -m scripts.research.market_cache_manifest \
             --cache-dir data/cache/market \
             --manifest data/processed/signals/market-cache-manifest.json
 

@@ -16,9 +16,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/flagship-risk-churn-acceleration.yml"
-      - "scripts/hu5_risk_churn_acceleration.py"
-      - "scripts/historical_universe_blocker_audit.py"
-      - "scripts/historical_universe_blocker_queue.py"
+      - "scripts/research/hu5_risk_churn_acceleration.py"
+      - "scripts/research/historical_universe/historical_universe_blocker_audit.py"
+      - "scripts/research/historical_universe/historical_universe_blocker_queue.py"
       - "src/fdre/research/hu5_universe.py"
       - "src/fdre/research/hu5_blockers.py"
 
@@ -92,10 +92,10 @@ jobs:
       - name: Measure strict historical-universe blockers
         run: |
           mkdir -p data/processed/flagship/risk-churn-acceleration
-          python -m scripts.historical_universe_blocker_audit \
+          python -m scripts.research.historical_universe.historical_universe_blocker_audit \
             --database-url "${DATABASE_URL}" \
             --output data/processed/flagship/risk-churn-acceleration/universe-blockers.json
-          python -m scripts.historical_universe_blocker_queue \
+          python -m scripts.research.historical_universe.historical_universe_blocker_queue \
             --input data/processed/flagship/risk-churn-acceleration/universe-blockers.json \
             --output data/processed/flagship/risk-churn-acceleration/universe-remediation-queue.json
           {
@@ -116,7 +116,7 @@ jobs:
           )
           log_file="$(mktemp)"
           set +e
-          python -m scripts.hu5_risk_churn_acceleration "${args[@]}" 2>&1 | tee "${log_file}"
+          python -m scripts.research.hu5_risk_churn_acceleration "${args[@]}" 2>&1 | tee "${log_file}"
           status=${PIPESTATUS[0]}
           set -e
           primary_result="$(grep '^PRIMARY_RESULT=' "${log_file}" | tail -1 || true)"
@@ -133,7 +133,7 @@ jobs:
       - name: Manifest reproducible market cache
         if: always()
         run: |
-          python -m scripts.market_cache_manifest \
+          python -m scripts.research.market_cache_manifest \
             --cache-dir data/cache/market \
             --manifest data/processed/flagship/risk-churn-acceleration/market-cache-manifest.json
 

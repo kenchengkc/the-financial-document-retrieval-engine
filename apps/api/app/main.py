@@ -57,7 +57,7 @@ def create_app() -> FastAPI:
 
 
 def _initialize_demo_database() -> None:
-    from fdre.demo import seed_demo_document
+    from scripts.ingestion.seed_demo import seed_demo_document
 
     engine = get_engine()
     Base.metadata.create_all(engine)

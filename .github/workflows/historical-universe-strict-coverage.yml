@@ -8,8 +8,8 @@ on:
       - research/hu-strict-coverage-closure
     paths:
       - ".github/workflows/historical-universe-strict-coverage.yml"
-      - "scripts/historical_universe_strict_coverage.py"
-      - "scripts/historical_universe_state_support.py"
+      - "scripts/research/historical_universe/historical_universe_strict_coverage.py"
+      - "scripts/research/historical_universe/historical_universe_state_support.py"
       - "src/fdre/research/historical_universe_strict_coverage.py"
       - "src/fdre/research/historical_universe_state_support.py"
       - "src/fdre/research/historical_universe_lineage.py"
@@ -77,7 +77,7 @@ jobs:
       - name: Audit provisional membership blockers
         run: |
           mkdir -p "${OUTPUT_DIR}"
-          python -m scripts.historical_universe_strict_coverage \
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
             --database-url "${DATABASE_URL}" \
             --universe-code sp500 \
             --window-start 2010-01-01 \
@@ -86,7 +86,7 @@ jobs:
 
       - name: Project independent state corroboration
         run: |
-          python -m scripts.historical_universe_state_support \
+          python -m scripts.research.historical_universe.historical_universe_state_support \
             --database-url "${DATABASE_URL}" \
             --ticker-lineages data/raw/historical-universe/sp500_ticker_start_end.csv \
             --ticker-lineages-ref "${TICKER_LINEAGES_REF}" \
