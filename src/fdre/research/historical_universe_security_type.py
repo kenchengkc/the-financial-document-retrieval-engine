@@ -96,26 +96,34 @@ def extract_schering_plough_preferred_evidence(
     """Extract the exact SGP PrB/common-SGP distinction from the 2007 SEC prospectus.
 
     This is deliberately evidence-scoped rather than a general preferred-ticker classifier. The
-    payload must explicitly call the instrument mandatory convertible preferred stock, bind it to
-    ``SGP PrB``, and separately bind the issuer's common shares to ``SGP``.
+    filing must make three explicit statements: the offered instrument is 6.00% mandatory
+    convertible preferred stock; that defined 2007 Preferred Stock is listed as ``SGP PrB``; and
+    the issuer's common shares are separately listed as ``SGP``. The assertions may occur in
+    separate nearby paragraphs, as they do on the prospectus cover.
     """
 
     payload = content.encode("utf-8") if isinstance(content, str) else content
     text = _document_text(payload)
-    preferred = re.search(
-        r"6\.00%\s+mandatory\s+convertible\s+preferred\s+stock.{0,1800}?"
-        r"approved\s+for\s+listing\s+on\s+the\s+new\s+york\s+stock\s+exchange.{0,300}?"
-        r"under\s+the\s+symbol\s+[\"'“”]?SGP\s*PrB",
+    preferred_definition = re.search(
+        r"6\.00%\s+mandatory\s+convertible\s+preferred\s+stock.{0,220}?"
+        r"referred\s+to\s+as\s+the\s+2007\s+preferred\s+stock",
         text,
         flags=re.IGNORECASE,
     )
-    common = re.search(
-        r"common\s+shares\s+are\s+listed\s+on\s+the\s+new\s+york\s+stock\s+exchange.{0,160}?"
-        r"under\s+the\s+symbol\s+[\"'“”]?SGP",
+    preferred_listing = re.search(
+        r"2007\s+preferred\s+stock\s+has\s+been\s+approved\s+for\s+listing\s+on\s+the\s+"
+        r"new\s+york\s+stock\s+exchange.{0,180}?under\s+the\s+symbol\s+[\"'“”]?"
+        r"SGP\s*PrB",
         text,
         flags=re.IGNORECASE,
     )
-    if preferred is None or common is None:
+    common_listing = re.search(
+        r"common\s+shares\s+are\s+listed\s+on\s+the\s+new\s+york\s+stock\s+exchange.{0,180}?"
+        r"under\s+the\s+symbol\s+[\"'“”]?SGP(?:[\"'“”\.\s]|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if preferred_definition is None or preferred_listing is None or common_listing is None:
         raise ValueError(
             "SEC payload does not explicitly bind SGP PrB to preferred stock and SGP to common shares"
         )
