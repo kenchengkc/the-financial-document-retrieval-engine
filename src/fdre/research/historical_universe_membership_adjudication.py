@@ -221,6 +221,48 @@ def _validate_case_shape(case: MembershipAdjudicationCase) -> None:
     if case.action == "reject" and target != prior:
         raise ValueError(f"reject membership {case.membership_id} cannot change boundaries")
 
+    for sibling in case.siblings:
+        if normalize_cik(sibling.cik) != normalize_cik(case.cik):
+            raise ValueError(
+                f"membership {case.membership_id} sibling {sibling.membership_id} has a different CIK"
+            )
+        if sibling.role == "predecessor":
+            if sibling.effective_to is None or sibling.effective_to != case.target_effective_from:
+                raise ValueError(
+                    f"membership {case.membership_id} predecessor must end at target start"
+                )
+        elif sibling.role == "successor":
+            if case.target_effective_to is None or (
+                sibling.effective_from != case.target_effective_to
+            ):
+                raise ValueError(
+                    f"membership {case.membership_id} successor must start at target end"
+                )
+        else:
+            if sibling.security_id == case.security_id:
+                raise ValueError(
+                    f"membership {case.membership_id} duplicate cover must use another security"
+                )
+            if sibling.effective_from > case.target_effective_from:
+                raise ValueError(
+                    f"membership {case.membership_id} duplicate cover starts too late"
+                )
+            if case.target_effective_to is None:
+                if sibling.effective_to is not None:
+                    raise ValueError(
+                        f"membership {case.membership_id} duplicate cover is not open"
+                    )
+            elif sibling.effective_to is not None and (
+                sibling.effective_to < case.target_effective_to
+            ):
+                raise ValueError(
+                    f"membership {case.membership_id} duplicate cover ends too early"
+                )
+            if case.action != "reject":
+                raise ValueError(
+                    f"membership {case.membership_id} duplicate cover only supports rejection"
+                )
+
 
 def _matches_identity(
     blocker: ProvisionalMembershipBlocker,
