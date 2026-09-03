@@ -173,7 +173,11 @@ def main() -> int:
         "correct_and_verify": args.expected_correct_count,
         "reject": args.expected_reject_count,
     }
-    actual_counts = {action: counts[action] for action in expected_counts}
+    actual_counts = {
+        "verify": counts["verify"],
+        "correct_and_verify": counts["correct_and_verify"],
+        "reject": counts["reject"],
+    }
     if actual_counts != expected_counts:
         raise RuntimeError(
             f"membership adjudication action counts changed: {actual_counts}"
