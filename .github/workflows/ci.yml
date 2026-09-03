@@ -5,62 +5,11 @@ on:
   push:
     branches:
       - main
-      - chore/workflow-prune
 
 permissions:
-  actions: write
   contents: read
 
 jobs:
-  prune-stale-workflows:
-    name: Prune stale workflow histories
-    if: github.event_name == 'push' && github.ref == 'refs/heads/chore/workflow-prune'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Delete stale workflow run histories
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS=$'\t' read -r run_id workflow_name workflow_path; do
-            stale=false
-            case "${workflow_name}" in
-              "One-shot HU membership apply"|\
-              "Historical Universe SGPPRB projection"|\
-              "Historical Universe SGPPRB rejection apply"|\
-              "HU-5 blocker topology"|\
-              "HU-5 membership continuity apply"|\
-              "HU-5 membership continuity projection"|\
-              "One-shot HU identity metadata audit"|\
-              "One-shot HU SEC filing identity projection"|\
-              "Repository architecture rewrite"|\
-              "Repository format fix"|\
-              "Repository test path fix"|\
-              "HU-5 continuity replay 2")
-                stale=true
-                ;;
-            esac
-            case "${workflow_path}" in
-              ".github/workflows/hu-membership-apply-once.yml"|\
-              ".github/workflows/hu-sgpprb-apply.yml"|\
-              ".github/workflows/hu5-blocker-topology.yml"|\
-              ".github/workflows/hu5-membership-continuity-apply.yml"|\
-              ".github/workflows/hu-sec-filing-identity-projection-once.yml"|\
-              ".github/workflows/hu5-continuity-replay-2.yml")
-                stale=true
-                ;;
-            esac
-            if [ "${stale}" = true ]; then
-              echo "Deleting stale run ${run_id}: ${workflow_name} (${workflow_path})"
-              gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-            fi
-          done < <(
-            gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
-              --jq '.workflow_runs[] | [.id, .name, .path] | @tsv'
-          )
-
   backend:
     name: Backend checks
     runs-on: ubuntu-latest
