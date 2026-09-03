@@ -1,0 +1,112 @@
+name: HU-5 membership continuity apply
+
+on:
+  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-hu5-membership-continuity-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.number == 84 &&
+       github.actor == 'kenchengkc' &&
+       github.event.comment.body == '/hu5-apply-membership-continuity 7602e5fcd53e4bd48e3de8c1d7d05f5bd964cd89cc689ed0a3d20b4593b171ef')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      CURRENT_REF: c31ac3cc56f28cf9a02b4e694eff7ceab596a0ff
+      EXPECTED_PLAN_ID: 7602e5fcd53e4bd48e3de8c1d7d05f5bd964cd89cc689ed0a3d20b4593b171ef
+      OUTPUT_DIR: data/processed/historical-universe/hu5-membership-continuity
+
+    steps:
+      - name: Check database secret
+        run: |
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "."
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Fetch pinned current constituent anchor
+        run: |
+          mkdir -p data/raw/historical-universe "${OUTPUT_DIR}"
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/fja05680/sp500/${CURRENT_REF}/sp500.csv" \
+            --output data/raw/historical-universe/sp500-current.csv
+          test -s data/raw/historical-universe/sp500-current.csv
+
+      - name: Replay frozen continuity projection
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_membership_continuity \
+            --database-url "${DATABASE_URL}" \
+            --current-constituents data/raw/historical-universe/sp500-current.csv \
+            --current-constituents-ref "${CURRENT_REF}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/projection.json"
+          ACTUAL_PLAN_ID="$(python -c 'import json; from pathlib import Path; print(json.loads(Path("data/processed/historical-universe/hu5-membership-continuity/projection.json").read_text())["plan_id"])')"
+          test "${ACTUAL_PLAN_ID}" = "${EXPECTED_PLAN_ID}"
+
+      - name: Apply exact continuity decisions
+        env:
+          FDRE_ALLOW_PROD: "1"
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_membership_continuity_apply \
+            --database-url "${DATABASE_URL}" \
+            --projection "${OUTPUT_DIR}/projection.json" \
+            --current-constituents-ref "${CURRENT_REF}" \
+            --expected-plan-id "${EXPECTED_PLAN_ID}" \
+            --expected-verify-count 16 \
+            --expected-reject-count 6 \
+            --apply \
+            --output "${OUTPUT_DIR}/apply.json"
+
+      - name: Audit post-apply strict coverage
+        run: |
+          python -m scripts.research.historical_universe.historical_universe_strict_coverage \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/strict-coverage-after-apply.json"
+
+      - name: Upload apply evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-membership-continuity-apply-${{ github.run_id }}
+          path: "${{ env.OUTPUT_DIR }}"
+          if-no-files-found: error
