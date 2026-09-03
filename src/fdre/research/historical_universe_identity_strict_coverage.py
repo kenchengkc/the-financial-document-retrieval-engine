@@ -156,10 +156,7 @@ def _end(value: date | None, *, window_end_exclusive: date) -> date:
     return value if value is not None else window_end_exclusive
 
 
-def _active_identity(
-    identity: IdentityCoverageIdentity,
-    when: date,
-) -> bool:
+def _active_identity(identity: IdentityCoverageIdentity, when: date) -> bool:
     return identity.effective_from <= when and (
         identity.effective_to is None or when < identity.effective_to
     )
@@ -187,7 +184,10 @@ def _membership_issues(
     window_end_exclusive: date,
 ) -> tuple[IdentityCoverageIssue, ...]:
     start = max(membership.effective_from, window_start)
-    end = min(_end(membership.effective_to, window_end_exclusive=window_end_exclusive), window_end_exclusive)
+    end = min(
+        _end(membership.effective_to, window_end_exclusive=window_end_exclusive),
+        window_end_exclusive,
+    )
     if end <= start:
         return ()
     boundaries = {start, end}
@@ -201,7 +201,11 @@ def _membership_issues(
     for segment_start, segment_end in pairwise(sorted(boundaries)):
         active = tuple(
             sorted(
-                (item for item in membership.identities if _active_identity(item, segment_start)),
+                (
+                    item
+                    for item in membership.identities
+                    if _active_identity(item, segment_start)
+                ),
                 key=lambda item: item.identity_id,
             )
         )
@@ -238,11 +242,6 @@ def build_identity_strict_coverage_audit(
     membership_ids = [item.membership_id for item in memberships]
     if len(set(membership_ids)) != len(membership_ids):
         raise ValueError("membership IDs must be unique")
-    identity_ids = [
-        identity.identity_id for membership in memberships for identity in membership.identities
-    ]
-    if len(identity_ids) != len(set(identity_ids)):
-        raise ValueError("identity IDs must be unique across audit input")
 
     window_end_exclusive = window_end + timedelta(days=1)
     ordered_memberships = tuple(sorted(memberships, key=lambda item: item.membership_id))
@@ -278,17 +277,17 @@ def build_identity_strict_coverage_audit(
             if issue.effective_from <= start < issue.effective_to
         )
         blocker_ids = tuple(sorted({issue.membership_id for issue in active_issues}))
-        day_count = (end - start).days
+        segment_day_count = (end - start).days
         segments.append(
             IdentityCoverageSegment(
                 effective_from=start,
                 effective_to=end,
-                day_count=day_count,
+                day_count=segment_day_count,
                 blocker_membership_ids=blocker_ids,
             )
         )
         for reason in {issue.reason for issue in active_issues}:
-            reason_days[reason] += day_count
+            reason_days[reason] += segment_day_count
 
     blocked_days = sum(item.day_count for item in segments if item.blocker_membership_ids)
     day_count = (window_end - window_start).days + 1
@@ -302,8 +301,14 @@ def build_identity_strict_coverage_audit(
                 and identity.effective_from < window_end_exclusive
                 and (identity.effective_to is None or identity.effective_to > window_start)
                 and identity.effective_from
-                < _end(membership.effective_to, window_end_exclusive=window_end_exclusive)
-                and (identity.effective_to is None or identity.effective_to > membership.effective_from)
+                < _end(
+                    membership.effective_to,
+                    window_end_exclusive=window_end_exclusive,
+                )
+                and (
+                    identity.effective_to is None
+                    or identity.effective_to > membership.effective_from
+                )
             }
         )
     )
