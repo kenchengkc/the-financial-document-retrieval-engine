@@ -1,0 +1,317 @@
+name: One-shot HU identity metadata audit
+
+on:
+  push:
+    branches:
+      - ops/hu-identity-audit-2026-09-03
+    paths:
+      - ".github/workflows/hu-identity-metadata-audit-once.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+
+    steps:
+      - name: Check required database secret
+        run: |
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "."
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Audit retained issuer-symbol evidence
+        run: |
+          mkdir -p data/processed/historical-universe/identity-metadata-audit
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          from collections import Counter, defaultdict
+          from datetime import date
+          from pathlib import Path
+          from typing import Any
+
+          from sqlalchemy import select
+          from sqlalchemy.orm import Session
+
+          from apps.api.app.db import create_db_engine
+          from apps.api.app.models.companies import Company
+          from apps.api.app.models.documents import Document
+          from apps.api.app.models.historical_universe import (
+              Security,
+              SecurityIdentityPeriod,
+              UniverseMembership,
+          )
+
+          WINDOW_START = date(2010, 1, 1)
+          WINDOW_END = date(2026, 9, 1)
+
+          def norm_symbol(value: object) -> str:
+              return str(value).strip().upper().replace(".", "-")
+
+          def key_norm(value: str) -> str:
+              return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+          def symbol_values(value: Any, prefix: str = "") -> list[tuple[str, str]]:
+              found: list[tuple[str, str]] = []
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      path = f"{prefix}.{key}" if prefix else str(key)
+                      normalized = key_norm(str(key))
+                      if normalized in {"tradingsymbol", "ticker", "symbol"}:
+                          if isinstance(child, (str, int, float)):
+                              found.append((path, str(child)))
+                      found.extend(symbol_values(child, path))
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      found.extend(symbol_values(child, f"{prefix}[{index}]"))
+              return found
+
+          engine = create_db_engine(os.environ["DATABASE_URL"])
+          try:
+              with Session(engine) as session:
+                  security_ids = tuple(
+                      sorted(
+                          {
+                              int(value)
+                              for value in session.scalars(
+                                  select(UniverseMembership.security_id).where(
+                                      UniverseMembership.universe_code == "sp500",
+                                      UniverseMembership.verification_status != "rejected",
+                                      UniverseMembership.effective_from <= WINDOW_END,
+                                      (
+                                          UniverseMembership.effective_to.is_(None)
+                                          | (UniverseMembership.effective_to > WINDOW_START)
+                                      ),
+                                  )
+                              )
+                          }
+                      )
+                  )
+                  identities = session.execute(
+                      select(
+                          SecurityIdentityPeriod.id,
+                          SecurityIdentityPeriod.security_id,
+                          SecurityIdentityPeriod.symbol,
+                          SecurityIdentityPeriod.effective_from,
+                          SecurityIdentityPeriod.effective_to,
+                          Security.company_id,
+                          Company.cik,
+                      )
+                      .join(Security, Security.id == SecurityIdentityPeriod.security_id)
+                      .join(Company, Company.id == Security.company_id)
+                      .where(
+                          SecurityIdentityPeriod.security_id.in_(security_ids),
+                          SecurityIdentityPeriod.verification_status == "provisional",
+                          SecurityIdentityPeriod.effective_from <= WINDOW_END,
+                          (
+                              SecurityIdentityPeriod.effective_to.is_(None)
+                              | (SecurityIdentityPeriod.effective_to > WINDOW_START)
+                          ),
+                      )
+                      .order_by(SecurityIdentityPeriod.id)
+                  ).all()
+                  company_ids = tuple(sorted({int(row.company_id) for row in identities}))
+                  ciks_by_company = {
+                      int(row.id): str(row.cik)
+                      for row in session.execute(
+                          select(Company.id, Company.cik).where(Company.id.in_(company_ids))
+                      ).all()
+                  }
+                  documents = session.execute(
+                      select(
+                          Document.id,
+                          Document.company_id,
+                          Document.form_type,
+                          Document.filing_date,
+                          Document.accepted_at,
+                          Document.accession_number,
+                          Document.primary_document_url,
+                          Document.local_path,
+                          Document.sha256_hash,
+                          Document.metadata_json,
+                      )
+                      .where(Document.company_id.in_(company_ids))
+                      .order_by(Document.company_id, Document.accepted_at, Document.id)
+                  ).all()
+          finally:
+              engine.dispose()
+
+          docs_by_company: dict[int, list[dict[str, object]]] = defaultdict(list)
+          symbol_key_counts: Counter[str] = Counter()
+          exact_trading_symbol_docs = 0
+          any_symbol_metadata_docs = 0
+          metadata_docs = 0
+          local_path_docs = 0
+          hashed_docs = 0
+          sample_symbol_metadata: list[dict[str, object]] = []
+
+          for row in documents:
+              metadata = row.metadata_json
+              if metadata:
+                  metadata_docs += 1
+              if row.local_path:
+                  local_path_docs += 1
+              if row.sha256_hash:
+                  hashed_docs += 1
+              values = symbol_values(metadata) if metadata else []
+              if values:
+                  any_symbol_metadata_docs += 1
+              exact_values = []
+              for path, value in values:
+                  leaf = path.rsplit(".", 1)[-1].split("[", 1)[0]
+                  normalized_key = key_norm(leaf)
+                  symbol_key_counts[normalized_key] += 1
+                  if normalized_key == "tradingsymbol":
+                      exact_values.append((path, value))
+              if exact_values:
+                  exact_trading_symbol_docs += 1
+              document_date = (
+                  row.accepted_at.date()
+                  if row.accepted_at is not None
+                  else row.filing_date
+              )
+              doc = {
+                  "id": int(row.id),
+                  "company_id": int(row.company_id),
+                  "cik": ciks_by_company.get(int(row.company_id)),
+                  "form_type": str(row.form_type),
+                  "document_date": document_date.isoformat() if document_date else None,
+                  "accession_number": str(row.accession_number),
+                  "primary_document_url": row.primary_document_url,
+                  "local_path": row.local_path,
+                  "sha256_hash": row.sha256_hash,
+                  "symbol_values": values,
+                  "exact_trading_symbol_values": exact_values,
+              }
+              docs_by_company[int(row.company_id)].append(doc)
+              if values and len(sample_symbol_metadata) < 40:
+                  sample_symbol_metadata.append(doc)
+
+          exact_identity_matches: list[dict[str, object]] = []
+          matched_identity_ids: set[int] = set()
+          for identity in identities:
+              expected_symbol = norm_symbol(identity.symbol)
+              for document in docs_by_company.get(int(identity.company_id), ()):
+                  raw_date = document["document_date"]
+                  if not isinstance(raw_date, str):
+                      continue
+                  when = date.fromisoformat(raw_date)
+                  if when < identity.effective_from:
+                      continue
+                  if identity.effective_to is not None and when >= identity.effective_to:
+                      continue
+                  exact_values = document["exact_trading_symbol_values"]
+                  if not isinstance(exact_values, list):
+                      continue
+                  matches = [
+                      {"path": path, "value": value}
+                      for path, value in exact_values
+                      if norm_symbol(value) == expected_symbol
+                  ]
+                  if not matches:
+                      continue
+                  matched_identity_ids.add(int(identity.id))
+                  if len(exact_identity_matches) < 100:
+                      exact_identity_matches.append(
+                          {
+                              "identity_id": int(identity.id),
+                              "security_id": int(identity.security_id),
+                              "cik": str(identity.cik),
+                              "symbol": expected_symbol,
+                              "effective_from": identity.effective_from.isoformat(),
+                              "effective_to": (
+                                  identity.effective_to.isoformat()
+                                  if identity.effective_to is not None
+                                  else None
+                              ),
+                              "document_id": document["id"],
+                              "accession_number": document["accession_number"],
+                              "document_date": raw_date,
+                              "matches": matches,
+                          }
+                      )
+                  break
+
+          payload = {
+              "schema_version": "fdre-hu-identity-metadata-audit-v1",
+              "window_start": WINDOW_START.isoformat(),
+              "window_end": WINDOW_END.isoformat(),
+              "provisional_identity_count": len(identities),
+              "provisional_identity_company_count": len(company_ids),
+              "document_count": len(documents),
+              "metadata_document_count": metadata_docs,
+              "local_path_document_count": local_path_docs,
+              "hashed_document_count": hashed_docs,
+              "any_symbol_metadata_document_count": any_symbol_metadata_docs,
+              "exact_trading_symbol_document_count": exact_trading_symbol_docs,
+              "exact_trading_symbol_identity_match_count": len(matched_identity_ids),
+              "symbol_metadata_key_counts": dict(sorted(symbol_key_counts.items())),
+              "sample_symbol_metadata": sample_symbol_metadata,
+              "sample_exact_identity_matches": exact_identity_matches,
+          }
+          output = Path(
+              "data/processed/historical-universe/identity-metadata-audit/report.json"
+          )
+          output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("### HU provisional identity metadata audit\n\n")
+              handle.write(
+                  f"- Provisional identity periods: **{payload['provisional_identity_count']}**\n"
+              )
+              handle.write(f"- Documents inspected: **{payload['document_count']}**\n")
+              handle.write(
+                  f"- Documents with retained metadata: **{payload['metadata_document_count']}**\n"
+              )
+              handle.write(
+                  f"- Documents with local paths: **{payload['local_path_document_count']}**\n"
+              )
+              handle.write(
+                  "- Documents with exact `TradingSymbol` metadata: "
+                  f"**{payload['exact_trading_symbol_document_count']}**\n"
+              )
+              handle.write(
+                  "- Provisional identities with an in-period exact SEC-document symbol match: "
+                  f"**{payload['exact_trading_symbol_identity_match_count']}**\n"
+              )
+          PY
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu-identity-metadata-audit-${{ github.run_id }}
+          path: data/processed/historical-universe/identity-metadata-audit
+          if-no-files-found: error
