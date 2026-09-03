@@ -134,6 +134,10 @@ class SecurityIdentityPeriod(Base):
     )
 
     security: Mapped[Security] = relationship(back_populates="identity_periods")
+    sec_identity_evidence: Mapped[list[SecurityIdentityEvidence]] = relationship(
+        back_populates="identity_period",
+        cascade="all, delete-orphan",
+    )
 
 
 class UniverseMembership(Base):
@@ -262,4 +266,53 @@ class UniverseMembershipEvidence(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+
+class SecurityIdentityEvidence(Base):
+    """Immutable SEC fact and state-lineage evidence supporting one identity promotion."""
+
+    __tablename__ = "security_identity_evidence"
+    __table_args__ = (
+        Index(
+            "ix_security_identity_evidence_identity",
+            "security_identity_period_id",
+        ),
+        Index(
+            "ix_security_identity_evidence_accession",
+            "accession_number",
+        ),
+        Index(
+            "ix_security_identity_evidence_plan",
+            "projection_plan_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    evidence_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    security_identity_period_id: Mapped[int] = mapped_column(
+        ForeignKey("security_identity_periods.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    cik: Mapped[str] = mapped_column(String(10), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    accession_number: Mapped[str] = mapped_column(String(32), nullable=False)
+    filing_date: Mapped[date] = mapped_column(Date, nullable=False)
+    form_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    concept_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    context_ref: Mapped[str | None] = mapped_column(String(256))
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state_decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state_lineage_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    projection_plan_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    identity_period: Mapped[SecurityIdentityPeriod] = relationship(
+        back_populates="sec_identity_evidence"
     )
