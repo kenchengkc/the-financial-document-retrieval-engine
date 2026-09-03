@@ -203,6 +203,7 @@ def _stage_rejections(
     for decision in decisions:
         if not decision.rejection_candidate:
             continue
+        row: UniverseMembership | SecurityIdentityPeriod | None
         if decision.row_kind == "membership":
             row = session.get(UniverseMembership, decision.row_id)
         else:
@@ -262,13 +263,13 @@ def main() -> int:
 
             # Snapshot ORM-backed values before rollback so the audit artifact remains serializable.
             membership_snapshot = _membership_snapshot(membership)
-            security_snapshot = {
+            security_snapshot: dict[str, object] = {
                 "security_id": security.id,
                 "company_id": security.company_id,
                 "security_type": security.security_type,
                 "share_class": security.share_class,
             }
-            company_snapshot = {
+            company_snapshot: dict[str, object] = {
                 "company_id": company.id,
                 "cik": issuer_cik,
                 "ticker": company.ticker,
@@ -321,7 +322,7 @@ def main() -> int:
                 window_end=args.window_end,
             )
 
-            payload = {
+            payload: dict[str, object] = {
                 "schema_version": PROJECTION_SCHEMA_VERSION,
                 "mode": "projection",
                 "applied": False,
@@ -367,34 +368,24 @@ def main() -> int:
                     "overridden by this planner."
                 ),
             }
+            summary: dict[str, object] = {
+                "plan_id": plan_id,
+                "membership": membership_snapshot,
+                "security": security_snapshot,
+                "company": company_snapshot,
+                "bridge_status": bridge_status,
+                "overlapping_sgpprb_identities": overlapping_snapshots,
+                "rejection_candidate_count": rejection_count,
+                "strict_eligible_days_before": before_gate.strict_eligible_day_count,
+                "strict_eligible_days_projected": after_gate.strict_eligible_day_count,
+            }
             session.rollback()
     finally:
         engine.dispose()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(
-        json.dumps(
-            {
-                "plan_id": payload["plan_id"],
-                "membership": payload["discovery"]["membership"],
-                "security": payload["discovery"]["security"],
-                "company": payload["discovery"]["company"],
-                "bridge_status": payload["discovery"]["bridge_status"],
-                "overlapping_sgpprb_identities": payload["discovery"][
-                    "overlapping_sgpprb_identities"
-                ],
-                "rejection_candidate_count": payload["rejection_candidate_count"],
-                "strict_eligible_days_before": payload["strict_coverage_before"][
-                    "strict_eligible_day_count"
-                ],
-                "strict_eligible_days_projected": payload["strict_coverage_projected"][
-                    "strict_eligible_day_count"
-                ],
-            },
-            sort_keys=True,
-        )
-    )
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 
