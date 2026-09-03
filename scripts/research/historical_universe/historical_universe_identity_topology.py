@@ -25,6 +25,9 @@ from apps.api.app.models.historical_universe import (
     SecurityIdentityPeriod,
     UniverseMembership,
 )
+from fdre.research.historical_universe_identity_strict_coverage import (
+    build_identity_strict_coverage_audit,
+)
 from fdre.research.historical_universe_identity_topology import (
     IdentityTopologyEvidence,
     IdentityTopologyPeriod,
@@ -35,9 +38,6 @@ from fdre.research.historical_universe_identity_topology import (
 )
 from scripts.research.historical_universe.historical_universe_identity_strict_coverage import (
     load_identity_coverage_memberships,
-)
-from fdre.research.historical_universe_identity_strict_coverage import (
-    build_identity_strict_coverage_audit,
 )
 
 
@@ -365,8 +365,9 @@ def main() -> int:
         "blocked_day_count": audit.blocked_day_count,
         "interpretation": (
             "Read-only residual identity topology. Rows and gaps are selected exclusively from the "
-            "identity-aware strict-coverage audit; same-security neighboring identity and membership "
-            "periods are context, not automatic evidence for promotion or boundary propagation."
+            "identity-aware strict-coverage audit; same-security neighboring identity and "
+            "membership periods are context, not automatic evidence for promotion or boundary "
+            "propagation."
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
