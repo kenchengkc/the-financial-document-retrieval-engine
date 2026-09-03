@@ -1,8 +1,8 @@
 """SEC filing-level issuer→symbol corroboration for Historical Universe identities.
 
 Ticker-state history can corroborate that a symbol occupied the index across an interval, but it
-cannot bind that symbol to a particular SEC issuer.  This module supplies only that missing
-issuer-binding layer from immutable SEC filing payloads.  It never changes membership dates or
+cannot bind that symbol to a particular SEC issuer. This module supplies only that missing
+issuer-binding layer from immutable SEC filing payloads. It never changes membership dates or
 identity boundaries.
 
 A provisional identity is a promotion candidate only when:
@@ -12,7 +12,7 @@ A provisional identity is a promotion candidate only when:
 - no inspected filing inside the interval reports a non-empty trading-symbol set that excludes
   the target symbol.
 
-The planner is pure and projection-only.  Production mutation belongs in a separate, explicitly
+The planner is pure and projection-only. Production mutation belongs in a separate, explicitly
 guarded apply step after the evidence projection has been inspected.
 """
 
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import date
 from typing import Literal
@@ -41,6 +42,9 @@ SecIdentitySupportStatus = Literal[
     "sec_symbol_missing",
     "sec_symbol_conflict",
 ]
+
+_EXCHANGE_SUFFIX_RE = re.compile(r"\s+\(([A-Z]{2,10})\)\s*$", re.IGNORECASE)
+_EDGE_QUOTES = "\"'“”‘’`"
 
 
 def _digest(payload: object) -> str:
@@ -71,12 +75,28 @@ def _tag_concept(tag: Tag) -> str | None:
     return None
 
 
+def normalize_sec_trading_symbol(value: str) -> str:
+    """Normalize presentation-only SEC cover wrappers without guessing a ticker."""
+
+    cleaned = " ".join(value.split()).strip(_EDGE_QUOTES).strip()
+    cleaned = _EXCHANGE_SUFFIX_RE.sub("", cleaned).strip(_EDGE_QUOTES).strip()
+    return normalize_symbol(cleaned)
+
+
+def sec_symbol_match_key(value: str) -> str:
+    """Return a comparison key that treats common share-class punctuation as equivalent."""
+
+    normalized = normalize_sec_trading_symbol(value)
+    return re.sub(r"[.\-\s]", "", normalized)
+
+
 def extract_trading_symbols(content: str | bytes) -> tuple[tuple[str, str, str | None], ...]:
     """Extract only explicit XBRL/Inline-XBRL ``TradingSymbol`` facts.
 
-    Returns ``(normalized_symbol, concept_name, context_ref)`` tuples.  Free-text cover-page
-    labels are intentionally ignored; a value participates only when the payload itself marks it
-    as the DEI trading-symbol concept.
+    Returns ``(normalized_symbol, concept_name, context_ref)`` tuples. Free-text cover-page labels
+    are intentionally ignored; a value participates only when the payload itself marks it as the
+    DEI trading-symbol concept. Presentation-only quotes and an exchange suffix such as ``(NYSE)``
+    are removed, while the underlying SEC fact remains provenance-bound by the payload hash.
     """
 
     soup = BeautifulSoup(content, "lxml")
@@ -90,7 +110,7 @@ def extract_trading_symbols(content: str | bytes) -> tuple[tuple[str, str, str |
         raw = " ".join(tag.get_text(" ", strip=True).split())
         if not raw:
             continue
-        symbol = normalize_symbol(raw)
+        symbol = normalize_sec_trading_symbol(raw)
         if not symbol or len(symbol) > 32:
             continue
         context = tag.get("contextref") or tag.get("contextRef")
@@ -174,7 +194,7 @@ class SecTradingSymbolEvidence:
             raise ValueError("payload_sha256 must be SHA-256")
         if not self.cik.isdigit() or len(self.cik) != 10:
             raise ValueError("cik must be a zero-padded 10-digit string")
-        if self.symbol != normalize_symbol(self.symbol):
+        if self.symbol != normalize_sec_trading_symbol(self.symbol):
             raise ValueError("symbol must be normalized")
         if not _concept_matches(self.concept_name):
             raise ValueError("concept_name must identify TradingSymbol")
@@ -285,22 +305,28 @@ def plan_sec_identity_support(
         seen.add(interval.row_id)
 
         target = normalize_symbol(interval.symbol)
+        target_key = sec_symbol_match_key(target)
         state = states.get(interval.row_id)
         row_observations = sorted(
             observations_by_row.get(interval.row_id, []),
             key=lambda item: (item.filing_date, item.accession_number),
         )
+        matching_observations = [
+            item
+            for item in row_observations
+            if target_key in {sec_symbol_match_key(symbol) for symbol in item.symbols}
+        ]
         conflicts = tuple(
             item.accession_number
             for item in row_observations
-            if item.symbols and target not in item.symbols
+            if item.symbols
+            and target_key not in {sec_symbol_match_key(symbol) for symbol in item.symbols}
         )
         exact_evidence = tuple(
             sorted(
                 {
                     evidence_id
-                    for item in row_observations
-                    if target in item.symbols
+                    for item in matching_observations
                     for evidence_id in item.evidence_ids
                 }
             )
