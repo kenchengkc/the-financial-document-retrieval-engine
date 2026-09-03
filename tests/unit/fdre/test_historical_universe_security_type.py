@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from fdre.research.historical_universe_security_type import (
+    AdjudicationRowKind,
     SecurityTypeAdjudicationTarget,
     extract_schering_plough_preferred_evidence,
     plan_security_type_adjudication,
@@ -30,18 +33,19 @@ def _payload() -> bytes:
 
 def _target(
     *,
-    row_kind: str = "membership",
+    row_kind: AdjudicationRowKind = "membership",
     symbol: str = "SGPPRB",
     cik: str = "0000310158",
     status: str = "provisional",
 ) -> SecurityTypeAdjudicationTarget:
-    assert row_kind in {"membership", "identity"}
     return SecurityTypeAdjudicationTarget(
-        row_kind=row_kind,  # type: ignore[arg-type]
+        row_kind=row_kind,
         row_id=580 if row_kind == "membership" else 581,
         security_id=798,
         cik=cik,
         symbol=symbol,
+        effective_from=date(2009, 12, 31),
+        effective_to=date(2010, 1, 22),
         prior_source_hash="a" * 64,
         verification_status=status,
     )
@@ -85,6 +89,8 @@ def test_exact_membership_and_identity_rows_are_rejection_candidates() -> None:
     ]
     assert all(item.rejection_candidate for item in decisions)
     assert all(item.evidence_id == evidence.evidence_id for item in decisions)
+    assert all(item.effective_from == date(2009, 12, 31) for item in decisions)
+    assert all(item.effective_to == date(2010, 1, 22) for item in decisions)
 
 
 def test_cik_symbol_or_status_mismatch_fails_closed() -> None:
