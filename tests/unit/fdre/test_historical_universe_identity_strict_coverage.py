@@ -5,6 +5,7 @@ from datetime import date
 from fdre.research.historical_universe_identity_strict_coverage import (
     IdentityCoverageIdentity,
     IdentityCoverageMembership,
+    IdentityStrictCoverageAudit,
     build_identity_strict_coverage_audit,
 )
 
@@ -53,7 +54,7 @@ def _membership(
 
 def _audit(
     memberships: tuple[IdentityCoverageMembership, ...],
-):  # type: ignore[no-untyped-def]
+) -> IdentityStrictCoverageAudit:
     return build_identity_strict_coverage_audit(
         memberships,
         universe_code="sp500",
