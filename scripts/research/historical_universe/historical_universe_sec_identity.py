@@ -401,20 +401,28 @@ def main() -> int:
             "that explicitly reports the same dei:TradingSymbol. Conflicts, missing SEC facts, "
             "partial ticker-state overlaps, and all date disagreements remain provisional."
         ),
-        "evidence": [item.as_dict() for item in sorted(evidence, key=lambda item: item.evidence_id)],
+        "evidence": [
+            item.as_dict()
+            for item in sorted(evidence, key=lambda item: item.evidence_id)
+        ],
         "observations": [item.as_dict() for item in observations],
         "decisions": [item.as_dict() for item in decisions],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({
-        "plan_id": plan_id,
-        "provisional_identity_count": len(intervals),
-        "promotion_candidate_count": payload["promotion_candidate_count"],
-        "status_counts": payload["status_counts"],
-        "unique_filing_fetch_count": len(fetch_cache),
-        "filing_error_count": len(errors),
-    }, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "plan_id": plan_id,
+                "provisional_identity_count": len(intervals),
+                "promotion_candidate_count": payload["promotion_candidate_count"],
+                "status_counts": payload["status_counts"],
+                "unique_filing_fetch_count": len(fetch_cache),
+                "filing_error_count": len(errors),
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 
