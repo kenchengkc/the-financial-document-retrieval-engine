@@ -1,9 +1,10 @@
 """Pure SEC issuer→symbol evidence decisions for residual HU-5 identity blockers.
 
-Unlike the earlier broad SEC identity projection, this layer does not use ticker-state containment to
-choose whether a filing may be inspected.  Target identity rows have already been selected by the
-frozen identity-aware coverage audit and topology projection.  This module answers only whether
-filings under the exact issuer CIK explicitly bind that issuer to the target trading symbol.
+Unlike the earlier broad SEC identity projection, this layer does not use ticker-state
+containment to choose whether a filing may be inspected. Target identity rows have already been
+selected by the frozen identity-aware coverage audit and topology projection. This module answers
+only whether filings under the exact issuer CIK explicitly bind that issuer to the target trading
+symbol.
 """
 
 from __future__ import annotations
