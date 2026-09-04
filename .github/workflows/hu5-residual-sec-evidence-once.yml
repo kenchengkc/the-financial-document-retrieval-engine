@@ -1,0 +1,131 @@
+name: One-shot HU-5 residual SEC evidence
+
+on:
+  push:
+    branches:
+      - ops/manual-hu5-residual-sec-evidence-only
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/historical-universe/residual-sec-evidence
+      EXPECTED_AUDIT_ID: b5dc9108a2cfbbb9d4717aa1cb52dc751e31734bb5188ec5d8e05499db64245a
+      EXPECTED_TOPOLOGY_ID: 5e30e1075c71c6578fd60e550ae1518538b680f35c9c9003d4b48372a74821e9
+
+    steps:
+      - name: Check required secrets
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ -z "${SEC_USER_AGENT}" ]; then
+            echo "::error::SEC_USER_AGENT is required for live SEC requests."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+
+      - name: Select database URL
+        run: |
+          set -euo pipefail
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Rebuild frozen residual topology
+        run: |
+          set -euo pipefail
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.research.historical_universe.historical_universe_identity_topology \
+            --database-url "${DATABASE_URL}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --expected-audit-id "${EXPECTED_AUDIT_ID}" \
+            --output "${OUTPUT_DIR}/topology.json"
+
+      - name: Verify frozen topology
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads((Path(os.environ["OUTPUT_DIR"]) / "topology.json").read_text())
+          expected = {
+              "audit_id": os.environ["EXPECTED_AUDIT_ID"],
+              "topology_id": os.environ["EXPECTED_TOPOLOGY_ID"],
+              "target_count": 39,
+              "gap_count": 4,
+              "blocked_day_count": 4662,
+              "strict_eligible_day_count": 1426,
+          }
+          actual = {key: report[key] for key in expected}
+          if actual != expected:
+              raise SystemExit(f"frozen topology drift: expected {expected}, got {actual}")
+          PY
+
+      - name: Collect residual SEC evidence
+        run: |
+          set -euo pipefail
+          python -m scripts.research.historical_universe.historical_universe_residual_sec_evidence \
+            --database-url "${DATABASE_URL}" \
+            --topology "${OUTPUT_DIR}/topology.json" \
+            --expected-topology-id "${EXPECTED_TOPOLOGY_ID}" \
+            --max-filings-per-identity 6 \
+            --output "${OUTPUT_DIR}/sec-evidence.json"
+
+      - name: Verify exact target inventory
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads((Path(os.environ["OUTPUT_DIR"]) / "sec-evidence.json").read_text())
+          if report["topology_id"] != os.environ["EXPECTED_TOPOLOGY_ID"]:
+              raise SystemExit("SEC projection topology ID drifted")
+          if report["target_count"] != 39 or len(report["decisions"]) != 39:
+              raise SystemExit("SEC projection target inventory is not exactly 39 rows")
+          if len({item["identity_id"] for item in report["decisions"]}) != 39:
+              raise SystemExit("SEC projection decisions contain duplicate identity rows")
+          if report["filing_error_count"] != 0:
+              raise SystemExit(
+                  f"SEC projection contains {report['filing_error_count']} filing fetch errors"
+              )
+          PY
+
+      - name: Upload frozen residual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-residual-sec-evidence-${{ github.run_id }}
+          path: |
+            data/processed/historical-universe/residual-sec-evidence/topology.json
+            data/processed/historical-universe/residual-sec-evidence/sec-evidence.json
+          if-no-files-found: error
+          retention-days: 30
