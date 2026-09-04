@@ -116,7 +116,7 @@ class MembershipAnchor:
 class CorrectionSpec:
     identity_id: int
     target_from: date | None
-    target_to: date | None | Literal["preserve"]
+    target_to: date | Literal["preserve"] | None
     evidence: tuple[IdentityEvidence, ...]
     reason: str
     sec_status: str | None = None
@@ -495,7 +495,7 @@ def _case_from_target(
     *,
     action: IdentityAction,
     target_from: date | None = None,
-    target_to: date | None | Literal["preserve"] = "preserve",
+    target_to: date | Literal["preserve"] | None = "preserve",
     evidence: tuple[IdentityEvidence, ...] = (),
     reason: str,
 ) -> IdentityAdjudicationCase:
