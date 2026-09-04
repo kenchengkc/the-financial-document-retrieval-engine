@@ -1,0 +1,167 @@
+name: One-shot HU-5 final identity projection
+
+on:
+  push:
+    branches:
+      - ops/manual-hu5-final-identity-projection-only
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  projection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      GH_TOKEN: ${{ github.token }}
+      PYTHONPATH: .
+      INPUT_DIR: data/processed/historical-universe/final-identity-input
+      OUTPUT_DIR: data/processed/historical-universe/final-identity-projection
+      FROZEN_RUN_ID: "33843412242"
+      FROZEN_ARTIFACT_ID: "9925706591"
+      FROZEN_ARTIFACT_NAME: hu5-residual-sec-evidence-33843412242
+      FROZEN_ARTIFACT_DIGEST: sha256:aeefd076f5301c4fae186708a6b799caedfd9ce7e1dfe94bc54c7c7361605cf1
+      EXPECTED_AUDIT_ID: b5dc9108a2cfbbb9d4717aa1cb52dc751e31734bb5188ec5d8e05499db64245a
+      EXPECTED_TOPOLOGY_ID: 5e30e1075c71c6578fd60e550ae1518538b680f35c9c9003d4b48372a74821e9
+      EXPECTED_SEC_PLAN_ID: b9e7eebeb8af54f27f051c81a8497be572d31f8de1a79f9c8826c2a4664fe71d
+      EXPECTED_MANIFEST_ID: 96628d4fc51ffd0c8322cffd092d8526d286fcf71a262171bb7ebcf042fa8a22
+      EXPECTED_PLAN_ID: d73f752121f42f642f4881e295d7e7b72b56479e276265b7942df274484cc271
+
+    steps:
+      - name: Check required database secret
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,data]"
+
+      - name: Select database URL
+        run: |
+          set -euo pipefail
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Download exact frozen residual SEC evidence
+        run: |
+          set -euo pipefail
+          metadata="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${FROZEN_ARTIFACT_ID}")"
+          if [ "$(jq -r '.id' <<< "${metadata}")" != "${FROZEN_ARTIFACT_ID}" ]; then
+            echo "::error::Frozen artifact ID drifted."
+            exit 1
+          fi
+          if [ "$(jq -r '.name' <<< "${metadata}")" != "${FROZEN_ARTIFACT_NAME}" ]; then
+            echo "::error::Frozen artifact name drifted."
+            exit 1
+          fi
+          if [ "$(jq -r '.digest' <<< "${metadata}")" != "${FROZEN_ARTIFACT_DIGEST}" ]; then
+            echo "::error::Frozen artifact digest drifted."
+            exit 1
+          fi
+          if [ "$(jq -r '.workflow_run.id' <<< "${metadata}")" != "${FROZEN_RUN_ID}" ]; then
+            echo "::error::Frozen artifact workflow run drifted."
+            exit 1
+          fi
+          if [ "$(jq -r '.expired' <<< "${metadata}")" != "false" ]; then
+            echo "::error::Frozen artifact has expired."
+            exit 1
+          fi
+          mkdir -p "${INPUT_DIR}" "${OUTPUT_DIR}"
+          gh run download "${FROZEN_RUN_ID}" \
+            --name "${FROZEN_ARTIFACT_NAME}" \
+            --dir "${INPUT_DIR}"
+          sec_evidence="$(find "${INPUT_DIR}" -type f -name sec-evidence.json -print -quit)"
+          if [ -z "${sec_evidence}" ]; then
+            echo "::error::Frozen SEC evidence file was not downloaded."
+            exit 1
+          fi
+          echo "SEC_EVIDENCE_FILE=${sec_evidence}" >> "${GITHUB_ENV}"
+
+      - name: Project reviewed identity adjudication and roll back
+        run: |
+          set -euo pipefail
+          python -m scripts.research.historical_universe.historical_universe_identity_adjudication_projection \
+            --database-url "${DATABASE_URL}" \
+            --residual-sec "${SEC_EVIDENCE_FILE}" \
+            --universe-code sp500 \
+            --window-start 2010-01-01 \
+            --window-end 2026-09-01 \
+            --output "${OUTPUT_DIR}/projection.json"
+
+      - name: Require exact 45-action closure projection
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads((Path(os.environ["OUTPUT_DIR"]) / "projection.json").read_text())
+          expected_header = {
+              "mode": "projection",
+              "applied": False,
+              "transaction_rolled_back": True,
+              "frozen_audit_id": os.environ["EXPECTED_AUDIT_ID"],
+              "frozen_topology_id": os.environ["EXPECTED_TOPOLOGY_ID"],
+              "frozen_residual_sec_plan_id": os.environ["EXPECTED_SEC_PLAN_ID"],
+              "manifest_id": os.environ["EXPECTED_MANIFEST_ID"],
+              "plan_id": os.environ["EXPECTED_PLAN_ID"],
+              "action_count": 45,
+              "action_counts": {
+                  "verify": 37,
+                  "correct_and_verify": 5,
+                  "insert": 3,
+              },
+          }
+          actual_header = {key: report.get(key) for key in expected_header}
+          if actual_header != expected_header:
+              raise SystemExit(
+                  f"identity projection header drift: expected {expected_header}, got {actual_header}"
+              )
+          if len(report.get("decisions", [])) != 45 or len(report.get("changes", [])) != 45:
+              raise SystemExit("identity projection inventory is not exactly 45 actions")
+          expected_gate = {
+              "day_count": 6088,
+              "strict_eligible_day_count": 6088,
+              "invalid_day_count": 0,
+          }
+          projected_gate = report["strict_coverage_projected"]
+          if {key: projected_gate.get(key) for key in expected_gate} != expected_gate:
+              raise SystemExit(f"projected merged gate failed: {projected_gate}")
+          expected_audit = {
+              "day_count": 6088,
+              "strict_eligible_day_count": 6088,
+              "blocked_day_count": 0,
+              "relevant_provisional_identity_count": 0,
+          }
+          projected_audit = report["identity_strict_coverage_projected"]
+          if {key: projected_audit.get(key) for key in expected_audit} != expected_audit:
+              raise SystemExit(f"projected identity-strict audit failed: {projected_audit}")
+          PY
+
+      - name: Upload rolled-back identity projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-final-identity-projection-${{ github.run_id }}
+          path: data/processed/historical-universe/final-identity-projection/projection.json
+          if-no-files-found: error
+          retention-days: 30

@@ -26,6 +26,7 @@ from apps.api.app.models.historical_universe import (
     UniverseMembership,
 )
 from fdre.research.historical_universe_identity_strict_coverage import (
+    IdentityStrictCoverageAudit,
     build_identity_strict_coverage_audit,
 )
 from fdre.research.historical_universe_identity_topology import (
@@ -34,6 +35,7 @@ from fdre.research.historical_universe_identity_topology import (
     MembershipTopologyPeriod,
     ResidualIdentityGap,
     ResidualIdentityTarget,
+    ResidualIdentityTopology,
     build_residual_identity_topology,
 )
 from scripts.research.historical_universe.historical_universe_identity_strict_coverage import (
@@ -232,6 +234,121 @@ def _load_memberships(
     return {key: tuple(value) for key, value in sorted(grouped.items())}
 
 
+def build_live_residual_identity_topology(
+    session: Session,
+    *,
+    universe_code: str,
+    window_start: date,
+    window_end: date,
+    expected_audit_id: str | None = None,
+) -> tuple[ResidualIdentityTopology, IdentityStrictCoverageAudit]:
+    """Build the residual topology from one caller-owned database transaction."""
+
+    normalized = universe_code.strip().lower()
+    coverage_memberships = load_identity_coverage_memberships(
+        session,
+        universe_code=normalized,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    audit = build_identity_strict_coverage_audit(
+        coverage_memberships,
+        universe_code=normalized,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    if expected_audit_id and audit.audit_id != expected_audit_id:
+        raise RuntimeError(
+            "identity-aware audit drift: "
+            f"expected {expected_audit_id}, got {audit.audit_id}"
+        )
+
+    relevant_ids = audit.relevant_provisional_identity_ids
+    identity_issue_memberships: dict[int, set[int]] = defaultdict(set)
+    gap_issues = []
+    for issue in audit.issues:
+        if issue.reason == "identity_not_verified":
+            if len(issue.active_identity_ids) != 1:
+                raise RuntimeError(
+                    "identity_not_verified issue must contain exactly one active identity"
+                )
+            identity_issue_memberships[issue.active_identity_ids[0]].add(
+                issue.membership_id
+            )
+        elif issue.reason == "identity_missing":
+            gap_issues.append(issue)
+
+    if tuple(sorted(identity_issue_memberships)) != relevant_ids:
+        raise RuntimeError(
+            "identity-aware audit relevant ID summary does not match blocker issues"
+        )
+
+    target_rows = session.execute(
+        select(
+            SecurityIdentityPeriod.id,
+            SecurityIdentityPeriod.security_id,
+            SecurityIdentityPeriod.symbol,
+            SecurityIdentityPeriod.effective_from,
+            SecurityIdentityPeriod.effective_to,
+            SecurityIdentityPeriod.source_hash,
+        )
+        .where(SecurityIdentityPeriod.id.in_(relevant_ids))
+        .order_by(SecurityIdentityPeriod.id)
+    ).all()
+    if len(target_rows) != len(relevant_ids):
+        raise RuntimeError("one or more relevant provisional identity rows disappeared")
+
+    security_ids = tuple(
+        sorted(
+            {int(row.security_id) for row in target_rows}
+            | {int(issue.security_id) for issue in gap_issues}
+        )
+    )
+    ciks = _load_security_ciks(session, security_ids)
+    identities = _load_identity_periods(session, security_ids)
+    memberships = _load_memberships(
+        session,
+        security_ids,
+        universe_code=normalized,
+    )
+
+    targets = tuple(
+        ResidualIdentityTarget(
+            identity_id=int(row.id),
+            security_id=int(row.security_id),
+            cik=ciks[int(row.security_id)],
+            symbol=str(row.symbol),
+            effective_from=row.effective_from.isoformat(),
+            effective_to=row.effective_to.isoformat() if row.effective_to else None,
+            source_hash=str(row.source_hash),
+            issue_membership_ids=tuple(sorted(identity_issue_memberships[int(row.id)])),
+            identity_periods=identities.get(int(row.security_id), ()),
+            memberships=memberships.get(int(row.security_id), ()),
+        )
+        for row in target_rows
+    )
+    gaps = tuple(
+        ResidualIdentityGap(
+            membership_id=issue.membership_id,
+            security_id=issue.security_id,
+            cik=ciks[issue.security_id],
+            effective_from=issue.effective_from.isoformat(),
+            effective_to=issue.effective_to.isoformat(),
+            identity_periods=identities.get(issue.security_id, ()),
+            memberships=memberships.get(issue.security_id, ()),
+        )
+        for issue in gap_issues
+    )
+    return (
+        build_residual_identity_topology(
+            audit_id=audit.audit_id,
+            targets=targets,
+            gaps=gaps,
+        ),
+        audit,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Project exact topology for residual HU-5 identity blockers."
@@ -251,106 +368,12 @@ def main() -> int:
     engine = create_db_engine(args.database_url)
     try:
         with Session(engine) as session:
-            coverage_memberships = load_identity_coverage_memberships(
+            topology, audit = build_live_residual_identity_topology(
                 session,
                 universe_code=universe_code,
                 window_start=args.window_start,
                 window_end=args.window_end,
-            )
-            audit = build_identity_strict_coverage_audit(
-                coverage_memberships,
-                universe_code=universe_code,
-                window_start=args.window_start,
-                window_end=args.window_end,
-            )
-            if args.expected_audit_id and audit.audit_id != args.expected_audit_id:
-                raise RuntimeError(
-                    "identity-aware audit drift: "
-                    f"expected {args.expected_audit_id}, got {audit.audit_id}"
-                )
-
-            relevant_ids = audit.relevant_provisional_identity_ids
-            identity_issue_memberships: dict[int, set[int]] = defaultdict(set)
-            gap_issues = []
-            for issue in audit.issues:
-                if issue.reason == "identity_not_verified":
-                    if len(issue.active_identity_ids) != 1:
-                        raise RuntimeError(
-                            "identity_not_verified issue must contain exactly one active identity"
-                        )
-                    identity_issue_memberships[issue.active_identity_ids[0]].add(
-                        issue.membership_id
-                    )
-                elif issue.reason == "identity_missing":
-                    gap_issues.append(issue)
-
-            if tuple(sorted(identity_issue_memberships)) != relevant_ids:
-                raise RuntimeError(
-                    "identity-aware audit relevant ID summary does not match blocker issues"
-                )
-
-            target_rows = session.execute(
-                select(
-                    SecurityIdentityPeriod.id,
-                    SecurityIdentityPeriod.security_id,
-                    SecurityIdentityPeriod.symbol,
-                    SecurityIdentityPeriod.effective_from,
-                    SecurityIdentityPeriod.effective_to,
-                    SecurityIdentityPeriod.source_hash,
-                )
-                .where(SecurityIdentityPeriod.id.in_(relevant_ids))
-                .order_by(SecurityIdentityPeriod.id)
-            ).all()
-            if len(target_rows) != len(relevant_ids):
-                raise RuntimeError("one or more relevant provisional identity rows disappeared")
-
-            security_ids = tuple(
-                sorted(
-                    {int(row.security_id) for row in target_rows}
-                    | {int(issue.security_id) for issue in gap_issues}
-                )
-            )
-            ciks = _load_security_ciks(session, security_ids)
-            identities = _load_identity_periods(session, security_ids)
-            memberships = _load_memberships(
-                session,
-                security_ids,
-                universe_code=universe_code,
-            )
-
-            targets = tuple(
-                ResidualIdentityTarget(
-                    identity_id=int(row.id),
-                    security_id=int(row.security_id),
-                    cik=ciks[int(row.security_id)],
-                    symbol=str(row.symbol),
-                    effective_from=row.effective_from.isoformat(),
-                    effective_to=row.effective_to.isoformat() if row.effective_to else None,
-                    source_hash=str(row.source_hash),
-                    issue_membership_ids=tuple(
-                        sorted(identity_issue_memberships[int(row.id)])
-                    ),
-                    identity_periods=identities.get(int(row.security_id), ()),
-                    memberships=memberships.get(int(row.security_id), ()),
-                )
-                for row in target_rows
-            )
-            gaps = tuple(
-                ResidualIdentityGap(
-                    membership_id=issue.membership_id,
-                    security_id=issue.security_id,
-                    cik=ciks[issue.security_id],
-                    effective_from=issue.effective_from.isoformat(),
-                    effective_to=issue.effective_to.isoformat(),
-                    identity_periods=identities.get(issue.security_id, ()),
-                    memberships=memberships.get(issue.security_id, ()),
-                )
-                for issue in gap_issues
-            )
-            topology = build_residual_identity_topology(
-                audit_id=audit.audit_id,
-                targets=targets,
-                gaps=gaps,
+                expected_audit_id=args.expected_audit_id,
             )
             session.rollback()
     finally:
