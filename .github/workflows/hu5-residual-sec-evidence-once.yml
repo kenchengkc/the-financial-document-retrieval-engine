@@ -3,7 +3,7 @@ name: One-shot HU-5 residual SEC evidence
 on:
   push:
     branches:
-      - ops/manual-hu5-residual-sec-evidence-only
+      - research/hu5-residual-sec-evidence
 
 permissions:
   contents: read
