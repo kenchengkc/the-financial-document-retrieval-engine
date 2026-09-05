@@ -4,6 +4,8 @@ FDRE is point-in-time financial research infrastructure for technically sophisti
 
 > Status reviewed against `main` on **2026-08-30**.
 
+> Historical-universe identity closure updated from verified production evidence on **2026-09-05**.
+
 ## Product principles
 
 A professional reviewer should be able to answer:
@@ -54,18 +56,24 @@ Redis, Kafka, Elasticsearch/OpenSearch, Snowflake, a dedicated feature store, an
 - **Historical Universe HU-3:** DB-backed PIT universe API, deterministic snapshot IDs,
   constituent provenance, strict/provisional modes, JSON/Parquet export, replay and leakage tests,
   and research-panel composition.
+- **HU-5 historical-universe identity closure:** reviewed 45-action production apply and independent
+  6,088/6,088 identity-aware coverage through 2026-09-01, zero invalid/blocked days, and zero
+  relevant provisional identities. [Provenance and closure record](research/historical-universe/final-identity-closure.md).
 
 ### Current measured flagship state
 
 The flagship infrastructure runs successfully, but the research conclusion remains **INSUFFICIENT_NOT_YET_REALIZED** for the primary 1:63 horizon at the latest evaluation time. Only one walk-forward fold is currently eligible and the statistical gate requires more independent OOS history. Do not reinterpret workflow success as alpha validation.
 
-Current detailed metrics live in [`eval_results.md`](eval_results.md).
+Current detailed metrics live in [`evaluations/eval_results.md`](evaluations/eval_results.md).
 
 ## Active milestone — Historical Universe v1
 
-The current production S&P 500 seed is a **current-constituent snapshot**, so historical research remains exposed to survivorship/selection bias even when filings themselves are PIT-correct. Historical Universe v1 is therefore the highest-value next research milestone.
+Live retrieval retains a current-constituent seed. Historical research now has a separate
+reconstructed universe whose membership and identity closure has been independently verified for
+2010-01-01 through 2026-09-01. The next milestone is the unchanged flagship rerun using that
+verified universe and its frozen provenance.
 
-See [`historical_universe_v1.md`](historical_universe_v1.md) for the canonical design and acceptance criteria.
+See [`research/historical_universe.md`](research/historical_universe.md) for the canonical design and acceptance criteria.
 
 ### HU-1 — Security master foundation
 
@@ -120,8 +128,10 @@ remaining 11 as unresolved/provisional. All 999 source intervals have explicit d
 boundary-provisional. Completion means the production gate and fail-closed eligibility contract
 passed; it does not turn those 66 boundaries or 11 residual identities into guessed facts.
 
-Exact measured counts and the gate result live in [`eval_results.md`](eval_results.md); the gate
-definition lives in [`historical_universe_v1.md`](historical_universe_v1.md).
+Exact HU-2 measured counts and its historical gate result live in
+[`evaluations/eval_results.md`](evaluations/eval_results.md); the gate definition lives in
+[`research/historical_universe.md`](research/historical_universe.md). The residual counts above
+describe HU-2's original promotion, not the final HU-5 identity-closure state.
 
 ### HU-3 — Universe API / SDK
 
@@ -168,9 +178,18 @@ lineage-preserving Parquet export, and market-cache manifests are implemented. P
 all 822 reconstructed issuer CIKs in 33 disjoint batches: 11,166 annual filings, 10,681 verified
 feature rows, 654.45 MB incremental retained text, zero embedding growth, and zero paid model
 calls. The exact runtime, storage, named SEC gap, replay audit, and HU-5 market-outcome handoff are
-recorded in [`research_archive.md`](research_archive.md).
+recorded in [`research/archive.md`](research/archive.md).
 
 ### HU-5 — Institutional flagship rerun
+
+**Universe identity closure: COMPLETE (production commit and independent audits, 2026-09-05).**
+The merged gate and independent identity-strict audit each report 6,088/6,088 days, with zero
+invalid days, blocked days, or relevant provisional identities. The 45-action manifest, production
+run, artifact digest, gate IDs, and workflow cleanup are recorded in
+[final identity closure](research/historical-universe/final-identity-closure.md).
+
+**Flagship rerun: separate remaining research work.** Identity closure does not establish a new
+study conclusion or additional statistically usable folds.
 
 Rerun the **unchanged precommitted** risk-churn acceleration study on the reconstructed historical universe and longer history.
 
@@ -232,10 +251,10 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Begin HU-4's measured 10–15 year research archive.**
+**Run the unchanged HU-5 flagship study with the verified historical universe.**
 
-HU-2 and HU-3 are complete. Extend filing, feature, and market-outcome history without bulk
-embedding the archive; preserve accession/availability lineage, export reproducible Parquet
-panels, and measure storage/runtime/provider cost before scaling. The 66 provisional post-anchor
-boundaries and 11-row identity queue remain explicit follow-up evidence work and must continue to
-fail closed in strict snapshots.
+HU-4's archive and the HU-5 membership/identity closure prerequisite are complete. Bind the
+reconstructed universe's exact gate and input provenance to the experiment manifest, retain the
+precommitted horizons and implementation costs, and report the measured result without changing
+the methodology. Historical source queues remain auditable; the independent final target-window
+audit now has zero identity or provisional-membership blockers.

@@ -136,6 +136,12 @@ The flagship risk-churn acceleration workflow adds a precommitted expanding walk
 purged unrealized development outcomes, multiple-testing-aware selection gates, 5/10/25/50 bp cost
 accounting, sector robustness checks, immutable manifests, and reproducible market-data caching.
 
+Historical-universe identity closure was verified in production on September 5, 2026: all 45
+reviewed actions committed, and both the merged HU-5 gate and independent identity-strict audit
+report 6,088/6,088 eligible calendar days (2010-01-01 through 2026-09-01), with zero invalid or
+blocked days. See the [closure record](docs/research/historical-universe/final-identity-closure.md)
+for run/artifact provenance. The unchanged flagship rerun remains a separate research step.
+
 ## Local development
 
 Requirements: Python 3.11+, Node.js 22+, Docker.
