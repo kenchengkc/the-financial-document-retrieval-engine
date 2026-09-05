@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import Base
@@ -314,9 +314,7 @@ def test_resume_allows_only_a_partial_frozen_cleanup(
         _, _, chunks = _seed_scope_state(session)
         archive_chunk_with_embedding = chunks[1]
         session.execute(
-            Embedding.__table__.delete().where(
-                Embedding.chunk_id == archive_chunk_with_embedding.id
-            )
+            delete(Embedding).where(Embedding.chunk_id == archive_chunk_with_embedding.id)
         )
         session.delete(archive_chunk_with_embedding)
         session.commit()
