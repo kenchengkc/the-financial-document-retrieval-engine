@@ -18,8 +18,8 @@ from apps.api.app.models import (
     RetrievalResult,
     RetrievalRun,
 )
+from fdre.indexing import archive_cleanup as cleanup
 from fdre.retrieval.scope import RESEARCH_ARCHIVE_PROFILE
-from scripts.ingestion import cleanup_retrieval_archive_scope as cleanup
 
 
 def _patch_expected_counts(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,6 +146,27 @@ def test_projection_is_deterministic_and_does_not_mutate(
     engine.dispose()
 
 
+def test_apply_requires_exact_projected_plan_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_expected_counts(monkeypatch)
+    monkeypatch.setenv("FDRE_ALLOW_PROD", "1")
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        _seed_scope_state(session)
+        with pytest.raises(RuntimeError, match="cleanup plan ID mismatch"):
+            cleanup.run_cleanup(
+                session,
+                apply=True,
+                resume=False,
+                batch_size=1,
+                expected_plan_id="wrong-plan-id",
+            )
+        assert cleanup.snapshot_cleanup_state(session).archive_chunks == 2
+
+    engine.dispose()
+
+
 def test_apply_requires_explicit_production_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_expected_counts(monkeypatch)
     monkeypatch.delenv("FDRE_ALLOW_PROD", raising=False)
@@ -200,9 +221,7 @@ def test_cleanup_refuses_retrieval_or_citation_references(
             query="archive",
             retriever_variant="hybrid",
         )
-        retrieval_run.results.append(
-            RetrievalResult(chunk=archive_chunk, rank=1)
-        )
+        retrieval_run.results.append(RetrievalResult(chunk=archive_chunk, rank=1))
         answer_run = AnswerRun(question="archive")
         answer_run.citations.append(
             Citation(
