@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from fdre.retrieval.scope import document_is_retrieval_indexable
+
 RouteName = Literal["text", "tables", "financial_facts"]
 AmendmentPolicy = Literal["include", "exclude", "only"]
 
@@ -59,6 +61,10 @@ class RetrievalCandidate(BaseModel):
 
 
 def chunk_matches_filters(chunk: Any, filters: SearchFilters) -> bool:
+    document = getattr(chunk, "document", None)
+    if document is not None and not document_is_retrieval_indexable(document):
+        return False
+
     metadata = chunk.metadata_json or {}
     if filters.tickers and metadata.get("ticker") not in filters.tickers:
         return False
@@ -67,7 +73,6 @@ def chunk_matches_filters(chunk: Any, filters: SearchFilters) -> bool:
     if filters.accession_numbers:
         accession_number = metadata.get("accession_number")
         if accession_number is None:
-            document = getattr(chunk, "document", None)
             accession_number = getattr(document, "accession_number", None)
         if accession_number not in filters.accession_numbers:
             return False
