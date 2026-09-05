@@ -18,6 +18,7 @@ from sqlalchemy.sql import Select
 
 from apps.api.app.config import Settings
 from apps.api.app.models import Chunk, Company, Document, Embedding
+from fdre.retrieval.scope import retrieval_indexable_document_clause
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 VOYAGE_MAX_BATCH_SIZE = 128
@@ -25,6 +26,7 @@ VOYAGE_DEFAULT_REQUESTS_PER_MINUTE = 2000
 VOYAGE_DEFAULT_TOKENS_PER_MINUTE = 3_000_000
 RETRYABLE_HTTP_STATUS_CODES = frozenset({429, 502, 503, 504})
 EmbeddingInputType = Literal["document", "query"]
+EmbeddingChunk = tuple[int, str]
 
 
 def estimate_embedding_tokens(texts: Sequence[str]) -> int:
@@ -108,10 +110,6 @@ def _post_json_with_retries(
         try:
             response = httpx.post(url, headers=headers, json=json_body, timeout=timeout)
         except httpx.TransportError:
-            # Transient network failures (read timeouts, dropped/reset connections,
-            # protocol errors) are common across thousands of requests in a long
-            # embedding run; retry them with backoff like retryable status codes
-            # rather than letting one blip abort the whole batch.
             if attempt == max_attempts:
                 raise
             time.sleep(_backoff_seconds(attempt=delay_attempt))
@@ -311,14 +309,17 @@ def _chunk_select_statement(
     tickers: list[str] | None,
     missing_only: bool,
     provider: EmbeddingProvider,
-) -> Select[tuple[Chunk]]:
-    statement = select(Chunk).order_by(Chunk.id)
+) -> Select[tuple[int, str]]:
+    statement = (
+        select(Chunk.id, Chunk.chunk_text)
+        .join(Document, Document.id == Chunk.document_id)
+        .where(retrieval_indexable_document_clause())
+        .order_by(Chunk.id)
+    )
     if tickers:
         normalized = [ticker.upper() for ticker in tickers]
-        statement = (
-            statement.join(Chunk.document)
-            .join(Document.company)
-            .where(Company.ticker.in_(normalized))
+        statement = statement.join(Company, Company.id == Document.company_id).where(
+            Company.ticker.in_(normalized)
         )
     if document_ids is not None:
         statement = statement.where(Chunk.document_id.in_(document_ids))
@@ -338,10 +339,10 @@ def _chunk_select_statement(
 def _persist_embedding_batch(
     session: Session,
     provider: EmbeddingProvider,
-    batch: list[Chunk],
+    batch: list[EmbeddingChunk],
     vectors: list[list[float]],
 ) -> int:
-    selected_ids = [chunk.id for chunk in batch]
+    selected_ids = [chunk_id for chunk_id, _ in batch]
     session.execute(
         delete(Embedding).where(
             Embedding.chunk_id.in_(selected_ids),
@@ -349,7 +350,7 @@ def _persist_embedding_batch(
             Embedding.model == provider.model,
         )
     )
-    for chunk, vector in zip(batch, vectors, strict=True):
+    for (chunk_id, _), vector in zip(batch, vectors, strict=True):
         if len(vector) != provider.dimensions:
             raise ValueError(
                 f"{provider.name}/{provider.model} returned {len(vector)} dimensions; "
@@ -357,7 +358,7 @@ def _persist_embedding_batch(
             )
         session.add(
             Embedding(
-                chunk_id=chunk.id,
+                chunk_id=chunk_id,
                 provider=provider.name,
                 model=provider.model,
                 dimensions=len(vector),
@@ -379,6 +380,13 @@ def rebuild_embeddings(
     batch_size: int = 64,
     concurrency: int = 1,
 ) -> int:
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
+    if provider.name == "voyage":
+        batch_size = min(batch_size, VOYAGE_MAX_BATCH_SIZE)
+
     statement = _chunk_select_statement(
         chunk_ids=chunk_ids,
         document_ids=document_ids,
@@ -386,40 +394,68 @@ def rebuild_embeddings(
         missing_only=missing_only,
         provider=provider,
     )
-    chunks = list(session.scalars(statement))
-    if not chunks:
-        return 0
-
-    if provider.name == "voyage":
-        batch_size = min(batch_size, VOYAGE_MAX_BATCH_SIZE)
-
-    batches = [chunks[offset : offset + batch_size] for offset in range(0, len(chunks), batch_size)]
-    workers = max(1, min(concurrency, len(batches)))
-
-    if workers == 1:
-        indexed = 0
-        for batch in batches:
-            vectors = provider.embed_texts(
-                [chunk.chunk_text for chunk in batch],
-                input_type="document",
-            )
-            indexed += _persist_embedding_batch(session, provider, batch, vectors)
-        return indexed
-
+    workers = max(1, concurrency)
+    # Keep at most two waves of provider work resident. At production settings this
+    # is 2,048 chunk texts instead of the entire missing corpus and at most 16
+    # completed vector matrices instead of one Future per backlog batch.
+    page_size = batch_size * workers * 2
     indexed = 0
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(
-                provider.embed_texts,
-                [chunk.chunk_text for chunk in batch],
-                input_type="document",
-            ): batch
-            for batch in batches
-        }
-        for future in as_completed(futures):
-            batch = futures[future]
-            vectors = future.result()
-            indexed += _persist_embedding_batch(session, provider, batch, vectors)
+    last_chunk_id = 0
+
+    while True:
+        page_rows = session.execute(
+            statement.where(Chunk.id > last_chunk_id).limit(page_size)
+        ).all()
+        page: list[EmbeddingChunk] = [
+            (int(row[0]), str(row[1])) for row in page_rows
+        ]
+        if not page:
+            break
+
+        page_last_chunk_id = page[-1][0]
+        batches = [
+            page[offset : offset + batch_size]
+            for offset in range(0, len(page), batch_size)
+        ]
+        page_workers = min(workers, len(batches))
+
+        if page_workers == 1:
+            for batch in batches:
+                vectors = provider.embed_texts(
+                    [chunk_text for _, chunk_text in batch],
+                    input_type="document",
+                )
+                indexed += _persist_embedding_batch(session, provider, batch, vectors)
+        else:
+            with ThreadPoolExecutor(max_workers=page_workers) as executor:
+                futures = {
+                    executor.submit(
+                        provider.embed_texts,
+                        [chunk_text for _, chunk_text in batch],
+                        input_type="document",
+                    ): batch
+                    for batch in batches
+                }
+                pending = tuple(futures)
+                for future in as_completed(pending):
+                    batch = futures.pop(future)
+                    vectors = future.result()
+                    indexed += _persist_embedding_batch(session, provider, batch, vectors)
+
+        last_chunk_id = page_last_chunk_id
+        print(
+            {
+                "embedding_index_progress": {
+                    "indexed": indexed,
+                    "last_chunk_id": last_chunk_id,
+                    "page_chunks": len(page),
+                    "batch_size": batch_size,
+                    "concurrency": page_workers,
+                }
+            },
+            flush=True,
+        )
+
     return indexed
 
 
