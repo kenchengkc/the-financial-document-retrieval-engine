@@ -9,8 +9,8 @@ from fdre.chunking import rebuild_document_chunks
 from fdre.indexing.embeddings import FakeEmbeddingProvider, rebuild_embeddings
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.query import SearchFilters
-from fdre.retrieval.sparse import SparseRetriever
 from fdre.retrieval.scope import RESEARCH_ARCHIVE_PROFILE
+from fdre.retrieval.sparse import SparseRetriever
 
 
 def _seed_online_and_archive_documents(session: Session) -> tuple[Document, Document]:
