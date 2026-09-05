@@ -68,7 +68,7 @@ def build_archive_scope_audit(session: Session) -> dict[str, Any]:
             Embedding.provider,
             Embedding.model,
             Embedding.dimensions,
-            func.count().label("count"),
+            func.count().label("embedding_count"),
         )
         .where(Embedding.chunk_id.in_(archive_chunks))
         .group_by(Embedding.provider, Embedding.model, Embedding.dimensions)
@@ -123,7 +123,7 @@ def build_archive_scope_audit(session: Session) -> dict[str, Any]:
                 "provider": str(row.provider),
                 "model": str(row.model),
                 "dimensions": int(row.dimensions),
-                "count": int(row.count),
+                "count": int(row.embedding_count),
             }
             for row in provider_rows
         ],
