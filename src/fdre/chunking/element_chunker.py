@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import Chunk, Document, DocumentElement
+from fdre.retrieval.scope import document_is_retrieval_indexable
 
 
 class ChunkSpec(BaseModel):
@@ -102,6 +103,11 @@ def rebuild_document_chunks(
         raise ValueError(f"Document {document_id} does not exist")
     # Load company in a separate query; joinedload + FOR UPDATE breaks on Postgres.
     _ = document.company
+    # Research-archive-only documents intentionally retain parsed sections without
+    # entering the live lexical/vector corpus. Fail closed before deleting or
+    # rebuilding any existing chunks so force-rechunk cannot mutate archive rows.
+    if not document_is_retrieval_indexable(document):
+        return []
 
     session.execute(delete(Chunk).where(Chunk.document_id == document_id))
     session.flush()
