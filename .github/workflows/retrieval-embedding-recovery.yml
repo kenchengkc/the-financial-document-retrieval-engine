@@ -1,0 +1,332 @@
+name: Retrieval embedding recovery
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Projection is read-only; apply requires the exact projection plan ID"
+        required: true
+        default: projection
+        type: choice
+        options:
+          - projection
+          - apply
+      expected_plan_id:
+        description: "Exact 64-character projection plan ID; required for apply"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-retrieval-embedding-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == 'kenchengkc' &&
+       github.event.issue.number == 103 &&
+       (github.event.comment.body == '/embedding-recovery-project' ||
+        startsWith(github.event.comment.body, '/embedding-recovery-apply ')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
+      EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '' }}
+      EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '128' }}
+      EMBEDDING_REQUESTS_PER_MINUTE: ${{ vars.EMBEDDING_REQUESTS_PER_MINUTE || '2000' }}
+      EMBEDDING_TOKENS_PER_MINUTE: ${{ vars.EMBEDDING_TOKENS_PER_MINUTE || '3000000' }}
+      EMBEDDING_CONCURRENCY: ${{ vars.EMBEDDING_CONCURRENCY || '8' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/retrieval-embedding-recovery
+
+    steps:
+      - name: Resolve guarded request
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          REQUEST: ${{ github.event.comment.body }}
+        run: |
+          if [ "${REQUEST}" = "/embedding-recovery-project" ]; then
+            echo "RECOVERY_MODE=projection" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          if [[ "${REQUEST}" =~ ^/embedding-recovery-apply\ ([0-9a-f]{64})$ ]]; then
+            echo "RECOVERY_MODE=apply" >> "${GITHUB_ENV}"
+            echo "EXPECTED_PLAN_ID=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          echo "::error::Malformed embedding recovery request."
+          exit 1
+
+      - name: Resolve manual request
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_PLAN_ID: ${{ inputs.expected_plan_id }}
+        run: |
+          if [ "${REQUESTED_MODE}" = "projection" ]; then
+            echo "RECOVERY_MODE=projection" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          if [ "${REQUESTED_MODE}" != "apply" ]; then
+            echo "::error::Unsupported recovery mode."
+            exit 1
+          fi
+          if [[ ! "${REQUESTED_PLAN_ID}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Apply requires an exact 64-character lowercase hex plan ID."
+            exit 1
+          fi
+          echo "RECOVERY_MODE=apply" >> "${GITHUB_ENV}"
+          echo "EXPECTED_PLAN_ID=${REQUESTED_PLAN_ID}" >> "${GITHUB_ENV}"
+
+      - name: Check required secrets
+        run: |
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ "${EMBEDDING_PROVIDER}" = "voyage" ] && [ -z "${VOYAGE_API_KEY}" ]; then
+            echo "::error::VOYAGE_API_KEY is required for Voyage recovery."
+            exit 1
+          fi
+          if [ "${EMBEDDING_PROVIDER}" = "openai" ] && [ -z "${OPENAI_API_KEY}" ]; then
+            echo "::error::OPENAI_API_KEY is required for OpenAI recovery."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+            echo "::notice::Using DATABASE_URL_DIRECT for embedding recovery."
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+            echo "::notice::DATABASE_URL_DIRECT not set; using DATABASE_URL."
+          fi
+
+      - name: Project legitimate embedding backlog
+        id: projection
+        run: |
+          mkdir -p "${OUTPUT_DIR}"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          from sqlalchemy import exists, select
+          from sqlalchemy.orm import Session
+
+          from apps.api.app.config import get_settings
+          from apps.api.app.db import create_db_engine
+          from apps.api.app.models import Chunk, Document, Embedding
+          from fdre.indexing.archive_cleanup import snapshot_cleanup_state
+          from fdre.indexing.embeddings import embedding_provider_from_settings
+          from fdre.retrieval.scope import retrieval_indexable_document_clause
+
+          settings = get_settings()
+          provider = embedding_provider_from_settings(settings)
+          with Session(create_db_engine()) as session:
+              archive = snapshot_cleanup_state(session)
+              expected_archive = {
+                  "archive_documents": 10032,
+                  "archive_chunks": 0,
+                  "archive_embeddings": 0,
+                  "retrieval_result_references": 0,
+                  "citation_references": 0,
+              }
+              observed_archive = {
+                  "archive_documents": archive.archive_documents,
+                  "archive_chunks": archive.archive_chunks,
+                  "archive_embeddings": archive.archive_embeddings,
+                  "retrieval_result_references": archive.retrieval_result_references,
+                  "citation_references": archive.citation_references,
+              }
+              if observed_archive != expected_archive:
+                  raise SystemExit(f"archive cleanup invariant drifted: {observed_archive}")
+
+              matching = exists().where(
+                  Embedding.chunk_id == Chunk.id,
+                  Embedding.provider == provider.name,
+                  Embedding.model == provider.model,
+                  Embedding.dimensions == provider.dimensions,
+              )
+              statement = (
+                  select(Chunk.id)
+                  .join(Document, Document.id == Chunk.document_id)
+                  .where(retrieval_indexable_document_clause())
+                  .where(~matching)
+                  .order_by(Chunk.id)
+              )
+              missing_ids = [int(value) for value in session.scalars(statement)]
+
+          id_digest = hashlib.sha256(
+              "\n".join(str(value) for value in missing_ids).encode("utf-8")
+          ).hexdigest()
+          state = {
+              "provider": provider.name,
+              "model": provider.model,
+              "dimensions": provider.dimensions,
+              "missing_embeddings": len(missing_ids),
+              "first_missing_chunk_id": missing_ids[0] if missing_ids else None,
+              "last_missing_chunk_id": missing_ids[-1] if missing_ids else None,
+              "missing_chunk_ids_sha256": id_digest,
+              "archive_state": observed_archive,
+          }
+          canonical = json.dumps(state, sort_keys=True, separators=(",", ":"))
+          plan_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+          report = {"schema_version": "fdre-embedding-recovery-v1", "plan_id": plan_id, **state}
+          path = Path(os.environ["OUTPUT_DIR"]) / "projection.json"
+          path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(report, indent=2, sort_keys=True), flush=True)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"plan_id={plan_id}\n")
+              handle.write(f"missing_embeddings={len(missing_ids)}\n")
+          PY
+
+      - name: Verify exact recovery plan
+        if: ${{ env.RECOVERY_MODE == 'apply' }}
+        run: |
+          if [ "${{ steps.projection.outputs.plan_id }}" != "${EXPECTED_PLAN_ID}" ]; then
+            echo "::error::Embedding recovery plan drifted."
+            echo "expected=${EXPECTED_PLAN_ID}"
+            echo "observed=${{ steps.projection.outputs.plan_id }}"
+            exit 1
+          fi
+
+      - name: Recover missing configured embeddings
+        if: ${{ env.RECOVERY_MODE == 'apply' }}
+        run: python -m scripts.pipelines.retrieval_pipeline index
+
+      - name: Verify recovery post-state
+        if: ${{ env.RECOVERY_MODE == 'apply' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from sqlalchemy import exists, func, select
+          from sqlalchemy.orm import Session
+
+          from apps.api.app.config import get_settings
+          from apps.api.app.db import create_db_engine
+          from apps.api.app.models import Chunk, Document, Embedding
+          from fdre.indexing.archive_cleanup import snapshot_cleanup_state
+          from fdre.indexing.embeddings import embedding_provider_from_settings
+          from fdre.retrieval.scope import retrieval_indexable_document_clause
+
+          settings = get_settings()
+          provider = embedding_provider_from_settings(settings)
+          with Session(create_db_engine()) as session:
+              matching = exists().where(
+                  Embedding.chunk_id == Chunk.id,
+                  Embedding.provider == provider.name,
+                  Embedding.model == provider.model,
+                  Embedding.dimensions == provider.dimensions,
+              )
+              missing = session.scalar(
+                  select(func.count())
+                  .select_from(Chunk)
+                  .join(Document, Document.id == Chunk.document_id)
+                  .where(retrieval_indexable_document_clause())
+                  .where(~matching)
+              ) or 0
+              archive = snapshot_cleanup_state(session)
+
+          archive_state = {
+              "archive_documents": archive.archive_documents,
+              "archive_chunks": archive.archive_chunks,
+              "archive_embeddings": archive.archive_embeddings,
+              "retrieval_result_references": archive.retrieval_result_references,
+              "citation_references": archive.citation_references,
+          }
+          expected_archive = {
+              "archive_documents": 10032,
+              "archive_chunks": 0,
+              "archive_embeddings": 0,
+              "retrieval_result_references": 0,
+              "citation_references": 0,
+          }
+          report = {
+              "provider": provider.name,
+              "model": provider.model,
+              "dimensions": provider.dimensions,
+              "missing_embeddings": int(missing),
+              "archive_state": archive_state,
+          }
+          path = Path(os.environ["OUTPUT_DIR"]) / "post-recovery.json"
+          path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(report, indent=2, sort_keys=True), flush=True)
+          if int(missing) != 0:
+              raise SystemExit(f"embedding recovery incomplete: {missing} configured embeddings missing")
+          if archive_state != expected_archive:
+              raise SystemExit(f"archive retrieval state regressed during recovery: {archive_state}")
+          PY
+
+      - name: Publish data-quality audit
+        if: ${{ env.RECOVERY_MODE == 'apply' }}
+        run: python -m scripts.pipelines.retrieval_pipeline audit | tee "${OUTPUT_DIR}/data-quality-audit.txt"
+
+      - name: Summarize result
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["OUTPUT_DIR"])
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("### Retrieval embedding recovery\n\n")
+              projection_path = root / "projection.json"
+              if projection_path.exists():
+                  projection = json.loads(projection_path.read_text())
+                  handle.write(f"- Mode: **{os.environ.get('RECOVERY_MODE', 'unknown')}**\n")
+                  handle.write(f"- Plan ID: `{projection['plan_id']}`\n")
+                  handle.write(f"- Provider/model: **{projection['provider']}/{projection['model']}**\n")
+                  handle.write(f"- Dimensions: **{projection['dimensions']}**\n")
+                  handle.write(f"- Missing before: **{projection['missing_embeddings']}**\n")
+                  handle.write(f"- Missing-ID digest: `{projection['missing_chunk_ids_sha256']}`\n")
+              post_path = root / "post-recovery.json"
+              if post_path.exists():
+                  post = json.loads(post_path.read_text())
+                  handle.write(f"- Missing after: **{post['missing_embeddings']}**\n")
+                  handle.write(f"- Archive chunks after: **{post['archive_state']['archive_chunks']}**\n")
+                  handle.write(f"- Archive embeddings after: **{post['archive_state']['archive_embeddings']}**\n")
+          PY
+
+      - name: Upload recovery artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-embedding-recovery-${{ github.run_id }}
+          path: data/processed/retrieval-embedding-recovery
+          if-no-files-found: warn
