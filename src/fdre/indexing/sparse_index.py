@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models import Chunk, Company, Document, DocumentElement
 from fdre.retrieval.query import SearchFilters, chunk_matches_filters
+from fdre.retrieval.scope import retrieval_indexable_document_clause
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 SPARSE_STOPWORDS = {
@@ -78,7 +79,10 @@ class PostgresFullTextIndexer:
             select(Chunk, score)
             .join(Document, Document.id == Chunk.document_id)
             .join(Company, Company.id == Document.company_id)
-            .where(Chunk.search_vector.op("@@")(parsed_query))
+            .where(
+                Chunk.search_vector.op("@@")(parsed_query),
+                retrieval_indexable_document_clause(),
+            )
         )
         if filters.element_types:
             statement = statement.join(

@@ -11,6 +11,7 @@ from sqlalchemy.sql import ColumnElement, Select
 from apps.api.app.models import Chunk, Company, Document, DocumentElement, Embedding
 from fdre.indexing.embeddings import EmbeddingProvider, cosine_similarity
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters, chunk_matches_filters
+from fdre.retrieval.scope import retrieval_indexable_document_clause
 
 # Higher ef_search improves ANN recall on large issuer corpora (e.g. JPM).
 # Lower values keep unfiltered thematic scans closer to the latency gate.
@@ -108,13 +109,6 @@ class DenseRetriever:
         else:
             base_distance = Embedding.vector.cosine_distance(query_vector)
 
-        # A bounded cross-sectional screen supplies both a small ticker universe and
-        # an explicit accepted-at window. In that shape, global HNSW search followed
-        # by relational filtering has high tail variance: a query can scan many global
-        # neighbors before enough happen to belong to the requested issuers. Force an
-        # exact distance sort over the already narrow relational subset instead. ABS
-        # is identity for cosine distance (>= 0) while intentionally preventing the
-        # HNSW ORDER BY operator match. Broad/unbounded searches keep the ANN path.
         exact_filtered_window = bool(
             filters.accession_numbers
             or (
@@ -137,8 +131,6 @@ class DenseRetriever:
             )
             session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))
 
-        # Unfiltered thematic scans: ANN-first on embeddings, then join metadata.
-        # Keeps the HNSW ORDER BY free of multi-table joins.
         if use_halfvec and not filters.tickers:
             return self._search_postgres_ann_first(
                 session, distance=distance, filters=filters, limit=limit
@@ -230,6 +222,7 @@ def _apply_filters(
     statement: Select[tuple[Chunk, float]],
     filters: SearchFilters,
 ) -> Select[tuple[Chunk, float]]:
+    statement = statement.where(retrieval_indexable_document_clause())
     if filters.tickers:
         statement = statement.where(Company.ticker.in_(filters.tickers))
     if filters.ciks:
