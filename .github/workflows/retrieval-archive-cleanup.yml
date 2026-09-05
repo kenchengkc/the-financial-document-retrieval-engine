@@ -1,0 +1,244 @@
+name: Retrieval archive cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Projection is read-only; apply requires the exact projection plan ID"
+        required: true
+        default: projection
+        type: choice
+        options:
+          - projection
+          - apply
+      expected_plan_id:
+        description: "Exact 64-character projection plan ID; required for apply"
+        required: false
+        default: ""
+        type: string
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fdre-retrieval-archive-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == 'kenchengkc' &&
+       github.event.issue.number == 103 &&
+       (github.event.comment.body == '/archive-cleanup-project' ||
+        startsWith(github.event.comment.body, '/archive-cleanup-apply ')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+      OUTPUT_DIR: data/processed/retrieval-archive-cleanup
+      BATCH_SIZE: "10000"
+
+    steps:
+      - name: Resolve guarded request
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          REQUEST: ${{ github.event.comment.body }}
+        run: |
+          if [ "${REQUEST}" = "/archive-cleanup-project" ]; then
+            echo "CLEANUP_MODE=projection" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          if [[ "${REQUEST}" =~ ^/archive-cleanup-apply\ ([0-9a-f]{64})$ ]]; then
+            echo "CLEANUP_MODE=apply" >> "${GITHUB_ENV}"
+            echo "EXPECTED_PLAN_ID=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          echo "::error::Malformed archive cleanup request."
+          exit 1
+
+      - name: Resolve manual request
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_PLAN_ID: ${{ inputs.expected_plan_id }}
+        run: |
+          if [ "${REQUESTED_MODE}" = "projection" ]; then
+            echo "CLEANUP_MODE=projection" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          if [ "${REQUESTED_MODE}" != "apply" ]; then
+            echo "::error::Unsupported cleanup mode."
+            exit 1
+          fi
+          if [[ ! "${REQUESTED_PLAN_ID}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Apply requires an exact 64-character lowercase hex plan ID."
+            exit 1
+          fi
+          echo "CLEANUP_MODE=apply" >> "${GITHUB_ENV}"
+          echo "EXPECTED_PLAN_ID=${REQUESTED_PLAN_ID}" >> "${GITHUB_ENV}"
+
+      - name: Check required database secret
+        run: |
+          if [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+            echo "::notice::Using DATABASE_URL_DIRECT for archive cleanup."
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+            echo "::notice::DATABASE_URL_DIRECT not set; using DATABASE_URL."
+          fi
+
+      - name: Replay cleanup projection
+        run: |
+          mkdir -p "${OUTPUT_DIR}"
+          python -m scripts.ingestion.cleanup_retrieval_archive_scope \
+            --database-url "${DATABASE_URL}" \
+            --batch-size "${BATCH_SIZE}" \
+            --output "${OUTPUT_DIR}/projection.json"
+
+      - name: Verify frozen projection and guarded plan
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ["OUTPUT_DIR"] + "/projection.json").read_text())
+          expected_before = {
+              "archive_documents": 10032,
+              "archive_chunks": 1164008,
+              "archive_embeddings": 44416,
+              "retrieval_result_references": 0,
+              "citation_references": 0,
+          }
+          if report["mode"] != "projection" or report["applied"]:
+              raise SystemExit("cleanup projection unexpectedly mutated state")
+          if report["before"] != expected_before or report["after"] != expected_before:
+              raise SystemExit(f"frozen cleanup pre-state drifted: {report['before']}")
+          if report["batch_size"] != int(os.environ["BATCH_SIZE"]):
+              raise SystemExit("cleanup projection batch size drifted")
+          plan_id = report["plan_id"]
+          if len(plan_id) != 64:
+              raise SystemExit("cleanup projection emitted an invalid plan ID")
+          if os.environ["CLEANUP_MODE"] == "apply":
+              expected_plan_id = os.environ.get("EXPECTED_PLAN_ID", "")
+              if plan_id != expected_plan_id:
+                  raise SystemExit(
+                      f"cleanup plan drift: expected {expected_plan_id}, got {plan_id}"
+                  )
+          print(f"validated_cleanup_plan_id={plan_id}", flush=True)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"plan_id={plan_id}\n")
+          PY
+        id: projection
+
+      - name: Apply exact cleanup plan
+        if: ${{ env.CLEANUP_MODE == 'apply' }}
+        env:
+          FDRE_ALLOW_PROD: "1"
+        run: |
+          python -m scripts.ingestion.cleanup_retrieval_archive_scope \
+            --database-url "${DATABASE_URL}" \
+            --batch-size "${BATCH_SIZE}" \
+            --expected-plan-id "${EXPECTED_PLAN_ID}" \
+            --apply \
+            --output "${OUTPUT_DIR}/apply.json"
+
+      - name: Audit post-cleanup state
+        if: ${{ env.CLEANUP_MODE == 'apply' }}
+        run: |
+          python -m scripts.ingestion.cleanup_retrieval_archive_scope \
+            --database-url "${DATABASE_URL}" \
+            --batch-size "${BATCH_SIZE}" \
+            --resume \
+            --output "${OUTPUT_DIR}/post-cleanup.json"
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["OUTPUT_DIR"])
+          applied = json.loads((root / "apply.json").read_text())
+          post = json.loads((root / "post-cleanup.json").read_text())
+          expected_after = {
+              "archive_documents": 10032,
+              "archive_chunks": 0,
+              "archive_embeddings": 0,
+              "retrieval_result_references": 0,
+              "citation_references": 0,
+          }
+          if not applied["applied"] or not applied["complete"]:
+              raise SystemExit("cleanup apply did not report complete=true")
+          if applied["plan_id"] != os.environ["EXPECTED_PLAN_ID"]:
+              raise SystemExit("cleanup apply plan ID does not match guarded request")
+          if applied["after"] != expected_after:
+              raise SystemExit(f"cleanup apply post-state drifted: {applied['after']}")
+          if post["before"] != expected_after or post["after"] != expected_after:
+              raise SystemExit(f"independent post-cleanup audit failed: {post['after']}")
+          if not post["complete"]:
+              raise SystemExit("independent post-cleanup audit did not report complete=true")
+          PY
+
+      - name: Summarize result
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["OUTPUT_DIR"])
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("### Retrieval archive cleanup\n\n")
+              projection_path = root / "projection.json"
+              if projection_path.exists():
+                  projection = json.loads(projection_path.read_text())
+                  handle.write(f"- Mode: **{os.environ.get('CLEANUP_MODE', 'unknown')}**\n")
+                  handle.write(f"- Projection plan ID: `{projection['plan_id']}`\n")
+                  handle.write(f"- Archive documents: **{projection['before']['archive_documents']}**\n")
+                  handle.write(f"- Archive chunks before: **{projection['before']['archive_chunks']}**\n")
+                  handle.write(f"- Archive embeddings before: **{projection['before']['archive_embeddings']}**\n")
+              apply_path = root / "apply.json"
+              if apply_path.exists():
+                  applied = json.loads(apply_path.read_text())
+                  handle.write(f"- Deleted chunks: **{applied['progress']['deleted_chunks']}**\n")
+                  handle.write(f"- Deleted embeddings: **{applied['progress']['deleted_embeddings']}**\n")
+                  handle.write(f"- Batches committed: **{applied['progress']['batches_committed']}**\n")
+                  handle.write(f"- Complete: **{applied['complete']}**\n")
+          PY
+
+      - name: Upload cleanup artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-archive-cleanup-${{ github.run_id }}
+          path: data/processed/retrieval-archive-cleanup
+          if-no-files-found: warn
