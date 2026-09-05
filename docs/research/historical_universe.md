@@ -315,6 +315,14 @@ Acceptance criteria:
 
 ### HU-5 — Institutional flagship rerun
 
+**Historical-universe identity closure: COMPLETE (production audited 2026-09-05).** The reviewed
+45-action plan committed successfully, and the merged HU-5 gate plus independent identity-strict
+audit both report 6,088/6,088 calendar days through 2026-09-01, with zero invalid or blocked days
+and zero relevant provisional identities. See the
+[closure record](historical-universe/final-identity-closure.md) for the exact manifest, plan,
+production artifact, gates, and temporary-workflow cleanup. This completes the universe
+prerequisite; the flagship-study acceptance criteria below remain separate.
+
 Rerun the precommitted risk-churn acceleration study against the historical universe and longer history **without changing methodology to manufacture a positive result**.
 
 Acceptance criteria:
