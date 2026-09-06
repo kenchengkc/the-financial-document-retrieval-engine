@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
+import pytest
 import requests
 
 from fdre.research import hu5_market_hydration as hydration
@@ -34,19 +36,19 @@ def test_covered_market_symbols_matches_canonical_cache_semantics(tmp_path: Path
 
 def test_hydration_skips_terminal_no_data_and_respects_round_batch(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tiingo_calls: list[str] = []
     yahoo_calls: list[str] = []
 
-    def fake_tiingo(symbol: str, *args, **kwargs):
+    def fake_tiingo(symbol: str, *args: Any, **kwargs: Any) -> list[MarketBar]:
         tiingo_calls.append(symbol)
         if symbol == "B":
             return []
         _write_tiingo_cache(tmp_path, symbol)
         return [_bar(symbol)]
 
-    def fake_yahoo(symbol: str, *args, **kwargs):
+    def fake_yahoo(symbol: str, *args: Any, **kwargs: Any) -> list[MarketBar]:
         yahoo_calls.append(symbol)
         return []
 
@@ -83,11 +85,11 @@ def test_hydration_skips_terminal_no_data_and_respects_round_batch(
 
 def test_hydration_recovers_after_provider_rate_limit(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = 0
 
-    def fake_tiingo(symbol: str, *args, **kwargs):
+    def fake_tiingo(symbol: str, *args: Any, **kwargs: Any) -> list[MarketBar]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -95,7 +97,7 @@ def test_hydration_recovers_after_provider_rate_limit(
         _write_tiingo_cache(tmp_path, symbol)
         return [_bar(symbol)]
 
-    def fake_yahoo(symbol: str, *args, **kwargs):
+    def fake_yahoo(symbol: str, *args: Any, **kwargs: Any) -> list[MarketBar]:
         raise MarketDataRateLimitError("yahoo", symbol)
 
     monkeypatch.setattr(hydration, "fetch_ticker_bars_tiingo", fake_tiingo)
