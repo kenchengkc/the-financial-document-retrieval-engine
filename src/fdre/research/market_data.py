@@ -14,6 +14,7 @@ import json
 import os
 import re
 import time as time_module
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time
 from pathlib import Path
@@ -264,16 +265,23 @@ def fetch_market_bars(
     the invocation so one throttled provider cannot stall every symbol. When
     ``cache_only`` is true or ``max_uncached_fetches`` is exhausted, uncached
     symbols are returned as missing without making network calls.
+
+    When ``FDRE_MARKET_SYMBOLOGY_PROFILE`` is explicitly set to the frozen HU-5
+    profile, provider query symbols are resolved through that profile and the
+    resulting bars are relabeled back to the requested historical symbols. The
+    default behavior remains identity mapping for all other callers.
     """
+    requested = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
+    provider_by_requested = _provider_symbols_for_requested(requested)
+    wanted = list(dict.fromkeys(provider_by_requested.values()))
     token = tiingo_token or os.environ.get("TIINGO_API_KEY")
-    wanted = list(dict.fromkeys([benchmark.upper(), *(t.upper() for t in tickers)]))
     session = requests.Session()
     crumb = None
     yahoo_session_ready = False
     tiingo_rate_limited = False
     yahoo_rate_limited = False
-    bars: list[MarketBar] = []
-    missing: list[str] = []
+    provider_bars: list[MarketBar] = []
+    provider_missing: list[str] = []
     uncached_fetches = 0
     for symbol in wanted:
         tiingo_cache = (
@@ -293,7 +301,7 @@ def fetch_market_bars(
         elif not yahoo_rate_limited:
             provider = "yahoo"
         else:
-            missing.append(symbol)
+            provider_missing.append(symbol)
             continue
         cache_path = _market_cache_path(
             symbol,
@@ -304,18 +312,16 @@ def fetch_market_bars(
         )
         cached = cache_path is not None and cache_path.exists()
         if not cached and provider == "tiingo" and tiingo_cache is not None:
-            # A wider cached window already covers this request; reuse it instead
-            # of counting it as a fresh (rate-limited) fetch.
             cached = True
         if not cached:
             if cache_only:
-                missing.append(symbol)
+                provider_missing.append(symbol)
                 continue
             if (
                 max_uncached_fetches is not None
                 and uncached_fetches >= max_uncached_fetches
             ):
-                missing.append(symbol)
+                provider_missing.append(symbol)
                 continue
             uncached_fetches += 1
         ticker_bars: list[MarketBar] = []
@@ -362,12 +368,49 @@ def fetch_market_bars(
             except requests.RequestException:
                 ticker_bars = []
         if ticker_bars:
-            bars.extend(ticker_bars)
+            provider_bars.extend(ticker_bars)
         else:
-            missing.append(symbol)
+            provider_missing.append(symbol)
         if not cached:
             time_module.sleep(pause)
+
+    reverse: dict[str, set[str]] = defaultdict(set)
+    for requested_symbol, provider_symbol in provider_by_requested.items():
+        reverse[provider_symbol].add(requested_symbol)
+    bars: list[MarketBar] = []
+    for bar in provider_bars:
+        provider_symbol = bar.ticker.upper()
+        targets = reverse.get(provider_symbol, {provider_symbol})
+        for target in sorted(targets):
+            if target == provider_symbol:
+                bars.append(bar)
+            else:
+                bars.append(bar.model_copy(update={"ticker": target}))
+
+    missing_provider_set = {symbol.upper() for symbol in provider_missing}
+    missing = [
+        requested_symbol
+        for requested_symbol in requested
+        if provider_by_requested[requested_symbol] in missing_provider_set
+    ]
     return bars, missing
+
+
+def _provider_symbols_for_requested(requested: list[str]) -> dict[str, str]:
+    profile = os.environ.get("FDRE_MARKET_SYMBOLOGY_PROFILE", "").strip()
+    if not profile:
+        return {symbol: symbol for symbol in requested}
+
+    from fdre.research.market_symbology import (
+        HU5_MARKET_SYMBOLOGY_SCHEMA_VERSION,
+        assert_frozen_hu5_market_symbology_manifest,
+        hu5_provider_symbol,
+    )
+
+    if profile != HU5_MARKET_SYMBOLOGY_SCHEMA_VERSION:
+        raise ValueError(f"unknown market symbology profile: {profile}")
+    assert_frozen_hu5_market_symbology_manifest()
+    return {symbol: hu5_provider_symbol(symbol) for symbol in requested}
 
 
 def build_market_cache_manifest(cache_dir: Path) -> MarketCacheManifest:
