@@ -178,7 +178,7 @@ def test_missing_component_endpoint_fails_without_renormalization() -> None:
         MarketBar(ticker="AAB", date=date(2020, 6, 2), adjusted_close=200),
     ]
 
-    with pytest.raises(multiclass.HU5MultiClassOutcomeUnavailable) as caught:
+    with pytest.raises(multiclass.HU5MultiClassOutcomeUnavailableError) as caught:
         multiclass._multi_class_event_returns(
             [event],
             bars,
