@@ -1,4 +1,4 @@
-name: Hydrate HU-5 market cache
+name: HU-5 market symbology cache preflight
 
 on:
   workflow_dispatch:
@@ -8,33 +8,27 @@ on:
       - ".github/workflows/hydrate-hu5-market-cache.yml"
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
-  group: fdre-hu5-market-cache-hydration
+  group: fdre-hu5-market-symbology-preflight
   cancel-in-progress: false
 
 jobs:
-  hydrate:
-    name: Hydrate frozen HU-5 market cache
+  preflight:
+    name: Validate frozen HU-5 market symbology cache
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 30
     env:
       DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
-      TIINGO_API_KEY: ${{ secrets.TIINGO_API_KEY }}
       PYTHONPATH: .
 
     steps:
-      - name: Check required secrets
+      - name: Check required database secret
         run: |
           if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
             echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
-            exit 1
-          fi
-          if [ -z "${TIINGO_API_KEY}" ]; then
-            echo "::error::TIINGO_API_KEY is required."
             exit 1
           fi
 
@@ -47,7 +41,7 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Restore market cache
+      - name: Restore frozen market cache
         uses: actions/cache/restore@v4
         with:
           path: data/cache/market
@@ -71,64 +65,46 @@ jobs:
       - name: Apply database migrations
         run: alembic upgrade head
 
-      - name: Hydrate frozen HU-5 market window without scoring returns
+      - name: Validate frozen symbology and cache without evaluating returns
         run: |
-          mkdir -p data/processed/ops/hu5-market-hydration
-          python -m scripts.research.hu5_market_cache_hydration \
-            --output data/processed/ops/hu5-market-hydration/coverage.json \
-            --batch-size 45 \
-            --rounds 6 \
-            --sleep-seconds 3900 \
-            --pause-seconds 0.5
+          mkdir -p data/processed/ops/hu5-market-symbology-preflight
+          python -m scripts.research.hu5_market_symbology_preflight \
+            --output data/processed/ops/hu5-market-symbology-preflight/preflight.json
 
-      - name: Manifest hydrated market cache
+      - name: Manifest restored market cache
         if: always()
         run: |
-          mkdir -p data/processed/ops/hu5-market-hydration
+          mkdir -p data/processed/ops/hu5-market-symbology-preflight
           python -m scripts.research.market_cache_manifest \
             --cache-dir data/cache/market \
-            --manifest data/processed/ops/hu5-market-hydration/market-cache-manifest.json
+            --manifest data/processed/ops/hu5-market-symbology-preflight/market-cache-manifest.json
 
-      - name: Read hydration coverage
-        id: coverage
+      - name: Summarize preflight evidence
         if: success()
         run: |
-          complete="$(python -c 'import json; print(str(json.load(open("data/processed/ops/hu5-market-hydration/coverage.json"))["coverage_complete"]).lower())')"
-          remaining="$(python -c 'import json; print(json.load(open("data/processed/ops/hu5-market-hydration/coverage.json"))["remaining_count"])')"
-          echo "complete=${complete}" >> "${GITHUB_OUTPUT}"
-          echo "remaining=${remaining}" >> "${GITHUB_OUTPUT}"
-          {
-            echo "### HU-5 market-cache hydration"
-            echo
-            echo "- Coverage complete: ${complete}"
-            echo "- Remaining symbols: ${remaining}"
-          } >> "${GITHUB_STEP_SUMMARY}"
+          python - <<'PY' >> "${GITHUB_STEP_SUMMARY}"
+          import json
+          from pathlib import Path
 
-      - name: Upload hydration evidence
+          payload = json.loads(
+              Path("data/processed/ops/hu5-market-symbology-preflight/preflight.json").read_text()
+          )
+          print("### HU-5 market symbology cache preflight")
+          print()
+          print(f"- Status: {payload['status']}")
+          print(f"- Historical symbols: {payload['required_historical_symbol_count']} / 271")
+          print(f"- Provider symbols: {payload['provider_symbol_count']}")
+          print(f"- KFT restricted-window validation: {payload['restricted_alias_window_validation']}")
+          print(f"- Symbology manifest: `{payload['market_symbology_manifest_id']}`")
+          print(f"- Outcome mapping: `{payload['outcome_mapping_id']}`")
+          print(f"- Return evaluation performed: {payload['return_evaluation_performed']}")
+          PY
+
+      - name: Upload preflight evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hu5-market-hydration-${{ github.run_id }}
-          path: data/processed/ops/hu5-market-hydration
+          name: hu5-market-symbology-preflight-${{ github.run_id }}
+          path: data/processed/ops/hu5-market-symbology-preflight
           if-no-files-found: warn
           retention-days: 90
-
-      - name: Save hydrated market cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: data/cache/market
-          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
-
-      - name: Dispatch canonical amended flagship after complete hydration
-        if: steps.coverage.outputs.complete == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run flagship-risk-churn-acceleration.yml \
-            --ref main \
-            -f max_tickers=250 \
-            -f min_documents=6 \
-            -f max_uncached_market_fetches=300
-          echo "Canonical HU-5 amended flagship dispatched after complete cache hydration." \
-            >> "${GITHUB_STEP_SUMMARY}"
