@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import cast
 
 import pytest
 
@@ -10,7 +9,6 @@ from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent
 from fdre.research.historical_universe import (
     SecurityIdentityRecord,
     UniverseMembershipRecord,
-    VerificationStatus,
 )
 from fdre.research.hu5_universe import HU5UniverseRecords, build_hu5_universe_gate
 
@@ -22,7 +20,7 @@ def _membership(security_id: int) -> UniverseMembershipRecord:
         effective_from=date(2020, 1, 1),
         effective_to=None,
         source_hash=f"membership-{security_id}",
-        verification_status=cast(VerificationStatus, "verified"),
+        verification_status="verified",
     )
 
 
@@ -34,7 +32,7 @@ def _identity(security_id: int, cik: str, symbol: str) -> SecurityIdentityRecord
         effective_from=date(2020, 1, 1),
         effective_to=None,
         source_hash=f"identity-{security_id}",
-        verification_status=cast(VerificationStatus, "verified"),
+        verification_status="verified",
     )
 
 
