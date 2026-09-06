@@ -34,6 +34,45 @@ def test_covered_market_symbols_matches_canonical_cache_semantics(tmp_path: Path
     assert covered == {"A", "C"}
 
 
+def test_provider_alias_cache_covers_historical_symbol(tmp_path: Path) -> None:
+    (tmp_path / "tiingo_BALL_20100101_20300101.json").write_text("[]")
+
+    covered = hydration.covered_market_symbols(tmp_path, ["BLL"], START, END)
+
+    assert covered == {"BLL"}
+
+
+def test_hydration_queries_provider_alias_but_reports_historical_symbol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_tiingo(symbol: str, *args: Any, **kwargs: Any) -> list[MarketBar]:
+        calls.append(symbol)
+        _write_tiingo_cache(tmp_path, symbol)
+        return [_bar(symbol)]
+
+    monkeypatch.setattr(hydration, "fetch_ticker_bars_tiingo", fake_tiingo)
+
+    report = hydration.run_market_cache_hydration(
+        ["BLL"],
+        START,
+        END,
+        token="token",
+        cache_dir=tmp_path,
+        batch_size=1,
+        max_rounds=1,
+        sleep_seconds=0,
+        pause_seconds=0,
+    )
+
+    assert calls == ["BALL"]
+    assert report.hydrated_symbols == ("BLL",)
+    assert report.final_covered_symbols == ("BLL",)
+    assert report.coverage_complete is True
+
+
 def test_hydration_skips_terminal_no_data_and_respects_round_batch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
