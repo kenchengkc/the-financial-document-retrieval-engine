@@ -26,6 +26,7 @@ from fdre.research.event_study import (
     run_event_study,
     validate_event_inputs,
 )
+from fdre.research.historical_universe import UniverseSnapshot
 from fdre.research.hu5_universe import (
     HU5EventUniverseLineage,
     HU5UniverseGate,
@@ -35,7 +36,6 @@ from fdre.research.hu5_universe import (
 from fdre.research.walk_forward import (
     WalkForwardConfig,
     WalkForwardObservation,
-    WalkForwardOOSObservation,
     WalkForwardStudyReport,
     build_walk_forward_folds,
     market_data_version,
@@ -98,7 +98,7 @@ class HU5OutcomeAvailabilityIssue:
     missing_symbols: tuple[str, ...]
 
 
-class HU5MultiClassOutcomeUnavailable(ValueError):
+class HU5MultiClassOutcomeUnavailableError(ValueError):
     """Raised before scoring when v1 cannot form every required class basket."""
 
     def __init__(self, issues: tuple[HU5OutcomeAvailabilityIssue, ...]) -> None:
@@ -127,7 +127,7 @@ def resolve_hu5_events_multiclass(
         for item in gate.dates
         if item.eligible
     }
-    snapshot_cache: dict[date, object] = {}
+    snapshot_cache: dict[date, UniverseSnapshot] = {}
     resolved: list[FilingEvent] = []
     lineage: list[HU5EventUniverseLineage] = []
     mappings: list[HU5EventOutcomeMapping] = []
@@ -152,9 +152,8 @@ def resolve_hu5_events_multiclass(
                 as_of=as_of,
             )
             snapshot_cache[as_of] = snapshot
-        constituents = getattr(snapshot, "constituents")
         matches = sorted(
-            (item for item in constituents if item.cik == cik),
+            (item for item in snapshot.constituents if item.cik == cik),
             key=lambda item: (item.security_id, item.symbol.upper()),
         )
         if not matches:
@@ -180,7 +179,7 @@ def resolve_hu5_events_multiclass(
             HU5EventOutcomeMapping(
                 accession_number=event.accession_number,
                 as_of=as_of.isoformat(),
-                snapshot_id=getattr(snapshot, "snapshot_id"),
+                snapshot_id=snapshot.snapshot_id,
                 cik=cik,
                 observation_ticker=observation_ticker,
                 components=components,
@@ -191,7 +190,7 @@ def resolve_hu5_events_multiclass(
                 HU5EventUniverseLineage(
                     accession_number=event.accession_number,
                     as_of=as_of.isoformat(),
-                    snapshot_id=getattr(snapshot, "snapshot_id"),
+                    snapshot_id=snapshot.snapshot_id,
                     security_id=item.security_id,
                     cik=cik,
                     symbol=item.symbol.upper(),
@@ -382,7 +381,7 @@ def _multi_class_event_returns(
     bars_by_ticker = _bars_by_ticker(bars)
     benchmark = bars_by_ticker.get(config.benchmark_ticker.upper(), [])
     if not benchmark:
-        raise HU5MultiClassOutcomeUnavailable(
+        raise HU5MultiClassOutcomeUnavailableError(
             (
                 HU5OutcomeAvailabilityIssue(
                     accession_number="*",
@@ -480,7 +479,7 @@ def _multi_class_event_returns(
             )
 
     if issues:
-        raise HU5MultiClassOutcomeUnavailable(tuple(issues))
+        raise HU5MultiClassOutcomeUnavailableError(tuple(issues))
     return outcomes
 
 
