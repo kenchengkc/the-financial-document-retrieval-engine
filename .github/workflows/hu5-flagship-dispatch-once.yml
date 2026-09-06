@@ -1,0 +1,38 @@
+name: HU-5 flagship dispatch bridge
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.actor == 'kenchengkc' &&
+      github.event.issue.number == 103 &&
+      github.event.comment.body == '/run-hu5-flagship'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch canonical sealed flagship workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run flagship-risk-churn-acceleration.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f max_tickers=250 \
+            -f min_documents=6 \
+            -f max_uncached_market_fetches=300
+          {
+            echo "### HU-5 flagship dispatch"
+            echo
+            echo "- Workflow: \`flagship-risk-churn-acceleration.yml\`"
+            echo "- Ref: \`main\`"
+            echo "- max_tickers: \`250\`"
+            echo "- min_documents: \`6\`"
+            echo "- max_uncached_market_fetches: \`300\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
