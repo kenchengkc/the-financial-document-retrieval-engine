@@ -1,19 +1,32 @@
 """Run the versioned HU-5 multi-class outcome amendment.
 
-The original ``hu5_risk_churn_acceleration`` module remains the unchanged
-post-closure rerun contract. This runner changes only the issuer-to-outcome
-mapping according to the policy frozen before this implementation.
+The original unchanged runner remains preserved as historical methodology. This
+runner changes only the issuer-to-outcome mapping according to the v1 policy
+frozen before implementation and return evaluation.
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
+import os
+import subprocess
+from collections import defaultdict
 from dataclasses import asdict
+from datetime import date, timedelta
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
+from fdre.research.composite_study import (
+    CompositeEvent,
+    SignalComponent,
+    period_label,
+    standardize_by_period,
+)
+from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent
 from fdre.research.experiment_registry import (
     build_research_experiment_manifest,
     persist_research_experiment_manifest,
@@ -35,7 +48,7 @@ from fdre.research.hu5_universe import (
     select_historical_issuer_ciks,
     write_hu5_universe_gate,
 )
-from fdre.research.market_data import fetch_market_bars
+from fdre.research.market_data import DEFAULT_CACHE_DIR, fetch_market_bars
 from fdre.research.oos_diagnostics import (
     OOSDiagnosticsConfig,
     build_oos_diagnostics,
@@ -61,32 +74,190 @@ from fdre.research.oos_selection import (
     write_oos_selection_report,
 )
 from fdre.research.panel import ResearchPanelQuery, build_research_panel
-from fdre.research.risk_churn_acceleration import build_risk_churn_acceleration_events
+from fdre.research.risk_churn_acceleration import (
+    RISK_CHURN_ACCELERATION_DEFINITION,
+    RISK_CHURN_ACCELERATION_VERSION,
+    build_risk_churn_acceleration_events,
+)
 from fdre.research.walk_forward import (
+    WalkForwardConfig,
     persist_walk_forward_study,
     write_walk_forward_report,
 )
-from scripts.research import hu5_risk_churn_acceleration as v1
 
+SIGNAL_NAME = "risk_factor_churn_acceleration"
+PRIMARY_WINDOW = "1:63"
+PREDECLARED_WINDOWS = ("1:21", PRIMARY_WINDOW, "1:126")
+NEUTRALIZATION_VERSION = "period-sector-v1"
+FLAGSHIP_FEATURE_VERSION = f"{RISK_CHURN_ACCELERATION_VERSION}+{NEUTRALIZATION_VERSION}"
+MIN_SECTOR_SLICE_ISSUERS = 20
+FORWARD_BUFFER_DAYS = 230
+UNIVERSE_CODE = "sp500"
+RESEARCH_WINDOW_START = date(2010, 1, 1)
+RESEARCH_WINDOW_END = date(2026, 9, 1)
+MIN_USABLE_OOS_FOLDS = 4
 AMENDED_INSUFFICIENCY_SCHEMA_VERSION = "fdre-hu5-insufficiency-v2"
 
 
-def _methodology_payload(
-    event_config: object,
-    walk_config: object,
-) -> dict[str, object]:
-    # The validated config objects are created by the unchanged runner helpers.
-    payload = v1._methodology_payload(event_config, walk_config)  # type: ignore[arg-type]
-    payload["issuer_outcome_policy"] = {
-        "version": HU5_MULTICLASS_OUTCOME_POLICY_VERSION,
-        "observation_unit": "issuer_filing_accession",
-        "component_selection": "all_strict_active_securities_for_filing_cik_on_event_date",
-        "component_set": "frozen_at_event_date",
-        "multi_class_aggregation": "equal_weight_arithmetic_mean_total_return",
-        "benchmark_adjustment": "subtract_once_after_aggregation",
-        "missing_component": "fail_closed_no_renormalization",
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the versioned HU-5 multi-class outcome amendment."
+    )
+    parser.add_argument("--output-dir", default="data/processed/flagship/risk-churn-acceleration")
+    parser.add_argument(
+        "--max-tickers",
+        type=int,
+        default=250,
+        help="Legacy option name; caps historically eligible issuer CIKs, not current tickers.",
+    )
+    parser.add_argument("--min-documents", type=int, default=6)
+    parser.add_argument("--benchmark", default="SPY")
+    parser.add_argument("--market-cache-dir", default=str(DEFAULT_CACHE_DIR))
+    parser.add_argument("--cache-only", action="store_true")
+    parser.add_argument("--max-uncached-market-fetches", type=int, default=300)
+    return parser
+
+
+def _event_config(benchmark: str) -> EventStudyConfig:
+    return EventStudyConfig(
+        benchmark_ticker=benchmark,
+        windows=[
+            EventWindow(start=1, end=21),
+            EventWindow(start=1, end=63),
+            EventWindow(start=1, end=126),
+        ],
+        bootstrap_iterations=2000,
+        random_seed=17,
+    )
+
+
+def _walk_config() -> WalkForwardConfig:
+    return WalkForwardConfig(
+        mode="expanding",
+        train_months=24,
+        validation_months=6,
+        test_months=6,
+        step_months=6,
+        purge_unrealized_development=True,
+        min_train_events=50,
+        min_validation_events=20,
+        min_test_events=20,
+    )
+
+
+def _base_definition(walk_config: WalkForwardConfig) -> dict[str, object]:
+    return {
+        **RISK_CHURN_ACCELERATION_DEFINITION,
+        "neutralization": "same-sector same-filing-quarter z-score with period fallback",
+        "neutralization_version": NEUTRALIZATION_VERSION,
+        "primary_window": PRIMARY_WINDOW,
+        "secondary_windows": ["1:21", "1:126"],
+        "walk_forward": walk_config.model_dump(mode="json"),
+        "multiple_testing_family": list(PREDECLARED_WINDOWS),
+        "robustness_slice_rule": (
+            f"all known sectors with at least {MIN_SECTOR_SLICE_ISSUERS} scored issuers"
+        ),
     }
-    return payload
+
+
+def _neutralize_events(
+    events: list[FilingEvent],
+    sector_by_accession: dict[str, str],
+) -> list[FilingEvent]:
+    composite_events = [
+        CompositeEvent(
+            ticker=event.ticker,
+            accession_number=event.accession_number,
+            available_at_period=period_label(event.available_at.date()),
+            available_at=event.available_at,
+            max_source_available_at=event.max_source_available_at,
+            raw={SIGNAL_NAME: float(event.feature_value)},
+        )
+        for event in events
+        if event.feature_value is not None
+    ]
+    standardized = standardize_by_period(
+        composite_events,
+        [SignalComponent(name=SIGNAL_NAME, sign=1)],
+        sector_by_accession={
+            event.accession_number: sector_by_accession.get(
+                event.accession_number, "Unknown"
+            )
+            for event in events
+        },
+        min_group=4,
+    )
+    normalized: list[FilingEvent] = []
+    for event in events:
+        score = standardized.get(event.accession_number, {}).get(SIGNAL_NAME)
+        if score is None:
+            continue
+        normalized.append(event.model_copy(update={"feature_value": score}))
+    return normalized
+
+
+def _sector_slices(
+    events: list[FilingEvent],
+    sector_by_accession: dict[str, str],
+) -> dict[str, set[str]]:
+    by_sector: dict[str, set[str]] = defaultdict(set)
+    for event in events:
+        sector = sector_by_accession.get(event.accession_number, "Unknown")
+        if sector != "Unknown":
+            by_sector[sector].add(event.ticker.upper())
+    return {
+        f"sector:{sector}": members
+        for sector, members in sorted(by_sector.items())
+        if len(members) >= MIN_SECTOR_SLICE_ISSUERS
+    }
+
+
+def _git_sha() -> str:
+    github_sha = os.environ.get("GITHUB_SHA")
+    if github_sha:
+        return github_sha
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def _stable_digest(payload: object) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+
+
+def _methodology_payload(
+    event_config: EventStudyConfig,
+    walk_config: WalkForwardConfig,
+) -> dict[str, object]:
+    return {
+        "signal_name": SIGNAL_NAME,
+        "feature_version": FLAGSHIP_FEATURE_VERSION,
+        "primary_window": PRIMARY_WINDOW,
+        "secondary_windows": ["1:21", "1:126"],
+        "event_study_config": event_config.model_dump(mode="json"),
+        "walk_forward_config": walk_config.model_dump(mode="json"),
+        "implementation_config": OOSImplementationConfig().model_dump(mode="json"),
+        "selection_config": OOSSelectionConfig().model_dump(mode="json"),
+        "promotion_config": OOSPromotionConfig().model_dump(mode="json"),
+        "neutralization_version": NEUTRALIZATION_VERSION,
+        "issuer_outcome_policy": {
+            "version": HU5_MULTICLASS_OUTCOME_POLICY_VERSION,
+            "observation_unit": "issuer_filing_accession",
+            "component_selection": "all_strict_active_securities_for_filing_cik_on_event_date",
+            "component_set": "frozen_at_event_date",
+            "multi_class_aggregation": "equal_weight_arithmetic_mean_total_return",
+            "benchmark_adjustment": "subtract_once_after_aggregation",
+            "missing_component": "fail_closed_no_renormalization",
+        },
+    }
 
 
 def _write_insufficiency(
@@ -95,8 +266,8 @@ def _write_insufficiency(
     reason_code: str,
     reason: str,
     gate: HU5UniverseGate,
-    event_config: object,
-    walk_config: object,
+    event_config: EventStudyConfig,
+    walk_config: WalkForwardConfig,
     details: dict[str, object] | None = None,
 ) -> int:
     payload = {
@@ -104,7 +275,7 @@ def _write_insufficiency(
         "status": "INSUFFICIENT",
         "reason_code": reason_code,
         "reason": reason,
-        "code_sha": v1._git_sha(),
+        "code_sha": _git_sha(),
         "universe": {
             "universe_code": gate.universe_code,
             "window_start": gate.window_start,
@@ -118,7 +289,7 @@ def _write_insufficiency(
         "methodology": _methodology_payload(event_config, walk_config),
         "details": details or {},
     }
-    manifest_id = v1._stable_digest(payload)
+    manifest_id = _stable_digest(payload)
     artifact = {"manifest_id": manifest_id, **payload}
     (output_dir / "insufficiency-manifest.json").write_text(
         json.dumps(artifact, indent=2, sort_keys=True) + "\n"
@@ -161,25 +332,103 @@ def _write_insufficiency(
     return 0
 
 
+def _write_note(path: Path, summary: dict[str, object]) -> None:
+    diagnostics = summary.get("diagnostics")
+    decisions = summary.get("promotion_decisions")
+    lines = [
+        "# FDRE flagship: Risk Factors churn acceleration",
+        "",
+        "## Versioned methodology amendment",
+        "",
+        f"Issuer outcome policy: `{HU5_MULTICLASS_OUTCOME_POLICY_VERSION}`.",
+        "One issuer filing remains one observation. Multi-class returns are equal-weighted ",
+        "across the event-date active security set before one benchmark adjustment.",
+        "",
+        "## Precommitted hypothesis",
+        "",
+        (
+            "Accelerating comparable-filing Risk Factors language churn predicts "
+            "lower subsequent benchmark-adjusted equity returns."
+        ),
+        "",
+        f"Primary horizon: **{PRIMARY_WINDOW}** sessions.",
+        "Secondary horizons: **1:21** and **1:126** sessions.",
+        "",
+        "## Sealed OOS result",
+        "",
+        f"- Experiment ID: `{summary['experiment_id']}`",
+        f"- Primary decision: **{str(summary['primary_status']).upper()}**",
+        f"- Primary OOS observations: {summary['primary_observation_count']}",
+        f"- Primary status detail: {summary['primary_status_reason']}",
+        f"- OOS events: {summary['oos_event_count']}",
+        f"- Eligible folds: {summary['eligible_fold_count']}",
+        f"- Scored PIT filing events: {summary['scored_event_count']}",
+        f"- Scored multi-class events: {summary['scored_multiclass_event_count']}",
+        f"- Strict universe gate: `{summary['gate_manifest_id']}`",
+        f"- Event-universe lineage: `{summary['universe_lineage_id']}`",
+        f"- Outcome mapping: `{summary['outcome_mapping_id']}`",
+        f"- Predeclared robustness slices: {summary['sector_slice_count']}",
+        "- Live-trading readiness: **false** (research evidence only)",
+        "",
+        "## OOS diagnostics",
+        "",
+        "| Window | IC mean | ICIR | Positive IC share | Long-short mean |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    if isinstance(diagnostics, list):
+        for item in diagnostics:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                "| {window} | {ic_mean} | {icir} | {positive_ic_share} | "
+                "{long_short_mean} |".format(
+                    window=item.get("window"),
+                    ic_mean=item.get("ic_mean"),
+                    icir=item.get("icir"),
+                    positive_ic_share=item.get("positive_ic_share"),
+                    long_short_mean=item.get("long_short_mean"),
+                )
+            )
+    lines.extend(["", "## Final decisions", ""])
+    if isinstance(decisions, list):
+        for item in decisions:
+            if isinstance(item, dict):
+                reasons = item.get("reasons", [])
+                reason_text = "; ".join(str(value) for value in reasons) if isinstance(reasons, list) else ""
+                lines.append(
+                    f"- `{item.get('window')}`: **{str(item.get('status')).upper()}** — "
+                    + (reason_text or "all predeclared gates passed")
+                )
+    lines.extend(
+        [
+            "",
+            "The decision is emitted by the predeclared statistical, implementation, "
+            "and robustness gates. It is not manually upgraded after observing returns.",
+            "",
+        ]
+    )
+    path.write_text("\n".join(lines))
+
+
 def main() -> int:
-    args = v1._parser().parse_args()
+    args = _parser().parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    event_config = v1._event_config(args.benchmark)
-    walk_config = v1._walk_config()
+    event_config = _event_config(args.benchmark)
+    walk_config = _walk_config()
 
     with Session(create_db_engine()) as session:
         records = load_hu5_universe_records(
             session,
-            universe_code=v1.UNIVERSE_CODE,
-            window_start=v1.RESEARCH_WINDOW_START,
-            window_end=v1.RESEARCH_WINDOW_END,
+            universe_code=UNIVERSE_CODE,
+            window_start=RESEARCH_WINDOW_START,
+            window_end=RESEARCH_WINDOW_END,
         )
         gate = build_hu5_universe_gate(
             records,
-            universe_code=v1.UNIVERSE_CODE,
-            window_start=v1.RESEARCH_WINDOW_START,
-            window_end=v1.RESEARCH_WINDOW_END,
+            universe_code=UNIVERSE_CODE,
+            window_start=RESEARCH_WINDOW_START,
+            window_end=RESEARCH_WINDOW_END,
         )
         write_hu5_universe_gate(output_dir / "universe-gate.json", gate)
         if gate.strict_eligible_day_count == 0:
@@ -197,9 +446,9 @@ def main() -> int:
 
         ciks, sector_by_cik = select_historical_issuer_ciks(
             session,
-            universe_code=v1.UNIVERSE_CODE,
-            window_start=v1.RESEARCH_WINDOW_START,
-            window_end=v1.RESEARCH_WINDOW_END,
+            universe_code=UNIVERSE_CODE,
+            window_start=RESEARCH_WINDOW_START,
+            window_end=RESEARCH_WINDOW_END,
             max_issuers=args.max_tickers,
             min_documents=args.min_documents,
         )
@@ -219,8 +468,8 @@ def main() -> int:
             session,
             ResearchPanelQuery(
                 ciks=ciks,
-                period_end_from=v1.RESEARCH_WINDOW_START,
-                period_end_to=v1.RESEARCH_WINDOW_END,
+                period_end_from=RESEARCH_WINDOW_START,
+                period_end_to=RESEARCH_WINDOW_END,
                 form_types=["10-K", "10-Q"],
                 features=["risk_changes"],
                 limit=10_000,
@@ -258,7 +507,7 @@ def main() -> int:
             },
         )
 
-    events = v1._neutralize_events(list(resolved.events), sector_by_accession)
+    events = _neutralize_events(list(resolved.events), sector_by_accession)
     if len(events) < 50:
         return _write_insufficiency(
             output_dir,
@@ -278,9 +527,9 @@ def main() -> int:
             },
         )
 
-    market_start = min(event.available_at.date() for event in events) - v1.timedelta(days=10)
-    market_end = max(event.available_at.date() for event in events) + v1.timedelta(
-        days=v1.FORWARD_BUFFER_DAYS
+    market_start = min(event.available_at.date() for event in events) - timedelta(days=10)
+    market_end = max(event.available_at.date() for event in events) + timedelta(
+        days=FORWARD_BUFFER_DAYS
     )
     market_tickers = market_symbols_for_events(events, resolved.outcome_mappings)
     bars, missing = fetch_market_bars(
@@ -316,7 +565,7 @@ def main() -> int:
     )
     historical_snapshot_ids = sorted({item.snapshot_id for item in resolved.lineage})
     definition = {
-        **v1._base_definition(walk_config),
+        **_base_definition(walk_config),
         "historical_universe": {
             "universe_code": gate.universe_code,
             "research_window_start": gate.window_start,
@@ -352,10 +601,10 @@ def main() -> int:
             event_config,
             walk_config,
             resolved.outcome_mappings,
-            signal_name=v1.SIGNAL_NAME,
+            signal_name=SIGNAL_NAME,
             dataset_version=dataset_version,
-            feature_version=v1.FLAGSHIP_FEATURE_VERSION,
-            code_sha=v1._git_sha(),
+            feature_version=FLAGSHIP_FEATURE_VERSION,
+            code_sha=_git_sha(),
             definition=definition,
         )
     except HU5MultiClassOutcomeUnavailable as exc:
@@ -377,13 +626,13 @@ def main() -> int:
         )
 
     write_walk_forward_report(output_dir / "walk-forward.json", source)
-    if source.eligible_fold_count < v1.MIN_USABLE_OOS_FOLDS:
+    if source.eligible_fold_count < MIN_USABLE_OOS_FOLDS:
         return _write_insufficiency(
             output_dir,
             reason_code="insufficient_sealed_oos_folds",
             reason=(
                 f"Only {source.eligible_fold_count} sealed OOS folds satisfy the frozen "
-                f"breadth gates; HU-5 requires at least {v1.MIN_USABLE_OOS_FOLDS}."
+                f"breadth gates; HU-5 requires at least {MIN_USABLE_OOS_FOLDS}."
             ),
             gate=gate,
             event_config=event_config,
@@ -404,7 +653,7 @@ def main() -> int:
         selection,
         OOSImplementationConfig(),
     )
-    slices = v1._sector_slices(events, sector_by_accession)
+    slices = _sector_slices(events, sector_by_accession)
     promotion = evaluate_oos_promotion(
         source,
         diagnostics,
@@ -437,11 +686,11 @@ def main() -> int:
     write_research_experiment_manifest(output_dir / "manifest.json", manifest)
 
     primary = next(
-        (item for item in promotion.decisions if item.window == v1.PRIMARY_WINDOW),
+        (item for item in promotion.decisions if item.window == PRIMARY_WINDOW),
         None,
     )
     primary_observation_count = sum(
-        item.window == v1.PRIMARY_WINDOW for item in source.oos_observations
+        item.window == PRIMARY_WINDOW for item in source.oos_observations
     )
     primary_status = primary.status if primary is not None else "insufficient"
     primary_status_reason = (
@@ -452,8 +701,8 @@ def main() -> int:
     summary: dict[str, object] = {
         "experiment_id": manifest.experiment_id,
         "source_experiment_key": source.experiment_key,
-        "signal_name": v1.SIGNAL_NAME,
-        "primary_window": v1.PRIMARY_WINDOW,
+        "signal_name": SIGNAL_NAME,
+        "primary_window": PRIMARY_WINDOW,
         "primary_status": primary_status,
         "primary_status_reason": primary_status_reason,
         "primary_observation_count": primary_observation_count,
@@ -486,7 +735,7 @@ def main() -> int:
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n"
     )
-    v1._write_note(output_dir / "research-note.md", summary)
+    _write_note(output_dir / "research-note.md", summary)
     print("PRIMARY_RESULT=" + primary_status.upper())
     print("FLAGSHIP_RESULT_JSON=" + json.dumps(summary, sort_keys=True))
     return 0
