@@ -6,6 +6,8 @@ FDRE is point-in-time financial research infrastructure for technically sophisti
 
 > Historical-universe identity closure updated from verified production evidence on **2026-09-05**.
 
+> HU-5 unchanged flagship rerun recorded from frozen production evidence on **2026-09-06**.
+
 ## Product principles
 
 A professional reviewer should be able to answer:
@@ -59,19 +61,35 @@ Redis, Kafka, Elasticsearch/OpenSearch, Snowflake, a dedicated feature store, an
 - **HU-5 historical-universe identity closure:** reviewed 45-action production apply and independent
   6,088/6,088 identity-aware coverage through 2026-09-01, zero invalid/blocked days, and zero
   relevant provisional identities. [Provenance and closure record](research/historical-universe/final-identity-closure.md).
+- **HU-5 unchanged flagship rerun:** executed on 2026-09-06 against the verified universe and
+  frozen as `INSUFFICIENT` at the pre-outcome event/security mapping gate. The production universe
+  remained 6,088/6,088 strict-eligible; 14 issuer-level filings sharing CIK `0001652044` mapped to
+  multiple simultaneously active securities, so the study correctly refused to guess a share
+  class. [Frozen rerun record](research/historical-universe/flagship-rerun-2026-09-06.md).
 
 ### Current measured flagship state
 
-The flagship infrastructure runs successfully, but the research conclusion remains **INSUFFICIENT_NOT_YET_REALIZED** for the primary 1:63 horizon at the latest evaluation time. Only one walk-forward fold is currently eligible and the statistical gate requires more independent OOS history. Do not reinterpret workflow success as alpha validation.
+The latest flagship execution is **`INSUFFICIENT` with reason `ambiguous_security_mapping`**. It is
+not an alpha rejection and not a promotion. The strict historical-universe gate passed 6,088/6,088
+days with zero invalid days, but the sealed event resolver found 14 issuer-level accessions for one
+CIK with more than one simultaneously active security. The pre-existing fail-closed share-class
+rule stopped the run before security-level outcomes, walk-forward folds, or OOS observations were
+scored.
 
-Current detailed metrics live in [`evaluations/eval_results.md`](evaluations/eval_results.md).
+The prior `INSUFFICIENT_NOT_YET_REALIZED` run remains a preserved historical diagnostic; it is not
+the latest flagship execution. Current detailed metrics live in
+[`evaluations/eval_results.md`](evaluations/eval_results.md), while the exact 2026-09-06 rerun
+provenance is frozen in
+[`research/historical-universe/flagship-rerun-2026-09-06.md`](research/historical-universe/flagship-rerun-2026-09-06.md).
 
 ## Active milestone — Historical Universe v1
 
 Live retrieval retains a current-constituent seed. Historical research now has a separate
 reconstructed universe whose membership and identity closure has been independently verified for
-2010-01-01 through 2026-09-01. The next milestone is the unchanged flagship rerun using that
-verified universe and its frozen provenance.
+2010-01-01 through 2026-09-01. The unchanged post-closure flagship rerun has also been executed. Its
+fail-closed `INSUFFICIENT` result exposes the remaining research-contract gap: issuer-level filings
+need a predeclared point-in-time outcome mapping when one issuer has multiple simultaneously active
+securities.
 
 See [`research/historical_universe.md`](research/historical_universe.md) for the canonical design and acceptance criteria.
 
@@ -188,12 +206,15 @@ invalid days, blocked days, or relevant provisional identities. The 45-action ma
 run, artifact digest, gate IDs, and workflow cleanup are recorded in
 [final identity closure](research/historical-universe/final-identity-closure.md).
 
-**Flagship rerun: separate remaining research work.** Identity closure does not establish a new
-study conclusion or additional statistically usable folds.
+**Unchanged flagship rerun: COMPLETE AS `INSUFFICIENT` (2026-09-06).** The sealed workflow ran with
+the precommitted `250 / 6 / 300` inputs and the verified universe. It returned
+`ambiguous_security_mapping` before market-outcome scoring because 14 issuer-level filings sharing
+CIK `0001652044` each had multiple active security matches. No share class was guessed, no
+partial-company universe was substituted, and no return result was used to choose a mapping rule.
+The exact run/artifact/hash/gate IDs and accessions are frozen in
+[the rerun record](research/historical-universe/flagship-rerun-2026-09-06.md).
 
-Rerun the **unchanged precommitted** risk-churn acceleration study on the reconstructed historical universe and longer history.
-
-Target:
+The original study target remains unchanged for any future **versioned amended rerun**:
 
 - at least 4 statistically usable sealed OOS folds, preferably 4–6+;
 - primary 1:63 outcome evaluable across multiple periods;
@@ -202,6 +223,11 @@ Target:
 - sector/temporal robustness retained;
 - universe snapshot identity included in the immutable experiment manifest;
 - result remains honestly `PROMOTE`, `REJECT`, or `INSUFFICIENT`.
+
+Before another rerun, define and freeze a PIT-safe policy for issuer-level filing events when the
+historical snapshot has multiple active securities for the same CIK. That policy must specify the
+observation unit, selection or aggregation rule, weighting, provenance, and treatment of correlated
+share classes. It is a methodology amendment and must be versioned before evaluating returns.
 
 ## After Historical Universe
 
@@ -251,10 +277,10 @@ Expand reviewed retrieval/research cases with amendments, restatements, near-dup
 
 ## Immediate next step
 
-**Run the unchanged HU-5 flagship study with the verified historical universe.**
+**Specify and freeze the HU-5 multi-class issuer-to-outcome mapping amendment before any further flagship rerun.**
 
-HU-4's archive and the HU-5 membership/identity closure prerequisite are complete. Bind the
-reconstructed universe's exact gate and input provenance to the experiment manifest, retain the
-precommitted horizons and implementation costs, and report the measured result without changing
-the methodology. Historical source queues remain auditable; the independent final target-window
-audit now has zero identity or provisional-membership blockers.
+The historical universe itself is closed and the unchanged flagship rerun has been executed. The
+remaining blocker is methodological: an issuer-level SEC filing can correspond to multiple
+simultaneously active securities. Do not choose, duplicate, exclude, or aggregate share classes
+after observing returns. Predeclare a PIT-safe rule with explicit weighting and inference behavior,
+version it, add focused tests, and only then rerun the sealed study under that amended contract.
