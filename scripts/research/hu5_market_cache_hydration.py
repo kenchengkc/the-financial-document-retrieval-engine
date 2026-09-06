@@ -30,6 +30,11 @@ from fdre.research.hu5_universe import (
     select_historical_issuer_ciks,
 )
 from fdre.research.market_data import DEFAULT_CACHE_DIR
+from fdre.research.market_symbology import (
+    HU5_MARKET_SYMBOLOGY_MANIFEST_ID,
+    HU5_MARKET_SYMBOLOGY_SCHEMA_VERSION,
+    assert_frozen_hu5_market_symbology_manifest,
+)
 from fdre.research.panel import ResearchPanelQuery, build_research_panel
 from fdre.research.risk_churn_acceleration import build_risk_churn_acceleration_events
 
@@ -153,6 +158,7 @@ def main() -> int:
     token = os.environ.get("TIINGO_API_KEY", "")
     if not token:
         raise RuntimeError("TIINGO_API_KEY is required")
+    assert_frozen_hu5_market_symbology_manifest()
 
     with Session(create_db_engine()) as session:
         records = load_hu5_universe_records(
@@ -240,6 +246,8 @@ def main() -> int:
         **report.as_json_dict(),
         "purpose": "market_cache_hydration_only_no_return_evaluation",
         "issuer_outcome_policy_version": HU5_MULTICLASS_OUTCOME_POLICY_VERSION,
+        "market_symbology_version": HU5_MARKET_SYMBOLOGY_SCHEMA_VERSION,
+        "market_symbology_manifest_id": HU5_MARKET_SYMBOLOGY_MANIFEST_ID,
         "gate_manifest_id": gate.gate_manifest_id,
         "outcome_mapping_id": resolved.outcome_mapping_id,
         "resolved_event_count": len(resolved.events),
@@ -266,6 +274,7 @@ def main() -> int:
                 "unavailable": len(report.unavailable_symbols),
                 "remaining": len(report.remaining_symbols),
                 "rounds": len(report.rounds),
+                "market_symbology_manifest_id": HU5_MARKET_SYMBOLOGY_MANIFEST_ID,
             },
             sort_keys=True,
         )
