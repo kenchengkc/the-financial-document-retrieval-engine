@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from fdre.research.event_study import EventStudyConfig, FilingEvent, MarketBar
 from fdre.research.hu5_multiclass import HU5EventOutcomeMapping
-from fdre.research.market_data import DEFAULT_CACHE_DIR, fetch_market_bars
+from fdre.research.market_data import DEFAULT_CACHE_DIR
 
 HU5_MARKET_SYMBOLOGY_SCHEMA_VERSION = "fdre-hu5-market-symbology-v1"
 HU5_MARKET_SYMBOLOGY_MANIFEST_ID = (
@@ -187,6 +187,8 @@ def fetch_hu5_market_bars(
     max_uncached_fetches: int | None = None,
 ) -> tuple[list[MarketBar], list[str]]:
     """Fetch using provider symbols and relabel bars back to historical symbols."""
+    from fdre.research.market_data import fetch_market_bars
+
     assert_frozen_hu5_market_symbology_manifest()
     historical = tuple(dict.fromkeys(symbol.upper() for symbol in historical_symbols))
     provider_by_historical = {
