@@ -1,0 +1,134 @@
+name: Hydrate HU-5 market cache
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hydrate-hu5-market-cache.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: fdre-hu5-market-cache-hydration
+  cancel-in-progress: false
+
+jobs:
+  hydrate:
+    name: Hydrate frozen HU-5 market cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      TIINGO_API_KEY: ${{ secrets.TIINGO_API_KEY }}
+      PYTHONPATH: .
+
+    steps:
+      - name: Check required secrets
+        run: |
+          if { [ -z "${DATABASE_URL_DIRECT}" ] && [ -z "${DATABASE_URL_POOLED}" ]; }; then
+            echo "::error::DATABASE_URL or DATABASE_URL_DIRECT is required."
+            exit 1
+          fi
+          if [ -z "${TIINGO_API_KEY}" ]; then
+            echo "::error::TIINGO_API_KEY is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Restore market cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fdre-market-${{ runner.os }}-
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[data]"
+
+      - name: Select database URL
+        run: |
+          if [ -n "${DATABASE_URL_DIRECT}" ]; then
+            echo "DATABASE_URL=${DATABASE_URL_DIRECT}" >> "${GITHUB_ENV}"
+          else
+            echo "DATABASE_URL=${DATABASE_URL_POOLED}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Hydrate frozen HU-5 market window without scoring returns
+        run: |
+          mkdir -p data/processed/ops/hu5-market-hydration
+          python -m scripts.research.hu5_market_cache_hydration \
+            --output data/processed/ops/hu5-market-hydration/coverage.json \
+            --batch-size 45 \
+            --rounds 6 \
+            --sleep-seconds 3900 \
+            --pause-seconds 0.5
+
+      - name: Manifest hydrated market cache
+        if: always()
+        run: |
+          mkdir -p data/processed/ops/hu5-market-hydration
+          python -m scripts.research.market_cache_manifest \
+            --cache-dir data/cache/market \
+            --manifest data/processed/ops/hu5-market-hydration/market-cache-manifest.json
+
+      - name: Read hydration coverage
+        id: coverage
+        if: success()
+        run: |
+          complete="$(python -c 'import json; print(str(json.load(open("data/processed/ops/hu5-market-hydration/coverage.json"))["coverage_complete"]).lower())')"
+          remaining="$(python -c 'import json; print(json.load(open("data/processed/ops/hu5-market-hydration/coverage.json"))["remaining_count"])')"
+          echo "complete=${complete}" >> "${GITHUB_OUTPUT}"
+          echo "remaining=${remaining}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "### HU-5 market-cache hydration"
+            echo
+            echo "- Coverage complete: ${complete}"
+            echo "- Remaining symbols: ${remaining}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload hydration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hu5-market-hydration-${{ github.run_id }}
+          path: data/processed/ops/hu5-market-hydration
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Save hydrated market cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/market
+          key: fdre-market-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Dispatch canonical amended flagship after complete hydration
+        if: steps.coverage.outputs.complete == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run flagship-risk-churn-acceleration.yml \
+            --ref main \
+            -f max_tickers=250 \
+            -f min_documents=6 \
+            -f max_uncached_market_fetches=300
+          echo "Canonical HU-5 amended flagship dispatched after complete cache hydration." \
+            >> "${GITHUB_STEP_SUMMARY}"
