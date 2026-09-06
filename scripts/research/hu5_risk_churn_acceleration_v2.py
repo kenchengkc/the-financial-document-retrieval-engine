@@ -35,7 +35,7 @@ from fdre.research.experiment_registry import (
 )
 from fdre.research.hu5_multiclass import (
     HU5_MULTICLASS_OUTCOME_POLICY_VERSION,
-    HU5MultiClassOutcomeUnavailable,
+    HU5MultiClassOutcomeUnavailableError,
     market_symbols_for_events,
     resolve_hu5_events_multiclass,
     run_hu5_multiclass_walk_forward_signal_study,
@@ -394,7 +394,11 @@ def _write_note(path: Path, summary: dict[str, object]) -> None:
         for item in decisions:
             if isinstance(item, dict):
                 reasons = item.get("reasons", [])
-                reason_text = "; ".join(str(value) for value in reasons) if isinstance(reasons, list) else ""
+                reason_text = (
+                    "; ".join(str(value) for value in reasons)
+                    if isinstance(reasons, list)
+                    else ""
+                )
                 lines.append(
                     f"- `{item.get('window')}`: **{str(item.get('status')).upper()}** — "
                     + (reason_text or "all predeclared gates passed")
@@ -607,7 +611,7 @@ def main() -> int:
             code_sha=_git_sha(),
             definition=definition,
         )
-    except HU5MultiClassOutcomeUnavailable as exc:
+    except HU5MultiClassOutcomeUnavailableError as exc:
         return _write_insufficiency(
             output_dir,
             reason_code="multiclass_component_outcome_unavailable",
