@@ -22,6 +22,7 @@ from fdre.research.market_data import (
     fetch_ticker_bars_tiingo,
     open_yahoo_session,
 )
+from fdre.research.market_symbology import hu5_provider_symbol
 
 HYDRATION_SCHEMA_VERSION = "fdre-hu5-market-hydration-v1"
 _TIINGO_CACHE_PATTERN = re.compile(
@@ -85,31 +86,31 @@ def covered_market_symbols(
     start: date,
     end: date,
 ) -> set[str]:
-    """Return symbols whose cache is reusable by the canonical market fetcher."""
+    """Return historical symbols covered by their frozen provider cache symbols."""
     wanted = {symbol.upper() for symbol in symbols}
     covered: set[str] = set()
     if not cache_dir.exists():
         return covered
 
-    for path in cache_dir.glob("tiingo_*.json"):
-        match = _TIINGO_CACHE_PATTERN.fullmatch(path.name)
-        if match is None:
-            continue
-        ticker = match.group("ticker").upper()
-        if ticker not in wanted:
-            continue
-        cached_start = _parse_cache_date(match.group("start"))
-        cached_end = _parse_cache_date(match.group("end"))
-        if cached_start <= start and cached_end >= end:
-            covered.add(ticker)
-
     start_token = start.strftime("%Y%m%d")
     end_token = end.strftime("%Y%m%d")
-    for symbol in wanted - covered:
-        # The canonical Yahoo cache lookup currently requires the exact window.
-        yahoo_path = cache_dir / f"{symbol}_{start_token}_{end_token}.json"
+    for historical_symbol in wanted:
+        provider_symbol = hu5_provider_symbol(historical_symbol)
+        prefix = f"tiingo_{provider_symbol}_"
+        for path in cache_dir.glob(f"{prefix}*.json"):
+            match = _TIINGO_CACHE_PATTERN.fullmatch(path.name)
+            if match is None:
+                continue
+            cached_start = _parse_cache_date(match.group("start"))
+            cached_end = _parse_cache_date(match.group("end"))
+            if cached_start <= start and cached_end >= end:
+                covered.add(historical_symbol)
+                break
+        if historical_symbol in covered:
+            continue
+        yahoo_path = cache_dir / f"{provider_symbol}_{start_token}_{end_token}.json"
         if yahoo_path.exists():
-            covered.add(symbol)
+            covered.add(historical_symbol)
     return covered
 
 
@@ -127,11 +128,12 @@ def run_market_cache_hydration(
 ) -> MarketHydrationReport:
     """Hydrate a fixed market-data window without evaluating research outcomes.
 
-    Each round attempts at most ``batch_size`` previously uncovered symbols.
-    Provider-wide rate limits stop further use of that provider for the round.
-    Between rounds the caller sleeps long enough for an hourly provider quota to
-    reset. Symbols for which both providers return an explicit no-data response
-    are retained as terminal unavailable evidence rather than retried forever.
+    Each round attempts at most ``batch_size`` previously uncovered historical
+    symbols. Provider aliases are used only for network/cache addressing. Provider-
+    wide rate limits stop further use of that provider for the round. Between rounds
+    the caller sleeps long enough for an hourly provider quota to reset. Symbols for
+    which both providers return an explicit no-data response are retained as terminal
+    unavailable evidence rather than retried forever.
     """
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
@@ -225,13 +227,14 @@ def _hydrate_round(
     unavailable: list[str] = []
     transient: list[str] = []
 
-    for symbol in pending:
+    for historical_symbol in pending:
         if len(attempted) >= batch_size:
             break
         if tiingo_rate_limited and yahoo_rate_limited:
             break
 
-        attempted.append(symbol)
+        attempted.append(historical_symbol)
+        provider_symbol = hu5_provider_symbol(historical_symbol)
         tiingo_empty = False
         tiingo_transient = False
         bars: list[MarketBar] = []
@@ -239,7 +242,7 @@ def _hydrate_round(
         if not tiingo_rate_limited:
             try:
                 bars = fetch_ticker_bars_tiingo(
-                    symbol,
+                    provider_symbol,
                     start,
                     end,
                     token,
@@ -254,7 +257,7 @@ def _hydrate_round(
                 tiingo_transient = True
 
         if bars:
-            hydrated.append(symbol)
+            hydrated.append(historical_symbol)
             if pause_seconds:
                 time_module.sleep(pause_seconds)
             continue
@@ -266,7 +269,7 @@ def _hydrate_round(
                 yahoo_session, yahoo_crumb = open_yahoo_session()
             try:
                 bars = fetch_ticker_bars(
-                    symbol,
+                    provider_symbol,
                     start,
                     end,
                     session=yahoo_session,
@@ -281,13 +284,13 @@ def _hydrate_round(
                 yahoo_transient = True
 
         if bars:
-            hydrated.append(symbol)
+            hydrated.append(historical_symbol)
         elif tiingo_empty and yahoo_empty:
-            unavailable.append(symbol)
+            unavailable.append(historical_symbol)
         elif tiingo_transient or yahoo_transient or tiingo_rate_limited or yahoo_rate_limited:
-            transient.append(symbol)
+            transient.append(historical_symbol)
         else:
-            transient.append(symbol)
+            transient.append(historical_symbol)
 
         if pause_seconds:
             time_module.sleep(pause_seconds)
