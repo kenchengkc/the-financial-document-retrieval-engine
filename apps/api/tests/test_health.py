@@ -1,7 +1,7 @@
+import tomllib
 from collections.abc import Generator
 from pathlib import Path
 from typing import cast
-import tomllib
 
 import pytest
 from fastapi.testclient import TestClient
