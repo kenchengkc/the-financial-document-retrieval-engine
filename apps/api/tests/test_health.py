@@ -1,5 +1,7 @@
-import tomllib
+from collections.abc import Generator
 from pathlib import Path
+from typing import cast
+import tomllib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,7 +32,7 @@ def test_readiness_returns_ok_when_database_is_available() -> None:
     )
     app = main.create_app()
 
-    def override_db_session():
+    def override_db_session() -> Generator[Session, None, None]:
         with Session(engine) as session:
             yield session
 
@@ -51,8 +53,8 @@ def test_readiness_returns_503_when_database_is_unavailable() -> None:
             del statement
             raise RuntimeError("database unavailable")
 
-    def override_db_session():
-        yield FailingSession()
+    def override_db_session() -> Generator[Session, None, None]:
+        yield cast(Session, FailingSession())
 
     app.dependency_overrides[get_db_session] = override_db_session
     client = TestClient(app)
