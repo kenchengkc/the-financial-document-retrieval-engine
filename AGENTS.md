@@ -1,66 +1,15 @@
-# FDRE Engineering Rules
+# FDRE Agent Guidance
 
-FDRE is financial research infrastructure, not a generic chatbot or trading system.
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. It is the canonical engineering, research, verification, data, and cost contract for this repository.
 
-## Priorities
+Agent-specific rules:
 
-- Retrieval quality, point-in-time correctness, citations, and reproducibility are product
-  requirements.
-- Prefer deterministic processing and bounded LangGraph nodes.
-- Keep PostgreSQL as the metadata, full-text, vector, fact, trace, and experiment store until
-  measured requirements justify another service.
-- Keep paid embeddings, rerankers, and generation behind provider interfaces.
-- Do not add live trading, portfolio optimization, arbitrary generated SQL, distributed queues, or
-  open-ended agent loops.
+- Preserve unrelated worktree changes and keep commits narrowly scoped.
+- Do not weaken point-in-time, lineage, citation, benchmark, or fail-closed behavior to simplify a task.
+- Do not add recurring infrastructure or paid model calls without satisfying the repository's $15/month operating-cost policy.
+- Prefer reusable domain logic under `src/fdre/`; keep `scripts/` as thin operational entry points.
+- No live trading, portfolio optimization, arbitrary generated SQL, distributed queues, or open-ended agent loops.
+- Mock SEC and paid providers in unit tests; do not make live network calls from tests.
+- Use Playwright or browser verification after frontend behavior changes.
 
-## Structure
-
-- `apps/api/`: FastAPI routes, schemas, services, models, migrations, and API tests.
-- `apps/web/`: Next.js research interface and Playwright tests.
-- `src/fdre/`: reusable ingestion, parsing, retrieval, graph, evaluation, universe, and research code.
-- `scripts/benchmarks/`: retrieval and cross-sectional benchmark tooling.
-- `scripts/ingestion/`: operational SEC ingestion, repair, and catalog utilities.
-- `scripts/pipelines/`: top-level orchestration entry points.
-- `scripts/research/`: reproducible research and experiment entry points.
-- `scripts/research/historical_universe/`: Historical Universe audits, materialization, and gates.
-- `tests/unit/fdre/`: reusable-library unit tests; application tests remain colocated under `apps/`.
-- `data/sample/`: small deterministic fixtures only.
-- `docs/architecture/`: system and lineage architecture.
-- `docs/evaluations/`: evaluation plans and benchmark results.
-- `docs/research/`: research-system specifications and archive documentation.
-
-Canonical operational entry points include:
-
-- `python -m scripts.pipelines.retrieval_pipeline`
-- `python -m scripts.ingestion.ingest_ticker_batch`
-- `python -m scripts.research.historical_universe.universe_snapshot`
-
-## Code
-
-- Python 3.11+, typed SQLAlchemy 2.0, Pydantic v2, small testable modules.
-- No network calls in unit tests; mock SEC and paid providers.
-- Every factual answer must cite retrieved evidence or abstain.
-- Every temporal export must reject future information.
-- Add environment variables to `.env.example` with safe defaults or empty values.
-- Do not commit secrets, filings, caches, embeddings, market data, generated outputs, or dumps.
-
-## Done
-
-Run the relevant checks before committing:
-
-```bash
-pytest
-ruff check .
-mypy .
-alembic check
-docker compose config
-
-cd apps/web
-npm run lint
-npm run typecheck
-npm run build
-npm run test:e2e
-```
-
-Use Playwright or agent-browser after frontend changes. Keep commits scoped and preserve unrelated
-worktree changes.
+Run the relevant verification commands from `CONTRIBUTING.md` before considering a change complete.
