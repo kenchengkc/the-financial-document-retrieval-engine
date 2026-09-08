@@ -1,6 +1,10 @@
 from datetime import date
 
-from fdre.retrieval.preprocess import CompanyReference, preprocess_query
+from fdre.retrieval.preprocess import (
+    CompanyReference,
+    _company_reference_index,
+    preprocess_query,
+)
 from fdre.retrieval.query import SearchFilters
 
 COMPANIES = [
@@ -11,6 +15,31 @@ COMPANIES = [
     CompanyReference(ticker="PPL", name="PPL Corporation"),
     CompanyReference(ticker="TEL", name="TE Connectivity plc"),
 ]
+
+
+def test_preprocess_reuses_derived_company_reference_index() -> None:
+    _company_reference_index.cache_clear()
+
+    preprocess_query("AAPL gross margin trend", companies=COMPANIES)
+    first = _company_reference_index.cache_info()
+    preprocess_query("What changed in Apple's risk factors?", companies=COMPANIES)
+    second = _company_reference_index.cache_info()
+
+    assert first.misses == 1
+    assert second.misses == 1
+    assert second.hits == 1
+
+
+def test_company_reference_index_changes_with_catalog() -> None:
+    _company_reference_index.cache_clear()
+
+    preprocess_query("AAPL gross margin trend", companies=COMPANIES)
+    preprocess_query(
+        "What did META report?",
+        companies=[*COMPANIES, CompanyReference(ticker="META", name="Meta Platforms, Inc.")],
+    )
+
+    assert _company_reference_index.cache_info().misses == 2
 
 
 def test_preprocess_expands_ticker_to_company_name() -> None:
