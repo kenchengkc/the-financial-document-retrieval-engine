@@ -14,7 +14,6 @@ dependencies = [
   "beautifulsoup4>=4.12",
   "fastapi>=0.111",
   "httpx>=0.27",
-  "langgraph>=0.2",
   "lxml>=5.0",
   "pgvector>=0.4",
   "psycopg[binary]>=3.1",
