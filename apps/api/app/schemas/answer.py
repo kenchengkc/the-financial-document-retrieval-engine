@@ -9,7 +9,7 @@ from fdre.retrieval.query import RetrievalCandidate
 
 
 class AnswerRequest(BaseModel):
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=4096)
 
 
 class AnswerResponse(BaseModel):
