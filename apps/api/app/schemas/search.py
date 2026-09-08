@@ -6,7 +6,7 @@ from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 
 
 class SearchRequest(BaseModel):
-    query: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=4096)
     filters: SearchFilters = Field(default_factory=SearchFilters)
     top_k: int = Field(default=10, ge=1, le=100)
 
