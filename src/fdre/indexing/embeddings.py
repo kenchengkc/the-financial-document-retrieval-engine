@@ -9,6 +9,7 @@ import time
 from collections import deque
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from typing import Literal, Protocol
 
 import httpx
@@ -93,6 +94,20 @@ def _retry_after_seconds(response: httpx.Response, *, attempt: int) -> float:
     return _backoff_seconds(attempt=attempt)
 
 
+@lru_cache(maxsize=4)
+def _shared_http_client(timeout: float) -> httpx.Client:
+    """Reuse bounded provider connection pools for the lifetime of the process."""
+
+    return httpx.Client(
+        timeout=timeout,
+        limits=httpx.Limits(
+            max_connections=32,
+            max_keepalive_connections=16,
+            keepalive_expiry=30.0,
+        ),
+    )
+
+
 def _post_json_with_retries(
     *,
     url: str,
@@ -104,11 +119,12 @@ def _post_json_with_retries(
     max_attempts: int = 8,
 ) -> httpx.Response:
     delay_attempt = 1
+    client = _shared_http_client(timeout)
     for attempt in range(1, max_attempts + 1):
         if rate_limiter is not None:
             rate_limiter.acquire(token_count=token_count)
         try:
-            response = httpx.post(url, headers=headers, json=json_body, timeout=timeout)
+            response = client.post(url, headers=headers, json=json_body)
         except httpx.TransportError:
             if attempt == max_attempts:
                 raise
@@ -262,44 +278,65 @@ class VoyageEmbeddingProvider:
         return [item["embedding"] for item in sorted(data, key=lambda item: item["index"])]
 
 
-def embedding_provider_from_settings(settings: Settings) -> EmbeddingProvider:
-    if settings.embedding_provider == "fake":
+@lru_cache(maxsize=16)
+def _embedding_provider_from_config(
+    provider_name: str,
+    model: str,
+    dimensions: int | None,
+    openai_api_key: str | None,
+    voyage_api_key: str | None,
+    requests_per_minute: int | None,
+    tokens_per_minute: int | None,
+) -> EmbeddingProvider:
+    if provider_name == "fake":
         return FakeEmbeddingProvider(
-            model=settings.embedding_model,
-            dimensions=settings.embedding_dimensions or 8,
+            model=model,
+            dimensions=dimensions or 8,
         )
-    if settings.embedding_provider == "local_hash":
+    if provider_name == "local_hash":
         return LocalHashEmbeddingProvider(
-            model=settings.embedding_model,
-            dimensions=settings.embedding_dimensions or 64,
+            model=model,
+            dimensions=dimensions or 64,
         )
-    if settings.embedding_provider == "openai":
-        if not settings.openai_api_key:
+    if provider_name == "openai":
+        if not openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for EMBEDDING_PROVIDER=openai")
         return OpenAIEmbeddingProvider(
-            api_key=settings.openai_api_key,
-            model=settings.embedding_model,
-            dimensions=settings.embedding_dimensions,
+            api_key=openai_api_key,
+            model=model,
+            dimensions=dimensions,
         )
-    if settings.embedding_provider == "voyage":
-        if not settings.voyage_api_key:
+    if provider_name == "voyage":
+        if not voyage_api_key:
             raise ValueError("VOYAGE_API_KEY is required for EMBEDDING_PROVIDER=voyage")
         return VoyageEmbeddingProvider(
-            api_key=settings.voyage_api_key,
-            model=settings.embedding_model,
-            dimensions=settings.embedding_dimensions or 512,
+            api_key=voyage_api_key,
+            model=model,
+            dimensions=dimensions or 512,
             requests_per_minute=(
-                settings.embedding_requests_per_minute
-                if settings.embedding_requests_per_minute is not None
+                requests_per_minute
+                if requests_per_minute is not None
                 else VOYAGE_DEFAULT_REQUESTS_PER_MINUTE
             ),
             tokens_per_minute=(
-                settings.embedding_tokens_per_minute
-                if settings.embedding_tokens_per_minute is not None
+                tokens_per_minute
+                if tokens_per_minute is not None
                 else VOYAGE_DEFAULT_TOKENS_PER_MINUTE
             ),
         )
-    raise ValueError(f"Unsupported embedding provider: {settings.embedding_provider}")
+    raise ValueError(f"Unsupported embedding provider: {provider_name}")
+
+
+def embedding_provider_from_settings(settings: Settings) -> EmbeddingProvider:
+    return _embedding_provider_from_config(
+        settings.embedding_provider,
+        settings.embedding_model,
+        settings.embedding_dimensions,
+        settings.openai_api_key,
+        settings.voyage_api_key,
+        settings.embedding_requests_per_minute,
+        settings.embedding_tokens_per_minute,
+    )
 
 
 def _chunk_select_statement(
