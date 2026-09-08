@@ -73,6 +73,14 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose config
 
+      - name: Build production image
+        run: docker build --tag fdre-ci .
+
+      - name: Validate production image
+        run: |
+          test "$(docker run --rm --entrypoint id fdre-ci -u)" != "0"
+          docker run --rm --entrypoint python fdre-ci -c "import apps.api.app.main, fdre"
+
       - name: Validate GitHub Actions
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 
