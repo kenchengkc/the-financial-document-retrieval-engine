@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from functools import lru_cache
+from typing import Any
 
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session
@@ -24,8 +25,17 @@ class Base(DeclarativeBase):
 def create_db_engine(database_url: str | None = None) -> Engine:
     """Create a SQLAlchemy engine without connecting at import time."""
 
-    normalized_url = normalize_database_url(database_url or get_settings().database_url)
-    return create_engine(normalized_url, pool_pre_ping=True)
+    settings = get_settings()
+    normalized_url = normalize_database_url(database_url or settings.database_url)
+    engine_options: dict[str, Any] = {"pool_pre_ping": True}
+    if normalized_url.startswith("postgresql+psycopg://"):
+        engine_options.update(
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_timeout=settings.database_pool_timeout_seconds,
+            pool_recycle=settings.database_pool_recycle_seconds,
+        )
+    return create_engine(normalized_url, **engine_options)
 
 
 @lru_cache

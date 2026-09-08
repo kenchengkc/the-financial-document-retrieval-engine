@@ -30,6 +30,20 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://fdre:fdre@localhost:5432/fdre",
         alias="DATABASE_URL",
     )
+    database_pool_size: int = Field(default=5, ge=1, le=50, alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=5, ge=0, le=50, alias="DATABASE_MAX_OVERFLOW")
+    database_pool_timeout_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=120,
+        alias="DATABASE_POOL_TIMEOUT_SECONDS",
+    )
+    database_pool_recycle_seconds: int = Field(
+        default=1800,
+        ge=0,
+        le=86400,
+        alias="DATABASE_POOL_RECYCLE_SECONDS",
+    )
     cors_origins: str = Field(
         default=(
             "https://thefdre.com,https://www.thefdre.com,"
