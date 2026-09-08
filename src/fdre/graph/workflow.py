@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
-from langgraph.graph import END, START, StateGraph
+from dataclasses import dataclass
 
 from fdre.graph.nodes import (
     WorkflowContext,
@@ -21,63 +19,36 @@ from fdre.graph.nodes import (
 from fdre.graph.state import AgentState
 
 
-def build_answer_workflow(context: WorkflowContext) -> Any:
-    graph = StateGraph(AgentState)
-    graph.add_node(
-        "preprocess_query",
-        lambda state: preprocess_query_node(context, state),
-    )
-    graph.add_node("route_tools", lambda state: route_tools_node(context, state))
-    graph.add_node("retrieve_text", lambda state: retrieve_text_node(context, state))
-    graph.add_node("retrieve_tables", lambda state: retrieve_tables_node(context, state))
-    graph.add_node(
-        "retrieve_financial_facts",
-        lambda state: retrieve_financial_facts_node(context, state),
-    )
-    graph.add_node(
-        "merge_candidates",
-        lambda state: merge_candidates_node(context, state),
-    )
-    graph.add_node("rerank", lambda state: rerank_node(context, state))
-    graph.add_node(
-        "evaluate_retrieval_gate",
-        lambda state: evaluate_retrieval_gate_node(context, state),
-    )
-    graph.add_node(
-        "generate_answer",
-        lambda state: generate_answer_node(context, state),
-    )
-    graph.add_node(
-        "verify_citations",
-        lambda state: verify_citations_node(context, state),
-    )
-    graph.add_node(
-        "finalize_or_abstain",
-        lambda state: finalize_or_abstain_node(context, state),
-    )
+@dataclass(frozen=True, slots=True)
+class AnswerWorkflow:
+    """Deterministic answer pipeline with the same invoke contract as the former graph."""
 
-    graph.add_edge(START, "preprocess_query")
-    graph.add_edge("preprocess_query", "route_tools")
-    graph.add_edge("route_tools", "retrieve_text")
-    graph.add_edge("retrieve_text", "retrieve_tables")
-    graph.add_edge("retrieve_tables", "retrieve_financial_facts")
-    graph.add_edge("retrieve_financial_facts", "merge_candidates")
-    graph.add_edge("merge_candidates", "rerank")
-    graph.add_edge("rerank", "evaluate_retrieval_gate")
-    graph.add_conditional_edges(
-        "evaluate_retrieval_gate",
-        lambda state: (
-            "finalize_or_abstain" if state.get("should_abstain") else "generate_answer"
-        ),
-        {
-            "generate_answer": "generate_answer",
-            "finalize_or_abstain": "finalize_or_abstain",
-        },
-    )
-    graph.add_edge("generate_answer", "verify_citations")
-    graph.add_edge("verify_citations", "finalize_or_abstain")
-    graph.add_edge("finalize_or_abstain", END)
-    return graph.compile()
+    context: WorkflowContext
+
+    def invoke(self, initial: AgentState) -> AgentState:
+        state = initial.copy()
+
+        state.update(preprocess_query_node(self.context, state))
+        state.update(route_tools_node(self.context, state))
+        state.update(retrieve_text_node(self.context, state))
+        state.update(retrieve_tables_node(self.context, state))
+        state.update(retrieve_financial_facts_node(self.context, state))
+        state.update(merge_candidates_node(self.context, state))
+        state.update(rerank_node(self.context, state))
+        state.update(evaluate_retrieval_gate_node(self.context, state))
+
+        if not state.get("should_abstain", False):
+            state.update(generate_answer_node(self.context, state))
+            state.update(verify_citations_node(self.context, state))
+
+        state.update(finalize_or_abstain_node(self.context, state))
+        return state
+
+
+def build_answer_workflow(context: WorkflowContext) -> AnswerWorkflow:
+    """Build the lightweight deterministic workflow wrapper."""
+
+    return AnswerWorkflow(context)
 
 
 def run_answer_workflow(context: WorkflowContext, question: str) -> AgentState:
@@ -89,4 +60,4 @@ def run_answer_workflow(context: WorkflowContext, question: str) -> AgentState:
         "should_abstain": False,
         "abstention_reason": None,
     }
-    return cast(AgentState, build_answer_workflow(context).invoke(initial))
+    return build_answer_workflow(context).invoke(initial)
