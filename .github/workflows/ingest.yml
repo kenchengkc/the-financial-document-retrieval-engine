@@ -5,7 +5,7 @@ name: Scheduled SEC ingestion
 #   DATABASE_URL         -> Neon pooled URL (or legacy Railway Postgres public URL)
 #   DATABASE_URL_DIRECT  -> optional Neon direct URL for long ingest jobs
 #   SEC_USER_AGENT       -> e.g. "FDRE your-email@example.com" (SEC requires a descriptive UA)
-# See docs/neon-migration.md. The job is a no-op if database/SEC secrets are missing.
+# The job is a no-op if database/SEC secrets are missing.
 
 on:
   workflow_dispatch:
