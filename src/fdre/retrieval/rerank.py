@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Protocol
 
 from apps.api.app.config import Settings
@@ -163,13 +164,26 @@ def reranker_from_name(name: str) -> Reranker:
 
 
 def reranker_from_settings(settings: Settings) -> Reranker:
-    """Build a reranker from settings, wiring API credentials when needed."""
+    """Return a process-reused reranker for the active provider configuration."""
 
-    if settings.reranker_provider == "voyage":
-        if not settings.voyage_api_key:
+    return _reranker_from_configuration(
+        settings.reranker_provider,
+        settings.reranker_model,
+        settings.voyage_api_key,
+    )
+
+
+@lru_cache(maxsize=16)
+def _reranker_from_configuration(
+    provider: str,
+    model: str,
+    voyage_api_key: str | None,
+) -> Reranker:
+    if provider == "voyage":
+        if not voyage_api_key:
             raise ValueError("VOYAGE_API_KEY is required for RERANKER_PROVIDER=voyage")
         return VoyageReranker(
-            api_key=settings.voyage_api_key,
-            model=settings.reranker_model,
+            api_key=voyage_api_key,
+            model=model,
         )
-    return reranker_from_name(settings.reranker_provider)
+    return reranker_from_name(provider)
