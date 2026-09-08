@@ -71,7 +71,7 @@ class AnswerGenerator(Protocol):
     ) -> GeneratedAnswer: ...
 
 
-class MockAnswerGenerator:
+class ExtractiveAnswerGenerator:
     """Produce deterministic extractive claims from retrieved evidence."""
 
     def generate(
@@ -117,6 +117,10 @@ class MockAnswerGenerator:
             confidence=sum(_candidate_score(candidate) for candidate in selected)
             / max(len(selected), 1),
         )
+
+
+# Backwards-compatible import name for existing integrations/tests.
+MockAnswerGenerator = ExtractiveAnswerGenerator
 
 
 @dataclass(slots=True)
