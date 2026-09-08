@@ -2,6 +2,7 @@
 
 from fdre.graph.nodes import (
     AnswerGenerator,
+    ExtractiveAnswerGenerator,
     GeneratedAnswer,
     MockAnswerGenerator,
     WorkflowContext,
@@ -13,6 +14,7 @@ __all__ = [
     "AgentState",
     "AnswerGenerator",
     "AnswerWorkflow",
+    "ExtractiveAnswerGenerator",
     "GeneratedAnswer",
     "MockAnswerGenerator",
     "WorkflowContext",
