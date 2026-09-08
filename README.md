@@ -9,7 +9,8 @@ availability time, and reproducibility matter.
 [Architecture](docs/architecture/system.md) ·
 [Roadmap](docs/roadmap.md) ·
 [Evaluation plan](docs/evaluations/eval_plan.md) ·
-[Evaluation results](docs/evaluations/eval_results.md)
+[Evaluation results](docs/evaluations/eval_results.md) ·
+[Holdout policy](docs/evaluations/holdout_policy.md)
 
 FDRE is research infrastructure. It is not a trading strategy, portfolio optimizer, execution
 simulator, or low-latency trading system.
@@ -98,10 +99,13 @@ evidence. A hit must match the issuer/section and contain the labeled quote.
 Multi-query expansion improves Recall@5 by about 40%. RRF and BM25-over-pool underperformed on this
 corpus and remain opt-in rather than defaults.
 
-The reviewed 120-question holdout reports Hybrid Recall@10 of **0.375**. Exact-versus-HNSW ANN
-Recall@10 is **1.00** with **0.00** maximum observed delta, validating approximate retrieval for the
-current index configuration. The generic holdout remains below the aspirational 0.85 gate and is an
-explicit open quality target rather than a hidden success claim.
+The reviewed 120-question benchmark contains an 80-question development split and a published
+40-question historical holdout split. The historical holdout reports Hybrid Recall@10 of **0.375**.
+Exact-versus-HNSW ANN Recall@10 is **1.00** with **0.00** maximum observed delta, validating
+approximate retrieval for the current index configuration. The historical holdout remains below the
+aspirational 0.85 gate and is an explicit open quality target rather than a hidden success claim.
+Because the holdout cases are now public, future untouched claims require a newly sealed,
+access-controlled holdout; see the [holdout lifecycle policy](docs/evaluations/holdout_policy.md).
 
 ### Production cross-sectional screen
 
