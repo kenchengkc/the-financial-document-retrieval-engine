@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from apps.api.app.config import Settings
 from apps.api.app.models import AnswerRun, Citation
 from fdre.citations.verifier import CitationVerifier, VerifiedCitation
-from fdre.graph.nodes import GeneratedAnswer, MockAnswerGenerator, WorkflowContext
+from fdre.graph.nodes import ExtractiveAnswerGenerator, GeneratedAnswer, WorkflowContext
 from fdre.graph.workflow import run_answer_workflow
 from fdre.retrieval.query import RetrievalCandidate
 
@@ -48,7 +48,7 @@ def answer_question(
         WorkflowContext(
             session=session,
             settings=settings,
-            generator=MockAnswerGenerator(),
+            generator=ExtractiveAnswerGenerator(),
             verifier=CitationVerifier(),
         ),
         question,
