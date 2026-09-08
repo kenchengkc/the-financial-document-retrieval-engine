@@ -59,13 +59,14 @@ jobs:
       - name: Pytest
         run: pytest
 
-      - name: Validate Alembic migrations
+      - name: Validate Alembic migrations on PostgreSQL
         env:
-          DATABASE_URL: sqlite+pysqlite:////tmp/fdre-ci.db
+          DATABASE_URL: ${{ env.FDRE_POSTGRES_TEST_URL }}
         run: |
           alembic upgrade head
           alembic check
           alembic downgrade base
+          alembic upgrade head
 
       - name: Validate PostgreSQL retrieval indexes
         run: pytest -q apps/api/tests/test_migrations.py -k postgres_retrieval_indexes
