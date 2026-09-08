@@ -5,6 +5,7 @@ import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -49,6 +50,13 @@ class CompanyReference:
     name: str
 
 
+@dataclass(frozen=True, slots=True)
+class CompanyReferenceIndex:
+    known_tickers: frozenset[str]
+    alias_owners: tuple[tuple[str, frozenset[str]], ...]
+    ticker_names: tuple[tuple[str, str], ...]
+
+
 def load_company_references(session: Session) -> list[CompanyReference]:
     return [
         CompanyReference(ticker=company.ticker, name=company.name)
@@ -61,6 +69,31 @@ def load_company_references(session: Session) -> list[CompanyReference]:
     ]
 
 
+@lru_cache(maxsize=16)
+def _company_reference_index(
+    companies: tuple[CompanyReference, ...],
+) -> CompanyReferenceIndex:
+    known_tickers = frozenset(company.ticker.upper() for company in companies)
+    alias_owners: dict[str, set[str]] = {}
+    for company in companies:
+        ticker = company.ticker.upper()
+        for alias in _company_aliases(company.name):
+            alias_owners.setdefault(alias, set()).add(ticker)
+    return CompanyReferenceIndex(
+        known_tickers=known_tickers,
+        alias_owners=tuple(
+            sorted(
+                (alias, frozenset(owners))
+                for alias, owners in alias_owners.items()
+            )
+        ),
+        ticker_names=tuple(
+            (company.ticker.upper(), company.name)
+            for company in companies
+        ),
+    )
+
+
 def preprocess_query(
     query: str,
     *,
@@ -70,20 +103,16 @@ def preprocess_query(
     cleaned = " ".join(query.split())
     if not cleaned:
         raise ValueError("query must not be empty")
-    company_list = list(companies)
-    known_tickers = {company.ticker.upper() for company in company_list}
+    company_tuple = tuple(companies)
+    company_index = _company_reference_index(company_tuple)
     ticker_detection_text = _SUPPORTED_FORM_TOKEN_PATTERN.sub(" ", cleaned)
     detected_tickers = {
         token
         for token in re.findall(r"\b[A-Z]{1,5}\b", ticker_detection_text)
-        if token in known_tickers
+        if token in company_index.known_tickers
     }
     normalized_query = _normalize_company_text(cleaned)
-    alias_owners: dict[str, set[str]] = {}
-    for company in company_list:
-        for alias in _company_aliases(company.name):
-            alias_owners.setdefault(alias, set()).add(company.ticker.upper())
-    for alias, owners in alias_owners.items():
+    for alias, owners in company_index.alias_owners:
         if len(owners) == 1 and _contains_alias(normalized_query, alias):
             detected_tickers.update(owners)
 
@@ -133,7 +162,7 @@ def preprocess_query(
     )
     # Expand detected tickers to their issuer names so a ticker-only query
     # ("AAPL margins") also matches passages that spell out "Apple Inc".
-    ticker_names = {company.ticker.upper(): company.name for company in company_list}
+    ticker_names = dict(company_index.ticker_names)
     company_terms = " ".join(
         ticker_names[ticker]
         for ticker in sorted(detected_tickers)
