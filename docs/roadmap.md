@@ -1,286 +1,132 @@
-# FDRE Roadmap — Hedge-Fund Research Infrastructure
-
-FDRE is point-in-time financial research infrastructure for technically sophisticated research and engineering audiences. The product bar is not “interesting AI demo”; it is **credible research infrastructure**: correct historical data, reproducible experiments, auditable lineage, strong retrieval, statistically disciplined signal research, predictable latency, and explicit failure behavior.
-
-> Status reviewed against `main` on **2026-08-30**.
-
-> Historical-universe identity closure updated from verified production evidence on **2026-09-05**.
-
-> HU-5 unchanged flagship rerun recorded from frozen production evidence on **2026-09-06**.
-
-## Product principles
-
-A professional reviewer should be able to answer:
-
-- Can I trust the information timestamp and universe eligibility?
-- Can I reproduce the result from exact data/code identity?
-- Can I trace every structured value back to its source filings?
-- Are retrieval and research claims supported by frozen measurements?
-- Are signal results evaluated out-of-sample with implementation costs and multiple-testing controls?
-- Does the system fail closed when data, lineage, or provider state is ambiguous?
-- Are infrastructure choices justified by measured bottlenecks rather than fashion?
-
-Do **not** prioritize generic chatbot polish, autonomous-agent complexity, decorative dashboards, more LLM calls, or extra distributed infrastructure ahead of research correctness and reproducibility.
-
-## Cost and architecture budget
-
-| Component | Current policy |
-| --- | --- |
-| PostgreSQL / pgvector | authoritative production store for retrieval + research state |
-| Railway API | bounded production compute |
-| Vercel frontend | existing deployment |
-| GitHub Actions | public CI / batch research |
-| Embeddings / reranking | bounded provider spend; reranking optional |
-| Historical bulk artifacts | Parquet/object storage only if needed |
-| Normal monthly target | **$10–15** |
-| Hard ceiling | **$20** |
-
-**No new recurring service unless FDRE’s own measurements show the existing stack cannot meet a defined correctness, quality, latency, scale, or workflow requirement economically.**
-
-Redis, Kafka, Elasticsearch/OpenSearch, Snowflake, a dedicated feature store, and distributed queues remain deferred behind measured triggers.
-
-## Current state
-
-### Complete / operational
-
-- Point-in-time SEC filing ingestion with acceptance/availability boundaries.
-- PostgreSQL lexical + vector hybrid retrieval over ~3.04M chunks.
-- Citation-verified answer workflow with abstention and PIT-aware cache.
-- Cross-sectional research screens with structured-first execution, exact filing evidence restriction, bounded semantic calls, and deployed HTTPS endpoint.
-- `fdre-panel-v3` feature lineage with export/replay verification.
-- Frozen retrieval and Cross-Sectional v2 benchmark contracts with immutable first-run holdout artifacts.
-- Signal research primitives: event studies, Spearman IC, quantiles, long-short spreads, issuer-cluster bootstrap inference, multiple-testing correction, and experiment manifests.
-- Flagship risk-churn acceleration study with precommitted walk-forward windows, purged unrealized outcomes, implementation-cost accounting, sector robustness, promotion gates, immutable artifacts, and honest `PROMOTE` / `REJECT` / `INSUFFICIENT` outcomes.
-- Market-data cache/retry/circuit-breaker hardening.
-- **Historical Universe HU-1:** stable security layer, time-varying identity/membership schema, provenance/confidence/verification state, deterministic PIT snapshot contract, Alembic migration, and tests.
-- **Historical Universe HU-2:** production membership reconstruction, identity-safe 500-security
-  starting anchor, explicit provisional queue, deterministic replay, and passed promotion gate.
-- **Historical Universe HU-3:** DB-backed PIT universe API, deterministic snapshot IDs,
-  constituent provenance, strict/provisional modes, JSON/Parquet export, replay and leakage tests,
-  and research-panel composition.
-- **HU-5 historical-universe identity closure:** reviewed 45-action production apply and independent
-  6,088/6,088 identity-aware coverage through 2026-09-01, zero invalid/blocked days, and zero
-  relevant provisional identities. [Provenance and closure record](research/historical-universe/final-identity-closure.md).
-- **HU-5 unchanged flagship rerun:** executed on 2026-09-06 against the verified universe and
-  frozen as `INSUFFICIENT` at the pre-outcome event/security mapping gate. The production universe
-  remained 6,088/6,088 strict-eligible; 14 issuer-level filings sharing CIK `0001652044` mapped to
-  multiple simultaneously active securities, so the study correctly refused to guess a share
-  class. [Frozen rerun record](research/historical-universe/flagship-rerun-2026-09-06.md).
-
-### Current measured flagship state
-
-The latest flagship execution is **`INSUFFICIENT` with reason `ambiguous_security_mapping`**. It is
-not an alpha rejection and not a promotion. The strict historical-universe gate passed 6,088/6,088
-days with zero invalid days, but the sealed event resolver found 14 issuer-level accessions for one
-CIK with more than one simultaneously active security. The pre-existing fail-closed share-class
-rule stopped the run before security-level outcomes, walk-forward folds, or OOS observations were
-scored.
-
-The prior `INSUFFICIENT_NOT_YET_REALIZED` run remains a preserved historical diagnostic; it is not
-the latest flagship execution. Current detailed metrics live in
-[`evaluations/eval_results.md`](evaluations/eval_results.md), while the exact 2026-09-06 rerun
-provenance is frozen in
-[`research/historical-universe/flagship-rerun-2026-09-06.md`](research/historical-universe/flagship-rerun-2026-09-06.md).
+# FDRE Roadmap — Research Infrastructure
 
-## Active milestone — Historical Universe v1
-
-Live retrieval retains a current-constituent seed. Historical research now has a separate
-reconstructed universe whose membership and identity closure has been independently verified for
-2010-01-01 through 2026-09-01. The unchanged post-closure flagship rerun has also been executed. Its
-fail-closed `INSUFFICIENT` result exposes the remaining research-contract gap: issuer-level filings
-need a predeclared point-in-time outcome mapping when one issuer has multiple simultaneously active
-securities.
-
-See [`research/historical_universe.md`](research/historical_universe.md) for the canonical design and acceptance criteria.
-
-### HU-1 — Security master foundation
-
-**Status: COMPLETE.**
-
-Implemented:
-
-- SEC issuer/CIK separated from stable listed-security identity;
-- time-varying ticker/name/exchange periods;
-- time-varying universe-membership intervals;
-- provenance, confidence, and verification status;
-- half-open `[effective_from, effective_to)` semantics;
-- deterministic snapshot hashing;
-- fail-closed overlap, missing-identity, rejected/provisional evidence behavior;
-- migration and unit coverage.
-
-### HU-2 — Membership reconstruction
-
-**Status: COMPLETE (production promotion gate passed 2026-09-01).**
-
-Build a reproducible evidence-reconciliation pipeline for historical index membership.
-
-Required outputs:
-
-1. source adapters that preserve raw event identity and observation time;
-2. normalized add/remove/replacement events with announcement vs effective dates kept distinct;
-3. historical ticker/name resolution to stable securities and SEC CIKs;
-4. multi-source reconciliation with verified/provisional/rejected evidence;
-5. explicit ambiguity instead of guessed dates;
-6. deterministic interval materialization;
-7. coverage/audit report for gaps, overlaps, unresolved identities, share-class ambiguity, and source disagreement;
-8. current-date reconciliation against the existing S&P seed without using that seed as historical evidence.
-
-**HU-2 promotion gate:** do not integrate historical membership into flagship research until the coverage audit can characterize where history is trustworthy and where it is provisional.
-
-[Actions run `33462343599`](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/33462343599)
-applied and validated the production materialization. It created 396 historical-only issuers, 6
-current issuers, 483 securities, 1,004 identity periods, and 1,004 membership periods. Of the
-memberships, 809 are verified and 195 remain explicitly provisional. The resulting production
-state has 901 issuers, 985 common-stock securities, and 1,506 identity periods.
-
-The original **29 missing / 61 unexpected** anchor mismatch is fully classified. The materializer
-now uses an identity-safe 500-security anchor backed by IVV's SEC-filed 2009-12-31 holdings,
-including dated ticker/CIK decisions for the 18 source gaps and the exact SEC-backed XOM CIK
-correction. Strict and provisional snapshots both contain the expected 500 identities; replay is
-deterministic; and identity overlaps, membership overlaps, and missing identity coverage are all
-zero.
-
-The final audit resolves **1,044 / 1,055 (98.96%)** target-window observations and publishes the
-remaining 11 as unresolved/provisional. All 999 source intervals have explicit decisions. Of the
-365 intervals starting in 2010+, 299 have verified membership boundaries and 66 remain
-boundary-provisional. Completion means the production gate and fail-closed eligibility contract
-passed; it does not turn those 66 boundaries or 11 residual identities into guessed facts.
-
-Exact HU-2 measured counts and its historical gate result live in
-[`evaluations/eval_results.md`](evaluations/eval_results.md); the gate definition lives in
-[`research/historical_universe.md`](research/historical_universe.md). The residual counts above
-describe HU-2's original promotion, not the final HU-5 identity-closure state.
-
-### HU-3 — Universe API / SDK
-
-**Status: COMPLETE (merged 2026-08-30).**
-
-Strict PIT universe resolution is exposed through:
-
-```python
-fdre.universe("sp500", as_of="2020-03-20")
-fdre.universe("sp500", as_of="2020-03-20", include_provisional=True)
-```
-
-Implemented:
-
-- deterministic snapshot IDs;
-- constituent-level source lineage;
-- strict/provisional modes visible in outputs;
-- JSON/Parquet export;
-- replay verification;
-- explicit future-membership leakage tests;
-- composition with research-panel construction.
-
-### HU-4 — 10–15 year research archive
+FDRE is point-in-time financial research infrastructure. The engineering bar is **credible, reproducible research**, not feature count: correct information timing, survivorship-aware universes, source lineage, measured retrieval quality, falsifiable research workflows, predictable operations, and explicit failure behavior.
 
-**Status: COMPLETE.**
+Detailed historical execution notes from the previous roadmap are preserved in [`archive/roadmap-2026-09-08.md`](archive/roadmap-2026-09-08.md). Current measurements belong in [`evaluations/eval_results.md`](evaluations/eval_results.md); benchmark methodology and reveal rules belong in [`evaluations/eval_plan.md`](evaluations/eval_plan.md) and [`evaluations/holdout_policy.md`](evaluations/holdout_policy.md).
 
-Extend research depth without proportionally expanding the vector corpus.
+## Engineering principles
 
-Prefer:
+A reviewer should be able to establish quickly that:
 
-```text
-historical filing
-  -> parse required sections/facts
-  -> compute research features
-  -> persist feature + exact lineage
-  -> optional compressed/Parquet artifact
-  -> no bulk embeddings unless justified
-```
+- information is filtered by when it was actually available;
+- historical universe membership and security identity are not inferred from current constituents;
+- structured values and research features retain exact source lineage;
+- benchmark and experiment inputs are frozen or versioned deliberately;
+- published benchmarks are not misrepresented as future unseen holdouts;
+- statistical failures and insufficient samples are reported rather than optimized away;
+- ambiguous identity, lineage, or evidence fails closed;
+- infrastructure complexity is added only when measurements justify it.
 
-Acceptance criteria include reproducible market outcomes, Parquet panel export, measured before/after storage and runtime, and total recurring spend below the $20 ceiling.
+PostgreSQL/pgvector remains the system of record. Railway, Vercel, GitHub Actions, and bounded model-provider usage remain the operating stack. New recurring infrastructure should have a measured correctness, quality, latency, scale, or cost justification.
 
-The bounded CIK-keyed archive path, Risk Factors-only parser, zero-embedding invariant,
-lineage-preserving Parquet export, and market-cache manifests are implemented. Production covered
-all 822 reconstructed issuer CIKs in 33 disjoint batches: 11,166 annual filings, 10,681 verified
-feature rows, 654.45 MB incremental retained text, zero embedding growth, and zero paid model
-calls. The exact runtime, storage, named SEC gap, replay audit, and HU-5 market-outcome handoff are
-recorded in [`research/archive.md`](research/archive.md).
+## Current platform state
 
-### HU-5 — Institutional flagship rerun
+The production/research core is operational:
 
-**Universe identity closure: COMPLETE (production commit and independent audits, 2026-09-05).**
-The merged gate and independent identity-strict audit each report 6,088/6,088 days, with zero
-invalid days, blocked days, or relevant provisional identities. The 45-action manifest, production
-run, artifact digest, gate IDs, and workflow cleanup are recorded in
-[final identity closure](research/historical-universe/final-identity-closure.md).
+- point-in-time SEC filing ingestion using acceptance/availability boundaries;
+- PostgreSQL lexical + pgvector hybrid retrieval and optional reranking;
+- citation-verified extractive answers with abstention and PIT-aware caching;
+- typed Company Facts, research panels, cross-sectional screens, and filing comparisons;
+- persisted retrieval traces, experiment manifests, market-data caches, and reproducible signal-study workflows;
+- deterministic historical-universe identity and membership with strict/provisional evidence modes;
+- independently verified 2010-01-01 through 2026-09-01 strict historical-universe eligibility;
+- historical filing research archive without unnecessary bulk embedding growth;
+- CI covering typing, linting, tests, PostgreSQL/pgvector migrations/indexes, Docker, frontend build, and browser E2E paths;
+- production container built non-editably, run as non-root, and smoke-tested in CI;
+- explicit API readiness, request bounds, and PostgreSQL connection-pool policy.
 
-**Unchanged flagship rerun: COMPLETE AS `INSUFFICIENT` (2026-09-06).** The sealed workflow ran with
-the precommitted `250 / 6 / 300` inputs and the verified universe. It returned
-`ambiguous_security_mapping` before market-outcome scoring because 14 issuer-level filings sharing
-CIK `0001652044` each had multiple active security matches. No share class was guessed, no
-partial-company universe was substituted, and no return result was used to choose a mapping rule.
-The exact run/artifact/hash/gate IDs and accessions are frozen in
-[the rerun record](research/historical-universe/flagship-rerun-2026-09-06.md).
+The latest unchanged flagship risk-churn acceleration run remains **`INSUFFICIENT`**, not promoted or rejected for alpha. The verified universe passed its gate, but issuer-level filings for one multi-security issuer could not be mapped unambiguously to a single security under the predeclared fail-closed rule. That result is preserved rather than guessed through.
 
-The original study target remains unchanged for any future **versioned amended rerun**:
+## Active priorities
 
-- at least 4 statistically usable sealed OOS folds, preferably 4–6+;
-- primary 1:63 outcome evaluable across multiple periods;
-- secondary 1:21 and 1:126 horizons retained;
-- 5/10/25/50 bp costs retained;
-- sector/temporal robustness retained;
-- universe snapshot identity included in the immutable experiment manifest;
-- result remains honestly `PROMOTE`, `REJECT`, or `INSUFFICIENT`.
+### 1. Close the multi-security outcome-mapping contract
 
-Before another rerun, define and freeze a PIT-safe policy for issuer-level filing events when the
-historical snapshot has multiple active securities for the same CIK. That policy must specify the
-observation unit, selection or aggregation rule, weighting, provenance, and treatment of correlated
-share classes. It is a methodology amendment and must be versioned before evaluating returns.
+Define a versioned, point-in-time rule for research outcomes when a filing issuer has multiple simultaneously active securities. The rule must be specified before examining amended-run return results and must preserve share-class identity rather than silently choosing a ticker.
 
-## After Historical Universe
+Acceptance criteria:
 
-Once HU makes the research dataset credible, the next highest-value investments are:
+- deterministic security selection or explicit ambiguity;
+- source/provenance for the mapping rule;
+- no outcome information used to select the rule;
+- replay tests around simultaneous share classes and ticker changes;
+- amended flagship run uses a new versioned experiment identity and leaves the original frozen run unchanged.
 
-### Portfolio implementation layer
+### 2. Improve retrieval quality under a clean evaluation lifecycle
 
-- monthly/weekly rebalance;
-- sector-neutral and beta-neutral variants;
-- turnover and 5/10/25/50 bp costs;
-- max-weight/liquidity/ADV constraints;
-- gross/net returns and signal decay.
+Current public retrieval and Cross-Sectional holdouts are published historical benchmarks. Future untouched claims require newly sealed, access-controlled holdouts under the benchmark lifecycle policy.
 
-### Falsification harness
+Priorities:
 
-- randomized signals and event dates;
-- label permutation;
-- deliberate timestamp-leak tests;
-- placebo universes;
-- alternate neutralizations;
-- negative controls;
-- explicit multiple-testing ledger.
+- improve generic semantic/paraphrase recall without weakening PIT filters or citation grounding;
+- preserve exact-vs-ANN validation when changing vector/index configuration;
+- measure retrieval changes on development data first, then evaluate once on a newly sealed holdout;
+- keep latency/cost measurements alongside quality metrics.
 
-### Researcher-facing SDK
+Do not optimize directly against the published historical holdout and then describe the result as unseen performance.
 
-Target ergonomics:
+### 3. Finish production runtime hardening
 
-```python
-panel = fdre.panel(...)
-signal = fdre.signal(...)
-study = fdre.walk_forward(...)
-study.summary()
-study.verify_lineage()
-study.export(...)
-fdre.replay("experiment_id")
-```
+Keep the API small and explicit while removing request-path construction overhead.
 
-Support Parquet + DuckDB/Polars interoperability without hiding the underlying data/lineage mechanics.
+Priorities:
 
-### Failure engineering and observability
+- reuse expensive embedding/reranking/provider clients by configuration;
+- use persistent HTTP connection pools for hosted providers;
+- make provider rate limits reflect process-level concurrency rather than per-request object lifetime;
+- cache the immutable issuer/alias lookup used by query preprocessing with an explicit refresh/invalidation contract;
+- lock Python dependency resolution reproducibly;
+- retain durable retrieval/audit traces while optimizing persistence only when measurements justify it.
 
-Add formal stage timing, provider/database/network fault tests, cache-corruption tests, idempotent retry proofs, and repeatable SLO/load characterization only where they improve operational confidence.
+### 4. Reduce repository surface area without reducing rigor
 
-### Harder evaluation
+The target structure is a small deployed core, reusable domain packages, thin operational entry points, and archived run history.
 
-Expand reviewed retrieval/research cases with amendments, restatements, near-duplicates, issuer confusion, exact as-of boundaries, abstention, and hard negatives. Preserve sealed-holdout discipline.
+Priorities:
 
-## Immediate next step
+- move reusable logic out of large `scripts/` entry points into `src/fdre/`;
+- consolidate historical-universe operations behind a small coherent CLI;
+- split `src/fdre/research/` into clear universe, signals, panels, experiments, and OOS domains;
+- reduce giant frontend files and global CSS through route/component ownership and verified dead-style removal;
+- keep active docs focused on contracts/current state and move dated forensic notes to `docs/archive/`.
 
-**Specify and freeze the HU-5 multi-class issuer-to-outcome mapping amendment before any further flagship rerun.**
+Refactors must preserve existing tests, experiment identities where applicable, and data/research contracts.
 
-The historical universe itself is closed and the unchanged flagship rerun has been executed. The
-remaining blocker is methodological: an issuer-level SEC filing can correspond to multiple
-simultaneously active securities. Do not choose, duplicate, exclude, or aggregate share classes
-after observing returns. Predeclare a PIT-safe rule with explicit weighting and inference behavior,
-version it, add focused tests, and only then rerun the sealed study under that amended contract.
+## Research promotion rules
+
+Signal workflows are experiments, not demos. Promotable research must retain:
+
+- exact PIT feature and outcome lineage;
+- predeclared horizons and split logic;
+- purging of unrealized development outcomes;
+- multiple-testing-aware gates;
+- turnover and explicit transaction-cost assumptions;
+- sector/temporal robustness diagnostics;
+- immutable code/config/data identity;
+- honest terminal outcomes of `PROMOTE`, `REJECT`, or `INSUFFICIENT`.
+
+A successful workflow run is not evidence of alpha.
+
+## Explicitly deferred
+
+Unless measurements establish a concrete need, FDRE does **not** need:
+
+- Redis or a distributed cache;
+- Kafka or a distributed queue;
+- a separate vector/search service;
+- Snowflake or a dedicated analytics warehouse;
+- a feature-store product;
+- autonomous/open-ended agent loops;
+- additional model calls solely for product appearance.
+
+Likewise, do not simplify away the controls that provide the strongest research signal: point-in-time semantics, provenance, fail-closed identity behavior, immutable first-run artifacts, benchmark discipline, and comprehensive tests.
+
+## Canonical references
+
+- [`architecture/system.md`](architecture/system.md) — deployed component/data-flow design
+- [`architecture/feature_lineage.md`](architecture/feature_lineage.md) — feature/source lineage contract
+- [`evaluations/eval_plan.md`](evaluations/eval_plan.md) — evaluation methodology
+- [`evaluations/holdout_policy.md`](evaluations/holdout_policy.md) — benchmark visibility lifecycle
+- [`evaluations/eval_results.md`](evaluations/eval_results.md) — current and frozen measurements
+- [`research/historical_universe.md`](research/historical_universe.md) — historical-universe contract
+- [`research/historical-universe/final-identity-closure.md`](research/historical-universe/final-identity-closure.md) — identity-closure provenance
+- [`research/historical-universe/flagship-rerun-2026-09-06.md`](research/historical-universe/flagship-rerun-2026-09-06.md) — frozen unchanged flagship rerun
