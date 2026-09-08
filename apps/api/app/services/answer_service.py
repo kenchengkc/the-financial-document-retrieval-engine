@@ -14,6 +14,8 @@ from fdre.graph.nodes import GeneratedAnswer, MockAnswerGenerator, WorkflowConte
 from fdre.graph.workflow import run_answer_workflow
 from fdre.retrieval.query import RetrievalCandidate
 
+_EXTRACTIVE_GENERATOR_ALIASES = {"extractive", "mock"}
+
 
 @dataclass(frozen=True, slots=True)
 class AnswerServiceResult:
@@ -40,10 +42,8 @@ def answer_question(
     question: str,
 ) -> AnswerServiceResult:
     started = perf_counter()
-    if settings.answer_generator != "mock":
-        raise ValueError(
-            "Only ANSWER_GENERATOR=mock is available in the no-cost MVP runtime."
-        )
+    if settings.answer_generator not in _EXTRACTIVE_GENERATOR_ALIASES:
+        raise ValueError("Unsupported ANSWER_GENERATOR; use 'extractive'.")
     state = run_answer_workflow(
         WorkflowContext(
             session=session,
