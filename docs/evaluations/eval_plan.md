@@ -1,6 +1,6 @@
 # Evaluation Methodology and Benchmark Contracts
 
-This document defines **how FDRE evaluations are constructed, frozen, executed, and interpreted**. Current measured results live in [`eval_results.md`](eval_results.md). Historical one-off diagnostics live under `docs/archive/`.
+This document defines **how FDRE evaluations are constructed, frozen, executed, and interpreted**. Current measured results live in [`eval_results.md`](eval_results.md). The benchmark visibility lifecycle is defined in [`holdout_policy.md`](holdout_policy.md). Historical one-off diagnostics live under `docs/archive/`.
 
 ## Evaluation principles
 
@@ -8,7 +8,7 @@ FDRE evaluation follows five rules:
 
 1. **Point-in-time correctness is mandatory.** Future filings, facts, universe membership, or market outcomes invalidate a result regardless of retrieval quality.
 2. **Reviewed benchmark inputs are immutable after reveal.** A bad result is diagnosed, not relabeled away.
-3. **Development and holdout claims are separated.** Generated/development cases are never reported as untouched holdout performance.
+3. **Development and holdout claims are separated.** Generated/development cases are never reported as untouched holdout performance. Once a holdout is revealed publicly, it becomes a published historical benchmark and cannot support a new unseen-holdout claim.
 4. **Structured correctness and semantic retrieval are scored separately.** A correct issuer ranking does not hide wrong values, wrong lineage, or unsupported evidence.
 5. **Infrastructure success is not research success.** Signal workflows may complete successfully while the statistical result remains `REJECT` or `INSUFFICIENT`.
 
@@ -23,12 +23,14 @@ data/evals/retrieval_benchmark.jsonl
 Contract:
 
 - 120 human-reviewed questions;
-- 80 development / 40 holdout;
+- 80 development / 40 historical holdout cases;
 - narrative, table, legal, guidance, temporal, cross-sectional, filter, and abstention categories;
 - reviewer identity and explicit abstention labels;
 - stable evidence labels based on accession, section, normalized quotation, and content fingerprint.
 
-Example holdout execution:
+The checked-in 40-case holdout split is now public and therefore serves as a **published historical benchmark**. Its original first-reveal measurement remains valid historical provenance, but future runs are regression/rerun measurements rather than new unseen-holdout results. Any future untouched retrieval claim requires a newly sealed, access-controlled holdout under [`holdout_policy.md`](holdout_policy.md).
+
+Example historical-holdout replay:
 
 ```bash
 FDRE_ALLOW_PROD=1 python3 -m scripts.pipelines.retrieval_pipeline eval \
@@ -87,21 +89,23 @@ A v2 evidence label is valid only when:
 
 Candidate-ranking tools may help reviewer triage but never generate gold labels automatically.
 
-### Sealed holdout
+### Published historical holdout
 
-Canonical file:
+Canonical public file:
 
 ```text
 data/evals/cross_sectional_benchmark.v2.holdout.jsonl
 ```
 
-The 14-case holdout was constructed using PIT panel/source data without executing the screen or semantic retrieval. Its first permitted execution is frozen under:
+The 14-case Cross-Sectional v2 holdout was constructed using PIT panel/source data without executing the screen or semantic retrieval, then sealed before its first permitted execution. Its first permitted execution is frozen under:
 
 ```text
 data/evals/results/cross-sectional-v2-holdout-first-run/
 ```
 
-The first-run artifact is immutable. Future reruns may diagnose changes but may not overwrite or retroactively alter the revealed result.
+That first-run artifact is immutable and preserves the valid untouched-holdout result for the pinned first-evaluation revision. The inputs have since been revealed in this public repository, so the dataset is now a **published historical benchmark**. Future reruns may diagnose changes but may not overwrite the first-run artifact or be described as fresh unseen-holdout performance.
+
+The holdout manifest is also intentionally immutable. Historical fields such as `status: sealed`, `sealed_at`, and `evaluation_status: first_run_frozen` record the benchmark's lifecycle state at construction and first execution; they are not retroactively rewritten after publication. See [`holdout_policy.md`](holdout_policy.md) for the lifecycle contract that governs future holdouts.
 
 ### Cross-sectional metrics
 
@@ -188,6 +192,7 @@ HU-2 must produce coverage/audit metrics before HU-derived historical universes 
 
 - Put **current measurements** in `eval_results.md`.
 - Put **methodology/contracts** here.
+- Put **holdout visibility and reveal rules** in `holdout_policy.md`.
 - Put **structural invariants** in `architecture.md` / `feature_lineage.md` / `historical_universe_v1.md`.
 - Put **one-off forensic investigations** in `docs/archive/`.
 - Never duplicate a dated metric across several active docs unless it is a deliberate README headline.
