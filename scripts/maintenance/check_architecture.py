@@ -18,6 +18,7 @@ LEGACY_OOS_MODULE = re.compile(
 LEGACY_MOCK_ANSWER_GENERATOR = re.compile(r"\bMockAnswerGenerator\b")
 LEGACY_AGENT_STATE = re.compile(r"\bAgentState\b")
 LEGACY_GRAPH_NAMESPACE = re.compile(r"\bfdre\.graph\b")
+LEGACY_EXPERIMENT_REGISTRY = re.compile(r"\bfdre\.research\.experiment_registry\b")
 ALLOWED_SCRIPT_ROOT_FILES = {"__init__.py"}
 ALLOWED_DOC_ROOT_MARKDOWN = {"README.md", "roadmap.md"}
 
@@ -81,6 +82,12 @@ def architecture_violations() -> tuple[str, ...]:
             if LEGACY_GRAPH_NAMESPACE.search(line):
                 message = (
                     f"legacy answer-workflow namespace reference: {relative}:{line_number}: "
+                    f"{line.strip()}"
+                )
+                violations.append(message)
+            if LEGACY_EXPERIMENT_REGISTRY.search(line):
+                message = (
+                    f"legacy experiment-registry module reference: {relative}:{line_number}: "
                     f"{line.strip()}"
                 )
                 violations.append(message)

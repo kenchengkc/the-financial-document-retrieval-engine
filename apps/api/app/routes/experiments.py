@@ -13,7 +13,7 @@ from apps.api.app.schemas.research_experiments import (
     ResearchExperimentListResponse,
     ResearchExperimentSummary,
 )
-from fdre.research.experiment_registry import (
+from fdre.research.experiments.registry import (
     ResearchExperimentBundle,
     ResearchExperimentManifest,
     ResearchReplayResult,

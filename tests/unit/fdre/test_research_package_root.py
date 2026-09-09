@@ -14,7 +14,7 @@ unexpected_modules = sorted(
     name
     for name in (
         "fdre.research.event_study",
-        "fdre.research.experiment_registry",
+        "fdre.research.experiments.registry",
         "fdre.research.filing_diffs",
         "fdre.research.financial_facts",
         "fdre.research.oos.diagnostics",

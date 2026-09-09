@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import get_engine
-from fdre.research.experiment_registry import (
+from fdre.research.experiments.registry import (
     build_research_experiment_bundle,
     inspect_research_experiment,
     read_research_experiment_bundle,
