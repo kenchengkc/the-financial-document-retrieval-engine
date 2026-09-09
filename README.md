@@ -10,7 +10,8 @@ availability time, and reproducibility matter.
 [Roadmap](docs/roadmap.md) ·
 [Evaluation plan](docs/evaluations/eval_plan.md) ·
 [Evaluation results](docs/evaluations/eval_results.md) ·
-[Holdout policy](docs/evaluations/holdout_policy.md)
+[Holdout policy](docs/evaluations/holdout_policy.md) ·
+[Portable experiment bundles](docs/research/experiment-bundles.md)
 
 FDRE is research infrastructure. It is not a trading strategy, portfolio optimizer, execution
 simulator, or low-latency trading system.
@@ -43,7 +44,12 @@ universe artifacts.
 - Typed Company Facts access for a restrained canonical metric set.
 - Point-in-time issuer-period panels exported as JSON, CSV, or Parquet.
 - Cross-sectional screens and provider-neutral filing event studies with lineage and leakage checks.
-- Persisted experiment manifests, market-data caching, and reproducible signal-study workflows.
+- Stable-security historical-universe snapshots and diffs that separate membership changes from
+  ticker/identity/provenance changes.
+- Content-addressed experiment roots with fail-closed replay, typed artifact validation, and
+  deterministic portable bundles that can be verified offline without a live database.
+- Persisted, content-free retrieval telemetry from bounded latest-N samples for production
+  diagnostics without storing query text in the aggregate endpoint.
 - Incremental ingestion with provider backoff, resumable manifests, and corpus-quality audits.
 
 Repeated verified questions can be served from a point-in-time-aware answer cache (`X-Cache: HIT`);
@@ -82,6 +88,8 @@ availability lineage through panels, screens, event studies, and persisted exper
 
 This distinction matters because a current-index S&P 500 corpus is survivorship-biased. Live search
 coverage and historically valid research universes are therefore treated as separate concepts.
+Historical snapshots resolve constituents by stable `security_id`, so ticker changes do not become
+false additions/removals in point-in-time universe comparisons.
 
 ## Evaluation
 
@@ -140,6 +148,12 @@ The flagship risk-churn acceleration workflow adds a precommitted expanding walk
 purged unrealized development outcomes, multiple-testing-aware selection gates, 5/10/25/50 bp cost
 accounting, sector robustness checks, immutable manifests, and reproducible market-data caching.
 
+Registered research roots bind the exact code, dataset, market-data, universe, feature, filing-lineage,
+assumption, child-artifact, and terminal-decision identities used for a claim. The Registry UI can
+recompute those hashes and replay the persisted terminal decision; a verified root can also be
+exported as a deterministic JSON bundle for independent offline verification. See
+[`docs/research/experiment-bundles.md`](docs/research/experiment-bundles.md).
+
 Historical-universe identity closure was verified in production on September 5, 2026: all 45
 reviewed actions committed, and both the merged HU-5 gate and independent identity-strict audit
 report 6,088/6,088 eligible calendar days (2010-01-01 through 2026-09-01), with zero invalid or
@@ -148,17 +162,15 @@ for run/artifact provenance. The unchanged flagship rerun remains a separate res
 
 ## Local development
 
-Requirements: Python 3.11+, Node.js 22+, Docker.
+Requirements: Python 3.11+, `uv` 0.12.10, Node.js 22+, Docker.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -e ".[dev,data]"
+uv sync --frozen --extra dev --extra data
 cp .env.example .env
 docker compose up -d postgres
-alembic upgrade head
-python3 -m scripts.pipelines.retrieval_pipeline seed-demo
-uvicorn apps.api.app.main:app --reload
+uv run alembic upgrade head
+uv run python -m scripts.pipelines.retrieval_pipeline seed-demo
+uv run uvicorn apps.api.app.main:app --reload
 ```
 
 In another terminal:
@@ -172,30 +184,42 @@ npm run dev
 
 Set a descriptive `SEC_USER_AGENT` before live SEC requests. Paid providers are optional for tests
 and the sample demo. `.env.example` and `apps/web/.env.example` are the configuration references.
+The committed `uv.lock` is the Python reproducibility boundary used by CI; frontend dependencies are
+installed from `apps/web/package-lock.json` with `npm ci`.
 
 ## Data and research CLI
 
 ```bash
-python3 -m scripts.pipelines.retrieval_pipeline --help
-python3 -m scripts.pipelines.retrieval_pipeline index --tickers AAPL MSFT
-python3 -m scripts.pipelines.retrieval_pipeline xbrl --tickers AAPL MSFT
-python3 -m scripts.pipelines.retrieval_pipeline panel --tickers AAPL MSFT \
+uv run python -m scripts.pipelines.retrieval_pipeline --help
+uv run python -m scripts.pipelines.retrieval_pipeline index --tickers AAPL MSFT
+uv run python -m scripts.pipelines.retrieval_pipeline xbrl --tickers AAPL MSFT
+uv run python -m scripts.pipelines.retrieval_pipeline panel --tickers AAPL MSFT \
   --as-of 2026-06-01T00:00:00+00:00 --format parquet \
   --output data/processed/research-panel.parquet
-python3 -m scripts.pipelines.retrieval_pipeline audit
+uv run python -m scripts.pipelines.retrieval_pipeline audit
+```
+
+A registered experiment chain can be exported from a database and verified later without database
+or live-data access:
+
+```bash
+uv run python -m scripts.research.research_experiment bundle \
+  <experiment-id> --output research-bundle.json
+uv run python -m scripts.research.research_experiment verify-bundle \
+  research-bundle.json --expected-experiment-id <git-pinned-experiment-id>
 ```
 
 Batch ingestion is separate because automation relies on resumable stage manifests:
 
 ```bash
-python3 scripts/ingestion/ingest_ticker_batch.py \
+uv run python scripts/ingestion/ingest_ticker_batch.py \
   --universe research50 --limit 50 --annual-limit 3 --quarterly-limit 8
 ```
 
 Reproduce the retrieval ablation with:
 
 ```bash
-python3 -m scripts.benchmarks.benchmark_retrieval
+uv run python -m scripts.benchmarks.benchmark_retrieval
 ```
 
 ## API
@@ -209,17 +233,23 @@ Core endpoints:
 - `POST /research/thematic-scan`
 - `GET /research/panel`, `/research/panel/export`
 - `GET /research/signal-studies`
+- `GET /research/universe/{universe_code}` and `/research/universe/{universe_code}/diff`
+- `GET /research/experiments`, `/research/experiments/{experiment_id}`,
+  `/research/experiments/{experiment_id}/verify`, and `/research/experiments/{experiment_id}/bundle`
 - `GET /operations/quality`
+- `GET /operations/retrieval-telemetry?sample_limit=1000`
 
 `POST /answer` responses expose point-in-time-aware cache state through `X-Cache: HIT|MISS`.
+`/operations/retrieval-telemetry` returns content-free aggregates over separate latest-N persisted
+retrieval and answer samples; it is not a fixed-window or all-request SLO feed.
 
 ## Verification
 
 ```bash
-pytest
-ruff check .
-mypy .
-alembic check
+uv run pytest
+uv run ruff check .
+uv run mypy .
+uv run alembic check
 docker compose config
 
 cd apps/web
@@ -229,8 +259,9 @@ npm run build
 npm run test:e2e
 ```
 
-CI also validates PostgreSQL/pgvector migrations, retrieval indexes, Docker Compose, and workflow
-configuration. Railway runs Alembic before starting the FastAPI service; Vercel serves the frontend.
+CI installs the committed Python lock with `uv sync --frozen` and also validates PostgreSQL/pgvector
+migrations, retrieval indexes, Docker Compose, the production image, and workflow configuration.
+Railway runs Alembic before starting the FastAPI service; Vercel serves the frontend.
 
 ## Data policy
 
