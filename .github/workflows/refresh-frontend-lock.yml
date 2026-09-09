@@ -1,0 +1,35 @@
+name: Refresh frontend lock
+
+on:
+  push:
+    branches:
+      - security/frontend-2026-08-advisories
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Refresh lockfile and verify production audit
+        run: |
+          cd apps/web
+          npm install --package-lock-only
+          npm audit --omit=dev --audit-level=high
+      - name: Commit lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/package-lock.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "security: refresh frontend lockfile"
+          git push
