@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -39,7 +40,7 @@ def _snapshot(
 
 
 def test_snapshot_command_exports_the_same_content_addressed_payload(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     snapshot = _snapshot(
@@ -61,7 +62,7 @@ def test_snapshot_command_exports_the_same_content_addressed_payload(
 
 
 def test_diff_command_treats_ticker_rename_as_stable_identity_change(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     before = _snapshot(
