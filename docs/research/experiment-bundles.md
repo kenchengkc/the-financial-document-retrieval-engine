@@ -52,6 +52,8 @@ Verification fails closed unless all of the following hold:
 5. Every child payload validates against its typed research-report schema.
 6. The persisted OOS promotion report replays to exactly the terminal decisions recorded in the root manifest.
 
+Schema validation is deliberately strict: an older or hand-built payload that is internally hash-consistent but omits fields required by the current typed research contract is rejected rather than treated as reproducible evidence.
+
 The `--expected-experiment-id` check matters. A self-consistent bundle proves internal integrity; comparing it with a root id pinned in Git, a paper, or an evaluation record also protects against wholesale substitution of a different self-consistent experiment.
 
 ## What this proves—and what it does not
