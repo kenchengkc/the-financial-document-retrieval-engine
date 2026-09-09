@@ -4,6 +4,7 @@ from collections.abc import Generator
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -74,9 +75,9 @@ def test_experiment_provenance_fails_closed_for_missing_or_incomplete_replay() -
     assert invalid.status_code == 422
 
 
-def _client(engine: object) -> TestClient:
+def _client(engine: Engine) -> TestClient:
     def override_session() -> Generator[Session, None, None]:
-        with Session(engine) as session:  # type: ignore[arg-type]
+        with Session(engine) as session:
             yield session
 
     app = create_app()
