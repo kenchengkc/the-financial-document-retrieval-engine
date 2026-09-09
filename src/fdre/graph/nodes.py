@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
 from fdre.citations.verifier import AnswerClaim, CitationVerifier
-from fdre.graph.state import AgentState
+from fdre.graph.state import AnswerWorkflowState
 from fdre.indexing.embeddings import embedding_provider_from_settings
 from fdre.research.financial_facts import FinancialFactQuery, query_financial_facts
 from fdre.retrieval.dense import DenseRetriever
@@ -132,7 +132,10 @@ class WorkflowContext:
         return HybridRetriever(DenseRetriever(provider), SparseRetriever())
 
 
-def preprocess_query_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def preprocess_query_node(
+    context: WorkflowContext,
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     result = apply_latest_filing_filter(
         context.session,
         state["user_query"],
@@ -153,7 +156,7 @@ def preprocess_query_node(context: WorkflowContext, state: AgentState) -> AgentS
     }
 
 
-def route_tools_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def route_tools_node(context: WorkflowContext, state: AnswerWorkflowState) -> AnswerWorkflowState:
     del context
     routes = state.get("route", ["text"])
     return {
@@ -162,7 +165,7 @@ def route_tools_node(context: WorkflowContext, state: AgentState) -> AgentState:
     }
 
 
-def retrieve_text_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def retrieve_text_node(context: WorkflowContext, state: AnswerWorkflowState) -> AnswerWorkflowState:
     filters = SearchFilters.model_validate(state.get("filters", {}))
     candidates = context.retriever.search(
         context.session,
@@ -177,7 +180,10 @@ def retrieve_text_node(context: WorkflowContext, state: AgentState) -> AgentStat
     }
 
 
-def retrieve_tables_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def retrieve_tables_node(
+    context: WorkflowContext,
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     if "tables" not in state.get("route", []):
         return {
             "table_candidates": [],
@@ -219,8 +225,8 @@ def retrieve_tables_node(context: WorkflowContext, state: AgentState) -> AgentSt
 
 def retrieve_financial_facts_node(
     context: WorkflowContext,
-    state: AgentState,
-) -> AgentState:
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     if "financial_facts" not in state.get("route", []):
         return {
             "financial_facts": [],
@@ -246,7 +252,10 @@ def retrieve_financial_facts_node(
     }
 
 
-def merge_candidates_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def merge_candidates_node(
+    context: WorkflowContext,
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     del context
     merged: dict[int, RetrievalCandidate] = {}
     for payload in [
@@ -269,7 +278,7 @@ def merge_candidates_node(context: WorkflowContext, state: AgentState) -> AgentS
     }
 
 
-def rerank_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def rerank_node(context: WorkflowContext, state: AnswerWorkflowState) -> AnswerWorkflowState:
     candidates = [
         RetrievalCandidate.model_validate(payload)
         for payload in state.get("retrieved_candidates", [])
@@ -294,8 +303,8 @@ def rerank_node(context: WorkflowContext, state: AgentState) -> AgentState:
 
 def evaluate_retrieval_gate_node(
     context: WorkflowContext,
-    state: AgentState,
-) -> AgentState:
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     candidates = [
         RetrievalCandidate.model_validate(payload)
         for payload in state.get("reranked_candidates", [])
@@ -342,7 +351,10 @@ def evaluate_retrieval_gate_node(
     }
 
 
-def generate_answer_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def generate_answer_node(
+    context: WorkflowContext,
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     if state.get("should_abstain"):
         return {"trace": _trace(state, "generate_answer", {"skipped": True})}
     evidence = [
@@ -355,7 +367,10 @@ def generate_answer_node(context: WorkflowContext, state: AgentState) -> AgentSt
     }
 
 
-def verify_citations_node(context: WorkflowContext, state: AgentState) -> AgentState:
+def verify_citations_node(
+    context: WorkflowContext,
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     if state.get("should_abstain") or not state.get("answer"):
         return {"trace": _trace(state, "verify_citations", {"skipped": True})}
     answer = GeneratedAnswer.model_validate(state["answer"])
@@ -382,8 +397,8 @@ def verify_citations_node(context: WorkflowContext, state: AgentState) -> AgentS
 
 def finalize_or_abstain_node(
     context: WorkflowContext,
-    state: AgentState,
-) -> AgentState:
+    state: AnswerWorkflowState,
+) -> AnswerWorkflowState:
     del context
     if state.get("should_abstain"):
         return {
@@ -407,7 +422,7 @@ def _candidate_score(candidate: RetrievalCandidate) -> float:
 
 
 def _trace(
-    state: AgentState,
+    state: AnswerWorkflowState,
     node: str,
     details: dict[str, Any],
 ) -> list[dict[str, Any]]:
