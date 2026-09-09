@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
+from fdre.research.oos.diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
 
 OOSSelectionStatus = Literal["passes_statistical_gate", "rejected", "insufficient"]
 
