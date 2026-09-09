@@ -1,4 +1,4 @@
-from importlib import import_module
+import importlib
 
 
 MODULES = (
@@ -30,7 +30,7 @@ MODULES = (
 
 
 def test_historical_universe_root_is_a_package_with_stable_public_import() -> None:
-    module = import_module("fdre.research.historical_universe")
+    module = importlib.import_module("fdre.research.historical_universe")
 
     assert hasattr(module, "__path__")
     assert module.SecurityIdentityRecord.__module__ == "fdre.research.historical_universe"
@@ -39,8 +39,8 @@ def test_historical_universe_root_is_a_package_with_stable_public_import() -> No
 
 def test_flat_historical_universe_modules_reexport_canonical_package_modules() -> None:
     for name in MODULES:
-        canonical = import_module(f"fdre.research.historical_universe.{name}")
-        legacy = import_module(f"fdre.research.historical_universe_{name}")
+        canonical = importlib.import_module(f"fdre.research.historical_universe.{name}")
+        legacy = importlib.import_module(f"fdre.research.historical_universe_{name}")
         public_names = [item for item in vars(canonical) if not item.startswith("_")]
 
         missing = [item for item in public_names if not hasattr(legacy, item)]
