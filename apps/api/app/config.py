@@ -26,6 +26,36 @@ class Settings(BaseSettings):
     log_level: str = Field(default="info", alias="LOG_LEVEL")
     api_host: str = Field(default="127.0.0.1", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
+    api_expensive_requests_per_window: int = Field(
+        default=30,
+        ge=1,
+        le=10_000,
+        alias="API_EXPENSIVE_REQUESTS_PER_WINDOW",
+    )
+    api_expensive_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=3600,
+        alias="API_EXPENSIVE_WINDOW_SECONDS",
+    )
+    api_expensive_max_callers: int = Field(
+        default=2048,
+        ge=1,
+        le=100_000,
+        alias="API_EXPENSIVE_MAX_CALLERS",
+    )
+    api_expensive_max_in_flight: int = Field(
+        default=8,
+        ge=1,
+        le=256,
+        alias="API_EXPENSIVE_MAX_IN_FLIGHT",
+    )
+    api_overload_retry_after_seconds: int = Field(
+        default=1,
+        ge=1,
+        le=300,
+        alias="API_OVERLOAD_RETRY_AFTER_SECONDS",
+    )
     database_url: str = Field(
         default="postgresql+psycopg://fdre:fdre@localhost:5432/fdre",
         alias="DATABASE_URL",
@@ -43,6 +73,12 @@ class Settings(BaseSettings):
         ge=0,
         le=86400,
         alias="DATABASE_POOL_RECYCLE_SECONDS",
+    )
+    database_statement_timeout_ms: int = Field(
+        default=30_000,
+        ge=0,
+        le=300_000,
+        alias="DATABASE_STATEMENT_TIMEOUT_MS",
     )
     cors_origins: str = Field(
         default=(
@@ -98,6 +134,18 @@ class Settings(BaseSettings):
     )
     research_cache_ttl_seconds: int = Field(
         default=21600, ge=0, alias="RESEARCH_CACHE_TTL_SECONDS"
+    )
+    company_reference_cache_ttl_seconds: int = Field(
+        default=300,
+        ge=0,
+        le=86_400,
+        alias="COMPANY_REFERENCE_CACHE_TTL_SECONDS",
+    )
+    company_reference_cache_stale_if_error_seconds: int = Field(
+        default=3600,
+        ge=0,
+        le=86_400,
+        alias="COMPANY_REFERENCE_CACHE_STALE_IF_ERROR_SECONDS",
     )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     voyage_api_key: str | None = Field(default=None, alias="VOYAGE_API_KEY")

@@ -2,8 +2,9 @@ from collections.abc import Generator
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import Engine, MetaData, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy import MetaData, create_engine, event
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.orm import DeclarativeBase, Session, SessionTransaction
 
 from apps.api.app.config import get_settings, normalize_database_url
 
@@ -14,12 +15,30 @@ NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
+REQUEST_STATEMENT_TIMEOUT_INFO_KEY = "fdre_request_statement_timeout_ms"
 
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy models added in later phases."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+@event.listens_for(Session, "after_begin")
+def _apply_request_statement_timeout(
+    session: Session,
+    transaction: SessionTransaction,
+    connection: Connection,
+) -> None:
+    """Apply the API-only timeout to every request transaction using SET LOCAL."""
+
+    del transaction
+    timeout_ms = session.info.get(REQUEST_STATEMENT_TIMEOUT_INFO_KEY)
+    if connection.dialect.name != "postgresql" or not isinstance(timeout_ms, int):
+        return
+    if timeout_ms <= 0:
+        return
+    connection.exec_driver_sql(f"SET LOCAL statement_timeout = {timeout_ms}")
 
 
 def create_db_engine(database_url: str | None = None) -> Engine:
@@ -44,5 +63,15 @@ def get_engine() -> Engine:
 
 
 def get_db_session() -> Generator[Session, None, None]:
-    with Session(get_engine()) as session:
-        yield session
+    settings = get_settings()
+    with Session(
+        get_engine(),
+        info={
+            REQUEST_STATEMENT_TIMEOUT_INFO_KEY: settings.database_statement_timeout_ms,
+        },
+    ) as session:
+        try:
+            yield session
+        finally:
+            if session.in_transaction():
+                session.rollback()
