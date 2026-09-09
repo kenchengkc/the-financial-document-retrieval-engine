@@ -18,7 +18,7 @@ from apps.api.app.models.historical_universe import (
     SecurityIdentityPeriod,
     UniverseMembership,
 )
-from fdre.research.event_study import FilingEvent
+from fdre.research.experiments.event_study import FilingEvent
 from fdre.research.historical_universe import (
     SecurityIdentityRecord,
     UniverseMembershipRecord,

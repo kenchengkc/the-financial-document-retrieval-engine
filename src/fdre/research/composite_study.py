@@ -22,7 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.event_study import EventStudyConfig, FilingEvent, MarketBar, run_event_study
+from fdre.research.experiments.event_study import (
+    EventStudyConfig,
+    FilingEvent,
+    MarketBar,
+    run_event_study,
+)
 from fdre.research.signal_study import (
     SignalStudyReport,
     _apply_benjamini_hochberg,

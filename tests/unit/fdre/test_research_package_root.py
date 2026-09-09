@@ -13,7 +13,7 @@ import fdre.research as research
 unexpected_modules = sorted(
     name
     for name in (
-        "fdre.research.event_study",
+        "fdre.research.experiments.event_study",
         "fdre.research.experiments.registry",
         "fdre.research.filing_diffs",
         "fdre.research.financial_facts",

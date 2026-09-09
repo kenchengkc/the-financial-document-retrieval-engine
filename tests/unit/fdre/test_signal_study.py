@@ -3,7 +3,12 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, date, datetime
 
-from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent, MarketBar
+from fdre.research.experiments.event_study import (
+    EventStudyConfig,
+    EventWindow,
+    FilingEvent,
+    MarketBar,
+)
 from fdre.research.panel import FeatureLineage
 from fdre.research.signal_study import (
     run_realized_volatility_signal_study,

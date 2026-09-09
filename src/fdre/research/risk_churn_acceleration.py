@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import datetime
 
-from fdre.research.event_study import FilingEvent
+from fdre.research.experiments.event_study import FilingEvent
 from fdre.research.panel import FeatureLineage, ResearchPanelRow
 
 RISK_CHURN_ACCELERATION_VERSION = "risk-churn-acceleration-v1"

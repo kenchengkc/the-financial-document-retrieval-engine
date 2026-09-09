@@ -18,7 +18,7 @@ from pathlib import Path
 from statistics import mean
 from zoneinfo import ZoneInfo
 
-from fdre.research.event_study import (
+from fdre.research.experiments.event_study import (
     EventReturn,
     EventStudyConfig,
     FilingEvent,

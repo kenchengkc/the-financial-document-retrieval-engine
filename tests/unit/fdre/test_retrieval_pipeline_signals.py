@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from apps.api.app.db import Base
 from apps.api.app.models import Company
-from fdre.research.event_study import FilingEvent
+from fdre.research.experiments.event_study import FilingEvent
 
 
 def test_filing_lateness_is_a_standalone_panel_signal() -> None:

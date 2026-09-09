@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import cast
 
-from fdre.research.event_study import FilingEvent
+from fdre.research.experiments.event_study import FilingEvent
 from fdre.research.historical_universe import (
     SecurityIdentityRecord,
     UniverseMembershipRecord,

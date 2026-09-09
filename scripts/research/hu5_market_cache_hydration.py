@@ -17,7 +17,7 @@ from fdre.research.composite_study import (
     period_label,
     standardize_by_period,
 )
-from fdre.research.event_study import FilingEvent
+from fdre.research.experiments.event_study import FilingEvent
 from fdre.research.hu5_market_hydration import run_market_cache_hydration
 from fdre.research.hu5_multiclass import (
     HU5_MULTICLASS_OUTCOME_POLICY_VERSION,

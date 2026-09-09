@@ -43,7 +43,7 @@ from fdre.research.composite_study import (
     run_composite_study,
     standardize_by_period,
 )
-from fdre.research.event_study import (
+from fdre.research.experiments.event_study import (
     EventStudyConfig,
     EventWindow,
     FilingEvent,

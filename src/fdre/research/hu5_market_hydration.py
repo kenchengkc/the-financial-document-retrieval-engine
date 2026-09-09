@@ -15,7 +15,7 @@ from pathlib import Path
 
 import requests
 
-from fdre.research.event_study import MarketBar
+from fdre.research.experiments.event_study import MarketBar
 from fdre.research.market_data import (
     MarketDataRateLimitError,
     fetch_ticker_bars,

@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.event_study import (
+from fdre.research.experiments.event_study import (
     EventReturn,
     EventStudyConfig,
     FilingEvent,

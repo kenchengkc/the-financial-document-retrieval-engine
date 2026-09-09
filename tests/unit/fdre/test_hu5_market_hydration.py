@@ -8,7 +8,7 @@ import pytest
 import requests
 
 from fdre.research import hu5_market_hydration as hydration
-from fdre.research.event_study import MarketBar
+from fdre.research.experiments.event_study import MarketBar
 from fdre.research.market_data import MarketDataRateLimitError
 
 START = date(2012, 1, 16)

@@ -7,7 +7,12 @@ from typing import Any
 import pytest
 
 from fdre.research import market_data, market_symbology
-from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent, MarketBar
+from fdre.research.experiments.event_study import (
+    EventStudyConfig,
+    EventWindow,
+    FilingEvent,
+    MarketBar,
+)
 from fdre.research.hu5_multiclass import HU5EventOutcomeMapping, HU5OutcomeComponent
 
 

@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fdre.research.event_study import EventStudyConfig, FilingEvent, MarketBar
+from fdre.research.experiments.event_study import EventStudyConfig, FilingEvent, MarketBar
 from fdre.research.hu5_multiclass import HU5EventOutcomeMapping
 from fdre.research.market_data import DEFAULT_CACHE_DIR
 
