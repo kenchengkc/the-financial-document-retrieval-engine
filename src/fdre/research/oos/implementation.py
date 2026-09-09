@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_selection import (
+from fdre.research.oos.selection import (
     OOSHypothesisDecision,
     OOSSelectionSuiteReport,
 )
