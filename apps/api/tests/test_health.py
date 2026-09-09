@@ -82,14 +82,14 @@ def test_vercel_demo_database_initialization_is_idempotent(
         assert (session.scalar(select(func.count()).select_from(Chunk)) or 0) > 0
 
 
-def test_railway_runs_migrations_before_starting_the_api() -> None:
+def test_railway_separates_schema_migration_from_traffic_admission() -> None:
     config = tomllib.loads((REPO_ROOT / "railway.toml").read_text())
 
-    predeploy = config["deploy"]["preDeployCommand"]
-    assert predeploy.startswith("sh -c ")
-    assert "alembic upgrade head" in predeploy
-    assert "scripts.research.refresh_research_console_metrics" in predeploy
-    assert "alembic" not in config["deploy"]["startCommand"]
-    assert "uvicorn" in config["deploy"]["startCommand"]
-    assert config["deploy"]["startCommand"].startswith("sh -c ")
-    assert "${PORT:-8000}" in config["deploy"]["startCommand"]
+    deploy = config["deploy"]
+    assert deploy["preDeployCommand"] == "alembic upgrade head"
+    assert "scripts.research.refresh_research_console_metrics" not in deploy["preDeployCommand"]
+    assert deploy["healthcheckPath"] == "/ready"
+    assert "alembic" not in deploy["startCommand"]
+    assert "uvicorn" in deploy["startCommand"]
+    assert deploy["startCommand"].startswith("sh -c ")
+    assert "${PORT:-8000}" in deploy["startCommand"]

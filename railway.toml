@@ -1,13 +1,13 @@
 # Railway service config for the FDRE API.
-# Build from the repo-root Dockerfile; health-check the /health endpoint.
+# Build from the repo-root Dockerfile; admit traffic only after database readiness succeeds.
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-preDeployCommand = "sh -c 'alembic upgrade head && python -m scripts.research.refresh_research_console_metrics --if-missing'"
+preDeployCommand = "alembic upgrade head"
 startCommand = "sh -c 'uvicorn apps.api.app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
-healthcheckPath = "/health"
+healthcheckPath = "/ready"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
