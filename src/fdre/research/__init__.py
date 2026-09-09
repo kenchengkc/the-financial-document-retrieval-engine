@@ -38,7 +38,7 @@ from fdre.research.financial_facts import (
     FinancialFactsResponse,
     query_financial_facts,
 )
-from fdre.research.oos_diagnostics import (
+from fdre.research.oos.diagnostics import (
     OOSDiagnosticsConfig,
     OOSDiagnosticsReport,
     OOSFoldWindowDiagnostic,
@@ -48,7 +48,7 @@ from fdre.research.oos_diagnostics import (
     persist_oos_diagnostics,
     write_oos_diagnostics_report,
 )
-from fdre.research.oos_implementation import (
+from fdre.research.oos.implementation import (
     OOSCostScenarioResult,
     OOSImplementationConfig,
     OOSImplementationRebalance,
@@ -58,7 +58,7 @@ from fdre.research.oos_implementation import (
     persist_oos_implementation,
     write_oos_implementation_report,
 )
-from fdre.research.oos_promotion import (
+from fdre.research.oos.promotion import (
     OOSPromotionConfig,
     OOSPromotionDecision,
     OOSPromotionReport,
@@ -68,7 +68,7 @@ from fdre.research.oos_promotion import (
     persist_oos_promotion,
     write_oos_promotion_report,
 )
-from fdre.research.oos_selection import (
+from fdre.research.oos.selection import (
     OOSHypothesisDecision,
     OOSSelectionConfig,
     OOSSelectionSuiteReport,
