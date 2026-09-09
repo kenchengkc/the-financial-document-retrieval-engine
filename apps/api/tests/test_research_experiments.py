@@ -50,7 +50,7 @@ def test_experiment_provenance_lists_and_inspects_registered_manifests() -> None
     assert detail.json()["statistical_assumptions"] == {"min_folds": 4}
 
 
-def test_experiment_provenance_fails_closed_for_missing_or_incomplete_replay() -> None:
+def test_experiment_provenance_fails_closed_for_missing_or_tampered_manifest() -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -69,7 +69,7 @@ def test_experiment_provenance_fails_closed_for_missing_or_incomplete_replay() -
 
     replay = client.get(f"/research/experiments/{experiment_id}/verify")
     assert replay.status_code == 409
-    assert replay.json()["detail"] == "registered experiment has no OOS promotion artifact"
+    assert replay.json()["detail"] == "research experiment manifest digest mismatch"
 
     invalid = client.get("/research/experiments/not-a-sha")
     assert invalid.status_code == 422
