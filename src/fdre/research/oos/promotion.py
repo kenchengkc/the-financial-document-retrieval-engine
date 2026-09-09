@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.experiments.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 from fdre.research.oos.diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
 from fdre.research.oos.implementation import (
     OOSImplementationRebalance,
@@ -28,7 +29,6 @@ from fdre.research.oos.implementation import (
     OOSImplementationWindowResult,
 )
 from fdre.research.oos.selection import OOSHypothesisDecision, OOSSelectionSuiteReport
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 PromotionStatus = Literal["promote", "reject", "insufficient"]
 _PROMOTION_VERSION = "sealed-oos-promotion-v1"

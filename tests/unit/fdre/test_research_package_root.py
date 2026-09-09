@@ -25,7 +25,7 @@ unexpected_modules = sorted(
         "fdre.research.screen",
         "fdre.research.thematic",
         "fdre.research.verification",
-        "fdre.research.walk_forward",
+        "fdre.research.experiments.walk_forward",
     )
     if name in sys.modules
 )

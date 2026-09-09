@@ -23,6 +23,11 @@ from fdre.research.experiments.registry import (
     verify_research_experiment_bundle,
     write_research_experiment_bundle,
 )
+from fdre.research.experiments.walk_forward import (
+    WalkForwardConfig,
+    WalkForwardOOSObservation,
+    WalkForwardStudyReport,
+)
 from fdre.research.oos.diagnostics import OOSDiagnosticsConfig, OOSDiagnosticsReport
 from fdre.research.oos.implementation import OOSImplementationConfig, OOSImplementationReport
 from fdre.research.oos.promotion import (
@@ -34,11 +39,6 @@ from fdre.research.oos.selection import (
     OOSHypothesisDecision,
     OOSSelectionConfig,
     OOSSelectionSuiteReport,
-)
-from fdre.research.walk_forward import (
-    WalkForwardConfig,
-    WalkForwardOOSObservation,
-    WalkForwardStudyReport,
 )
 
 

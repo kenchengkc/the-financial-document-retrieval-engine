@@ -26,6 +26,12 @@ from fdre.research.experiments.registry import (
     verify_research_experiment,
     write_research_experiment_manifest,
 )
+from fdre.research.experiments.walk_forward import (
+    WalkForwardConfig,
+    persist_walk_forward_study,
+    run_walk_forward_signal_study,
+    write_walk_forward_report,
+)
 from fdre.research.market_data import DEFAULT_CACHE_DIR, fetch_market_bars
 from fdre.research.oos.diagnostics import (
     OOSDiagnosticsConfig,
@@ -56,12 +62,6 @@ from fdre.research.risk_churn_acceleration import (
     RISK_CHURN_ACCELERATION_DEFINITION,
     RISK_CHURN_ACCELERATION_VERSION,
     build_risk_churn_acceleration_events,
-)
-from fdre.research.walk_forward import (
-    WalkForwardConfig,
-    persist_walk_forward_study,
-    run_walk_forward_signal_study,
-    write_walk_forward_report,
 )
 
 SIGNAL_NAME = "risk_factor_churn_acceleration"

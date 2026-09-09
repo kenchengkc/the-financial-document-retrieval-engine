@@ -2,7 +2,7 @@
 
 This layer is descriptive by design. It does not tune signal parameters, select
 horizons, or promote/reject a signal. Every statistic is derived from the test
-observations already admitted by :mod:`fdre.research.walk_forward`.
+observations already admitted by :mod:`fdre.research.experiments.walk_forward`.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.experiments.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 from fdre.research.signal_study import SignalPair, _spearman, _split_quantiles
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 FoldDiagnosticsStatus = Literal["ready", "insufficient_breadth"]
 OOSDiagnosticsStatus = Literal["ready", "insufficient_oos_data"]

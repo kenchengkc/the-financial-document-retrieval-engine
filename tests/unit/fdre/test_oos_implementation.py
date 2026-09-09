@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
+from fdre.research.experiments.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 from fdre.research.oos.implementation import (
     OOSImplementationConfig,
     evaluate_oos_implementation,
@@ -13,7 +14,6 @@ from fdre.research.oos.selection import (
     OOSSelectionStatus,
     OOSSelectionSuiteReport,
 )
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 
 def _observation(

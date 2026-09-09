@@ -26,19 +26,19 @@ from fdre.research.event_study import (
     run_event_study,
     validate_event_inputs,
 )
+from fdre.research.experiments.walk_forward import (
+    WalkForwardConfig,
+    WalkForwardObservation,
+    WalkForwardStudyReport,
+    build_walk_forward_folds,
+    market_data_version,
+)
 from fdre.research.historical_universe import UniverseSnapshot
 from fdre.research.hu5_universe import (
     HU5EventUniverseLineage,
     HU5UniverseGate,
     HU5UniverseRecords,
     strict_hu5_snapshot,
-)
-from fdre.research.walk_forward import (
-    WalkForwardConfig,
-    WalkForwardObservation,
-    WalkForwardStudyReport,
-    build_walk_forward_folds,
-    market_data_version,
 )
 
 HU5_MULTICLASS_OUTCOME_POLICY_VERSION = "fdre-hu5-multiclass-outcome-v1"

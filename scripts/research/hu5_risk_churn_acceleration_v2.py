@@ -33,6 +33,11 @@ from fdre.research.experiments.registry import (
     verify_research_experiment,
     write_research_experiment_manifest,
 )
+from fdre.research.experiments.walk_forward import (
+    WalkForwardConfig,
+    persist_walk_forward_study,
+    write_walk_forward_report,
+)
 from fdre.research.hu5_multiclass import (
     HU5_MULTICLASS_OUTCOME_POLICY_VERSION,
     HU5MultiClassOutcomeUnavailableError,
@@ -78,11 +83,6 @@ from fdre.research.risk_churn_acceleration import (
     RISK_CHURN_ACCELERATION_DEFINITION,
     RISK_CHURN_ACCELERATION_VERSION,
     build_risk_churn_acceleration_events,
-)
-from fdre.research.walk_forward import (
-    WalkForwardConfig,
-    persist_walk_forward_study,
-    write_walk_forward_report,
 )
 
 SIGNAL_NAME = "risk_factor_churn_acceleration"

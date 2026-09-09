@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from apps.api.app.db import Base
 from apps.api.app.models import ResearchExperiment
 from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent, MarketBar
-from fdre.research.walk_forward import (
+from fdre.research.experiments.walk_forward import (
     WalkForwardConfig,
     WalkForwardMode,
     WalkForwardObservation,

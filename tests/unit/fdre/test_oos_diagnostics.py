@@ -8,12 +8,12 @@ from sqlalchemy.pool import StaticPool
 
 from apps.api.app.db import Base
 from apps.api.app.models import ResearchExperiment
+from fdre.research.experiments.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 from fdre.research.oos.diagnostics import (
     OOSDiagnosticsConfig,
     build_oos_diagnostics,
     persist_oos_diagnostics,
 )
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 
 def _observation(
