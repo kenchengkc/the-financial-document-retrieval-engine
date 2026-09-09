@@ -27,25 +27,25 @@ from fdre.research.experiment_registry import (
     write_research_experiment_manifest,
 )
 from fdre.research.market_data import DEFAULT_CACHE_DIR, fetch_market_bars
-from fdre.research.oos_diagnostics import (
+from fdre.research.oos.diagnostics import (
     OOSDiagnosticsConfig,
     build_oos_diagnostics,
     persist_oos_diagnostics,
     write_oos_diagnostics_report,
 )
-from fdre.research.oos_implementation import (
+from fdre.research.oos.implementation import (
     OOSImplementationConfig,
     evaluate_oos_implementation,
     persist_oos_implementation,
     write_oos_implementation_report,
 )
-from fdre.research.oos_promotion import (
+from fdre.research.oos.promotion import (
     OOSPromotionConfig,
     evaluate_oos_promotion,
     persist_oos_promotion,
     write_oos_promotion_report,
 )
-from fdre.research.oos_selection import (
+from fdre.research.oos.selection import (
     OOSSelectionConfig,
     evaluate_oos_selection_suite,
     persist_oos_selection_suite,
