@@ -21,13 +21,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
-from fdre.research.oos_implementation import (
+from fdre.research.oos.diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
+from fdre.research.oos.implementation import (
     OOSImplementationRebalance,
     OOSImplementationReport,
     OOSImplementationWindowResult,
 )
-from fdre.research.oos_selection import OOSHypothesisDecision, OOSSelectionSuiteReport
+from fdre.research.oos.selection import OOSHypothesisDecision, OOSSelectionSuiteReport
 from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 PromotionStatus = Literal["promote", "reject", "insufficient"]
