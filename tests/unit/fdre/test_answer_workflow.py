@@ -12,8 +12,8 @@ from apps.api.app.models import Chunk, Company, Document, DocumentElement, Finan
 from fdre.citations.verifier import AnswerClaim, CitationVerifier
 from fdre.graph.nodes import (
     UNSUPPORTED_FORECAST_PATTERN,
+    ExtractiveAnswerGenerator,
     GeneratedAnswer,
-    MockAnswerGenerator,
     WorkflowContext,
 )
 from fdre.graph.workflow import run_answer_workflow
@@ -131,7 +131,7 @@ def _seed(session: Session, *, include_table: bool = False, include_fact: bool =
 def _context(
     session: Session,
     *,
-    generator: MockAnswerGenerator | UnsupportedAnswerGenerator | None = None,
+    generator: ExtractiveAnswerGenerator | UnsupportedAnswerGenerator | None = None,
     minimum_evidence: int = 1,
 ) -> WorkflowContext:
     return WorkflowContext(
@@ -143,7 +143,7 @@ def _context(
             MIN_EVIDENCE_CHUNKS=minimum_evidence,
             MIN_RETRIEVAL_SCORE=0,
         ),
-        generator=generator or MockAnswerGenerator(),
+        generator=generator or ExtractiveAnswerGenerator(),
         verifier=CitationVerifier(),
     )
 
@@ -329,7 +329,7 @@ def test_answer_workflow_rejects_non_retrieved_citation() -> None:
 
 
 def test_extractive_answer_preserves_decimal_financial_values() -> None:
-    answer = MockAnswerGenerator().generate(
+    answer = ExtractiveAnswerGenerator().generate(
         "What did META report for earnings last quarter?",
         [
             RetrievalCandidate(

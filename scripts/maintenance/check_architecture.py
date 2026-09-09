@@ -15,6 +15,7 @@ LEGACY_OOS_MODULE = re.compile(
     r"(?<![A-Za-z0-9_])fdre\.research\.oos_"
     r"(?:diagnostics|selection|implementation|promotion)(?=[^A-Za-z0-9_]|$)"
 )
+LEGACY_MOCK_ANSWER_GENERATOR = re.compile(r"\bMockAnswerGenerator\b")
 ALLOWED_SCRIPT_ROOT_FILES = {"__init__.py"}
 ALLOWED_DOC_ROOT_MARKDOWN = {"README.md", "roadmap.md"}
 
@@ -62,6 +63,12 @@ def architecture_violations() -> tuple[str, ...]:
             if LEGACY_OOS_MODULE.search(line):
                 message = (
                     f"legacy OOS flat-module reference: {relative}:{line_number}: {line.strip()}"
+                )
+                violations.append(message)
+            if LEGACY_MOCK_ANSWER_GENERATOR.search(line):
+                message = (
+                    f"legacy mock answer-generator reference: {relative}:{line_number}: "
+                    f"{line.strip()}"
                 )
                 violations.append(message)
 
