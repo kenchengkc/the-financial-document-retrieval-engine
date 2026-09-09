@@ -71,6 +71,10 @@ def test_experiment_provenance_fails_closed_for_missing_or_tampered_manifest() -
     assert replay.status_code == 409
     assert replay.json()["detail"] == "research experiment manifest digest mismatch"
 
+    bundle = client.get(f"/research/experiments/{experiment_id}/bundle")
+    assert bundle.status_code == 409
+    assert bundle.json()["detail"] == "research experiment manifest digest mismatch"
+
     invalid = client.get("/research/experiments/not-a-sha")
     assert invalid.status_code == 422
 
