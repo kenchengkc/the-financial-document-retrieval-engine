@@ -199,6 +199,21 @@ uv run python -m scripts.pipelines.retrieval_pipeline panel --tickers AAPL MSFT 
 uv run python -m scripts.pipelines.retrieval_pipeline audit
 ```
 
+For normal point-in-time universe inspection, use the canonical researcher-facing commands rather
+than the historical adjudication and repair scripts:
+
+```bash
+uv run python -m scripts.research.universe snapshot sp500 \
+  --as-of 2026-06-01 --output universe-2026-06-01.json
+uv run python -m scripts.research.universe diff sp500 \
+  --from 2025-06-01 --to 2026-06-01 --output universe-diff.json
+```
+
+Snapshots fail closed on unresolved provisional or overlapping identity evidence unless
+`--include-provisional` is explicitly supplied. Diffs key on stable `security_id`, so a ticker rename
+is reported as an identity/provenance change rather than a removal plus addition. Snapshot export
+also supports Parquet with `--format parquet --output <path>`.
+
 A registered experiment chain can be exported from a database and verified later without database
 or live-data access:
 
