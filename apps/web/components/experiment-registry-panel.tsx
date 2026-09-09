@@ -3,6 +3,7 @@
 import {
   CheckCircle2,
   CircleAlert,
+  Download,
   Fingerprint,
   LoaderCircle,
   SearchCode,
@@ -70,6 +71,11 @@ type VerificationState =
   | { state: "verified"; artifactCount: number }
   | { state: "failed"; reason: string };
 
+type BundleState =
+  | { state: "idle" }
+  | { state: "downloading" }
+  | { state: "failed"; reason: string };
+
 function shortHash(value: string | null, width = 10) {
   if (!value) return "n/a";
   return value.length <= width ? value : `${value.slice(0, width)}…`;
@@ -104,11 +110,26 @@ async function readJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+function saveBundle(experimentId: string, payload: Record<string, unknown>) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+    type: "application/json;charset=utf-8",
+  });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = `fdre-experiment-${experimentId.slice(0, 12)}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 0);
+}
+
 export function ExperimentRegistryPanel() {
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [manifest, setManifest] = useState<ExperimentManifest | null>(null);
   const [verification, setVerification] = useState<Record<string, VerificationState>>({});
+  const [bundles, setBundles] = useState<Record<string, BundleState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -189,6 +210,25 @@ export function ExperimentRegistryPanel() {
     }
   }
 
+  async function downloadBundle(experimentId: string) {
+    setBundles((current) => ({ ...current, [experimentId]: { state: "downloading" } }));
+    try {
+      const payload = await readJson<Record<string, unknown>>(
+        `/research/experiments/${encodeURIComponent(experimentId)}/bundle`,
+      );
+      saveBundle(experimentId, payload);
+      setBundles((current) => ({ ...current, [experimentId]: { state: "idle" } }));
+    } catch (caught) {
+      setBundles((current) => ({
+        ...current,
+        [experimentId]: {
+          state: "failed",
+          reason: caught instanceof Error ? caught.message : "Bundle export failed.",
+        },
+      }));
+    }
+  }
+
   if (loading) {
     return (
       <div className="loading-state" role="status">
@@ -259,11 +299,13 @@ export function ExperimentRegistryPanel() {
               <th className="num">Artifacts</th>
               <th>Decision</th>
               <th>Integrity</th>
+              <th>Bundle</th>
             </tr>
           </thead>
           <tbody>
             {experiments.map((item) => {
               const state = verification[item.experiment_id] ?? { state: "idle" as const };
+              const bundle = bundles[item.experiment_id] ?? { state: "idle" as const };
               return (
                 <tr key={item.experiment_id}>
                   <td>
@@ -318,6 +360,27 @@ export function ExperimentRegistryPanel() {
                       </button>
                     )}
                   </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="row-action"
+                      title={
+                        bundle.state === "failed"
+                          ? bundle.reason
+                          : "Download verified portable bundle"
+                      }
+                      disabled={bundle.state === "downloading"}
+                      onClick={() => void downloadBundle(item.experiment_id)}
+                    >
+                      {bundle.state === "downloading" ? (
+                        <LoaderCircle className="spin" size={15} />
+                      ) : bundle.state === "failed" ? (
+                        <CircleAlert size={15} />
+                      ) : (
+                        <Download size={15} />
+                      )}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -364,7 +427,8 @@ export function ExperimentRegistryPanel() {
 
       <p className="monitor-rule">
         <ShieldCheck size={13} /> Verification recomputes the root identity and child payload hashes,
-        then replays the persisted OOS promotion chain. It does not refetch live data.
+        then replays the persisted OOS promotion chain. Portable bundle export uses the same
+        fail-closed verification before any file is returned; neither path refetches live data.
       </p>
     </div>
   );
