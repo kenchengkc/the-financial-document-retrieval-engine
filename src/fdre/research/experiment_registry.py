@@ -12,10 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_diagnostics import OOSDiagnosticsReport
-from fdre.research.oos_implementation import OOSImplementationReport
-from fdre.research.oos_promotion import OOSPromotionReport
-from fdre.research.oos_selection import OOSSelectionSuiteReport
+from fdre.research.oos.diagnostics import OOSDiagnosticsReport
+from fdre.research.oos.implementation import OOSImplementationReport
+from fdre.research.oos.promotion import OOSPromotionReport
+from fdre.research.oos.selection import OOSSelectionSuiteReport
 from fdre.research.walk_forward import WalkForwardStudyReport
 
 ArtifactKind = Literal[
