@@ -13,7 +13,7 @@ A bundle contains:
 - each child artifact's expected experiment type and SHA-256 digest;
 - a SHA-256 identity for the bundle itself.
 
-The bundle intentionally contains no generation timestamp, so exporting the same registered root twice produces the same bytes after canonical JSON serialization and the same `bundle_sha256`.
+The bundle intentionally contains no generation timestamp, so exporting the same registered root twice produces the same bytes under the documented canonical JSON serialization and the same `bundle_sha256`.
 
 ## Export
 
