@@ -73,7 +73,8 @@ def _seed(engine: Engine) -> None:
             Security(id=2, company_id=2, security_type="common_stock"),
             Security(id=3, company_id=3, security_type="common_stock"),
         ]
-        session.add_all(companies + securities)
+        session.add_all(companies)
+        session.add_all(securities)
         session.add_all(
             [
                 _identity(1, securities[0], "ABC", date(2020, 1, 1), date(2020, 6, 1), "a"),
