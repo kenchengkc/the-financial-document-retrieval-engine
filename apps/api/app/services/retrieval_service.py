@@ -8,14 +8,11 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
 from apps.api.app.models import RetrievalResult, RetrievalRun
+from apps.api.app.services.company_reference_cache import company_references_for_request
 from fdre.indexing.embeddings import embedding_provider_from_settings
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
-from fdre.retrieval.preprocess import (
-    apply_latest_filing_filter,
-    load_company_references,
-    preprocess_query,
-)
+from fdre.retrieval.preprocess import apply_latest_filing_filter, preprocess_query
 from fdre.retrieval.query import PreprocessedQuery, RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
@@ -47,7 +44,7 @@ def search_documents(
         query,
         preprocess_query(
             query,
-            companies=load_company_references(session),
+            companies=company_references_for_request(session, settings),
             filters=filters,
         ),
     )

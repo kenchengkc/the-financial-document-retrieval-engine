@@ -15,6 +15,7 @@ from apps.api.app.routes.operations import router as operations_router
 from apps.api.app.routes.research import router as research_router
 from apps.api.app.routes.search import router as search_router
 from apps.api.app.routes.universe import router as universe_router
+from apps.api.app.services.request_limits import ExpensiveRequestLimitMiddleware
 
 
 @asynccontextmanager
@@ -33,6 +34,15 @@ def create_app() -> FastAPI:
         description="Financial Document Retrieval Engine API",
         version="0.1.0",
         lifespan=lifespan,
+    )
+    # Add the request guard before CORS so overload responses still receive CORS headers.
+    app.add_middleware(
+        ExpensiveRequestLimitMiddleware,
+        requests_per_window=settings.api_expensive_requests_per_window,
+        window_seconds=settings.api_expensive_window_seconds,
+        max_callers=settings.api_expensive_max_callers,
+        max_in_flight=settings.api_expensive_max_in_flight,
+        overload_retry_after_seconds=settings.api_overload_retry_after_seconds,
     )
     app.add_middleware(
         CORSMiddleware,
