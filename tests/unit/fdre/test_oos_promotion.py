@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+from fdre.research.experiments.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 from fdre.research.oos.diagnostics import OOSDiagnosticsReport, OOSWindowDiagnostic
 from fdre.research.oos.implementation import (
     OOSCostScenarioResult,
@@ -11,7 +12,6 @@ from fdre.research.oos.implementation import (
 )
 from fdre.research.oos.promotion import OOSPromotionConfig, evaluate_oos_promotion
 from fdre.research.oos.selection import OOSHypothesisDecision, OOSSelectionSuiteReport
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 
 def _observation(

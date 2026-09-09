@@ -25,11 +25,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.experiments.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 from fdre.research.oos.selection import (
     OOSHypothesisDecision,
     OOSSelectionSuiteReport,
 )
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
 
 RebalanceFrequency = Literal["monthly", "quarterly"]
 ImplementationStatus = Literal[
