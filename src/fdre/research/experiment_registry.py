@@ -1,4 +1,4 @@
-"""Typed experiment registry and fail-closed replay for the sealed OOS stack."""
+"""Typed experiment registry, fail-closed replay, and portable research bundles."""
 
 from __future__ import annotations
 
@@ -26,12 +26,20 @@ ArtifactKind = Literal[
     "oos_promotion",
 ]
 _REGISTRY_VERSION = "research-experiment-registry-v1"
+_BUNDLE_VERSION = "research-experiment-bundle-v1"
 _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
     "walk_forward": "walk_forward_signal_study",
     "oos_diagnostics": "oos_signal_diagnostics",
     "oos_selection": "oos_signal_selection_suite",
     "oos_implementation": "oos_signal_implementation",
     "oos_promotion": "oos_signal_promotion",
+}
+_EXPECTED_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
+    "walk_forward": WalkForwardStudyReport,
+    "oos_diagnostics": OOSDiagnosticsReport,
+    "oos_selection": OOSSelectionSuiteReport,
+    "oos_implementation": OOSImplementationReport,
+    "oos_promotion": OOSPromotionReport,
 }
 
 
@@ -77,6 +85,24 @@ class ResearchReplayResult(BaseModel):
     verified: bool
     artifact_count: int
     final_decisions: list[dict[str, object]]
+
+
+class ResearchBundleArtifact(BaseModel):
+    kind: ArtifactKind
+    experiment_key: str
+    experiment_type: str
+    payload_sha256: str
+    payload: dict[str, Any]
+
+
+class ResearchExperimentBundle(BaseModel):
+    """Deterministic offline-verifiable package of one registered research root."""
+
+    bundle_version: str = _BUNDLE_VERSION
+    experiment_id: str
+    manifest: ResearchExperimentManifest
+    artifacts: list[ResearchBundleArtifact]
+    bundle_sha256: str
 
 
 def build_research_experiment_manifest(
@@ -235,6 +261,95 @@ def replay_research_experiment(
     )
 
 
+def build_research_experiment_bundle(
+    session: Session,
+    experiment_id: str,
+) -> ResearchExperimentBundle:
+    """Materialize a deterministic bundle after verifying the persisted registry chain."""
+
+    manifest = verify_research_experiment(session, experiment_id)
+    artifacts: list[ResearchBundleArtifact] = []
+    for reference in manifest.artifacts:
+        row = _get_experiment(session, reference.experiment_key)
+        artifacts.append(
+            ResearchBundleArtifact(
+                kind=reference.kind,
+                experiment_key=reference.experiment_key,
+                experiment_type=row.experiment_type,
+                payload_sha256=reference.payload_sha256,
+                payload=dict(row.results_json),
+            )
+        )
+    payload: dict[str, Any] = {
+        "bundle_version": _BUNDLE_VERSION,
+        "experiment_id": manifest.experiment_id,
+        "manifest": manifest.model_dump(mode="json"),
+        "artifacts": [item.model_dump(mode="json") for item in artifacts],
+    }
+    return ResearchExperimentBundle(
+        **payload,
+        bundle_sha256=_stable_digest(payload),
+    )
+
+
+def verify_research_experiment_bundle(
+    bundle: ResearchExperimentBundle,
+    *,
+    expected_experiment_id: str | None = None,
+) -> ResearchReplayResult:
+    """Verify a portable bundle without a database or live data dependency."""
+
+    if expected_experiment_id is not None and bundle.experiment_id != expected_experiment_id:
+        raise ValueError("research experiment bundle root does not match expected experiment id")
+    if bundle.bundle_sha256 != _bundle_identity(bundle):
+        raise ValueError("research experiment bundle digest mismatch")
+    if bundle.experiment_id != bundle.manifest.experiment_id:
+        raise ValueError("research experiment bundle manifest id mismatch")
+    if _manifest_identity(bundle.manifest) != bundle.experiment_id:
+        raise ValueError("research experiment bundle manifest digest mismatch")
+    if len(bundle.artifacts) != len(bundle.manifest.artifacts):
+        raise ValueError("research experiment bundle artifact count mismatch")
+
+    for reference, artifact in zip(bundle.manifest.artifacts, bundle.artifacts, strict=True):
+        if (
+            artifact.kind != reference.kind
+            or artifact.experiment_key != reference.experiment_key
+            or artifact.payload_sha256 != reference.payload_sha256
+        ):
+            raise ValueError(
+                f"research experiment bundle artifact reference mismatch for {reference.kind}"
+            )
+        expected_type = _EXPECTED_EXPERIMENT_TYPES[reference.kind]
+        if artifact.experiment_type != expected_type:
+            raise ValueError(
+                f"research experiment bundle artifact type mismatch for {reference.kind}"
+            )
+        if _json_digest(artifact.payload) != reference.payload_sha256:
+            raise ValueError(
+                f"research experiment bundle artifact digest mismatch for {reference.kind}"
+            )
+        _EXPECTED_ARTIFACT_MODELS[reference.kind].model_validate(artifact.payload)
+
+    promotion = next(
+        (item for item in bundle.artifacts if item.kind == "oos_promotion"),
+        None,
+    )
+    if promotion is None:
+        raise ValueError("research experiment bundle has no OOS promotion artifact")
+    promotion_report = OOSPromotionReport.model_validate(promotion.payload)
+    replayed_decisions = [
+        item.model_dump(mode="json") for item in promotion_report.decisions
+    ]
+    if replayed_decisions != bundle.manifest.final_decisions:
+        raise ValueError("bundle replayed final decisions differ from registered manifest")
+    return ResearchReplayResult(
+        experiment_id=bundle.experiment_id,
+        verified=True,
+        artifact_count=len(bundle.artifacts),
+        final_decisions=replayed_decisions,
+    )
+
+
 def write_research_experiment_manifest(
     path: str | Path,
     manifest: ResearchExperimentManifest,
@@ -245,6 +360,22 @@ def write_research_experiment_manifest(
         json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
     )
     return destination
+
+
+def write_research_experiment_bundle(
+    path: str | Path,
+    bundle: ResearchExperimentBundle,
+) -> Path:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(bundle.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    )
+    return destination
+
+
+def read_research_experiment_bundle(path: str | Path) -> ResearchExperimentBundle:
+    return ResearchExperimentBundle.model_validate_json(Path(path).read_text())
 
 
 def _validate_chain(
@@ -301,6 +432,11 @@ def _filing_lineage(source: WalkForwardStudyReport) -> list[FilingLineageRef]:
 
 def _manifest_identity(manifest: ResearchExperimentManifest) -> str:
     payload = manifest.model_dump(mode="json", exclude={"experiment_id"})
+    return _stable_digest(payload)
+
+
+def _bundle_identity(bundle: ResearchExperimentBundle) -> str:
+    payload = bundle.model_dump(mode="json", exclude={"bundle_sha256"})
     return _stable_digest(payload)
 
 

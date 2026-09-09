@@ -14,8 +14,10 @@ from apps.api.app.schemas.research_experiments import (
     ResearchExperimentSummary,
 )
 from fdre.research.experiment_registry import (
+    ResearchExperimentBundle,
     ResearchExperimentManifest,
     ResearchReplayResult,
+    build_research_experiment_bundle,
     inspect_research_experiment,
     replay_research_experiment,
 )
@@ -89,6 +91,19 @@ def verify_research_experiment_endpoint(
 ) -> ResearchReplayResult:
     try:
         return replay_research_experiment(session, experiment_id)
+    except ValueError as error:
+        raise _registry_http_error(error) from error
+
+
+@router.get("/{experiment_id}/bundle", response_model=ResearchExperimentBundle)
+def research_experiment_bundle(
+    experiment_id: ExperimentId,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> ResearchExperimentBundle:
+    """Export the verified immutable root and child artifacts for offline verification."""
+
+    try:
+        return build_research_experiment_bundle(session, experiment_id)
     except ValueError as error:
         raise _registry_http_error(error) from error
 

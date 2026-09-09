@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -8,13 +11,19 @@ from sqlalchemy import Table, create_engine
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.event_study import EventStudyConfig
 from fdre.research.experiment_registry import (
+    ResearchExperimentBundle,
+    build_research_experiment_bundle,
     build_research_experiment_manifest,
     persist_research_experiment_manifest,
+    read_research_experiment_bundle,
     replay_research_experiment,
     verify_research_experiment,
+    verify_research_experiment_bundle,
+    write_research_experiment_bundle,
 )
-from fdre.research.oos_diagnostics import OOSDiagnosticsReport
+from fdre.research.oos_diagnostics import OOSDiagnosticsConfig, OOSDiagnosticsReport
 from fdre.research.oos_implementation import OOSImplementationConfig, OOSImplementationReport
 from fdre.research.oos_promotion import (
     OOSPromotionConfig,
@@ -26,7 +35,11 @@ from fdre.research.oos_selection import (
     OOSSelectionConfig,
     OOSSelectionSuiteReport,
 )
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
+from fdre.research.walk_forward import (
+    WalkForwardConfig,
+    WalkForwardOOSObservation,
+    WalkForwardStudyReport,
+)
 
 
 def _artifacts() -> tuple[
@@ -63,6 +76,12 @@ def _artifacts() -> tuple[
         code_sha="deadbeef",
         definition={"formula": "current churn minus prior churn"},
         feature_lineage_digest="lineage-sha",
+        event_study_config=EventStudyConfig(),
+        walk_forward_config=WalkForwardConfig(),
+        fold_count=0,
+        eligible_fold_count=0,
+        oos_event_count=1,
+        oos_observation_count=1,
         folds=[],
         oos_observations=[observation],
     )
@@ -72,20 +91,49 @@ def _artifacts() -> tuple[
         signal_name=source.signal_name,
         outcome_name=source.outcome_name,
         sealed_oos=True,
+        status="ready",
+        dataset_version=source.dataset_version,
+        feature_version=source.feature_version,
+        market_data_version=source.market_data_version,
+        universe_snapshot_id=source.universe_snapshot_id,
+        feature_snapshot_id=source.feature_snapshot_id,
+        code_sha=source.code_sha,
+        source_eligible_fold_count=source.eligible_fold_count,
+        source_oos_event_count=source.oos_event_count,
+        source_oos_observation_count=source.oos_observation_count,
+        config=OOSDiagnosticsConfig(),
         windows=[],
         folds=[],
     )
     selection = OOSSelectionSuiteReport.model_construct(
         selection_key="selection-1",
+        declared_hypothesis_count=1,
+        tested_hypothesis_count=1,
+        passing_count=1,
+        rejected_count=0,
+        insufficient_count=0,
+        input_diagnostics_keys=[diagnostics.diagnostics_key],
+        source_code_digest="fixture-code-digest",
         config=OOSSelectionConfig(),
         decisions=[
             OOSHypothesisDecision.model_construct(
                 hypothesis_id="hypothesis-1",
+                source_diagnostics_key=diagnostics.diagnostics_key,
                 source_experiment_key="walk-1",
                 signal_name=source.signal_name,
                 outcome_name=source.outcome_name,
                 window="1:21",
                 status="passes_statistical_gate",
+                ic_fold_count=4,
+                ic_mean=0.05,
+                icir=1.0,
+                positive_ic_share=1.0,
+                quantile_monotonicity_mean=0.8,
+                long_short_mean=0.01,
+                positive_long_short_share=1.0,
+                raw_p_value=0.01,
+                adjusted_q_value=0.01,
+                inference_method="test_fixture",
             )
         ],
     )
@@ -305,3 +353,89 @@ def test_registry_manifest_is_immutable_after_registration() -> None:
 
         with pytest.raises(ValueError, match="payload mismatch"):
             persist_research_experiment_manifest(session, manifest)
+
+
+def test_portable_bundle_is_deterministic_and_verifies_offline(tmp_path: Path) -> None:
+    source, diagnostics, selection, implementation, promotion = _artifacts()
+    manifest = build_research_experiment_manifest(
+        source, diagnostics, selection, implementation, promotion
+    )
+    with _session() as session:
+        _persist_all_children(
+            session, source, diagnostics, selection, implementation, promotion
+        )
+        persist_research_experiment_manifest(session, manifest)
+        first = build_research_experiment_bundle(session, manifest.experiment_id)
+        second = build_research_experiment_bundle(session, manifest.experiment_id)
+
+    assert first == second
+    assert first.bundle_sha256 == second.bundle_sha256
+    assert [item.kind for item in first.artifacts] == [
+        "walk_forward",
+        "oos_diagnostics",
+        "oos_selection",
+        "oos_implementation",
+        "oos_promotion",
+    ]
+
+    destination = write_research_experiment_bundle(tmp_path / "bundle.json", first)
+    loaded = read_research_experiment_bundle(destination)
+    replay = verify_research_experiment_bundle(
+        loaded,
+        expected_experiment_id=manifest.experiment_id,
+    )
+
+    assert replay.verified is True
+    assert replay.artifact_count == 5
+    assert replay.final_decisions[0]["status"] == "promote"
+
+
+def test_portable_bundle_rejects_substituted_root() -> None:
+    source, diagnostics, selection, implementation, promotion = _artifacts()
+    manifest = build_research_experiment_manifest(
+        source, diagnostics, selection, implementation, promotion
+    )
+    with _session() as session:
+        _persist_all_children(
+            session, source, diagnostics, selection, implementation, promotion
+        )
+        persist_research_experiment_manifest(session, manifest)
+        bundle = build_research_experiment_bundle(session, manifest.experiment_id)
+
+    with pytest.raises(ValueError, match="does not match expected experiment id"):
+        verify_research_experiment_bundle(
+            bundle,
+            expected_experiment_id="0" * 64,
+        )
+
+
+def test_portable_bundle_detects_inner_artifact_tampering_after_outer_rehash() -> None:
+    source, diagnostics, selection, implementation, promotion = _artifacts()
+    manifest = build_research_experiment_manifest(
+        source, diagnostics, selection, implementation, promotion
+    )
+    with _session() as session:
+        _persist_all_children(
+            session, source, diagnostics, selection, implementation, promotion
+        )
+        persist_research_experiment_manifest(session, manifest)
+        bundle = build_research_experiment_bundle(session, manifest.experiment_id)
+
+    payload = bundle.model_dump(mode="json")
+    artifacts = cast(list[dict[str, object]], payload["artifacts"])
+    promotion_artifact = artifacts[-1]
+    promotion_payload = cast(dict[str, object], promotion_artifact["payload"])
+    promotion_payload["slice_snapshot_id"] = "tampered"
+    payload["bundle_sha256"] = _digest(
+        {key: value for key, value in payload.items() if key != "bundle_sha256"}
+    )
+    tampered = ResearchExperimentBundle.model_validate(payload)
+
+    with pytest.raises(ValueError, match="artifact digest mismatch for oos_promotion"):
+        verify_research_experiment_bundle(tampered)
+
+
+def _digest(payload: object) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
