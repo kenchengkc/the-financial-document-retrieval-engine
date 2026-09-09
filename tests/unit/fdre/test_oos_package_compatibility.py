@@ -17,7 +17,10 @@ def test_legacy_oos_imports_resolve_to_package_implementations() -> None:
     )
 
     assert legacy_implementation.OOSImplementationConfig is implementation.OOSImplementationConfig
-    assert legacy_implementation.evaluate_oos_implementation is implementation.evaluate_oos_implementation
+    assert (
+        legacy_implementation.evaluate_oos_implementation
+        is implementation.evaluate_oos_implementation
+    )
 
     assert legacy_promotion.OOSPromotionConfig is promotion.OOSPromotionConfig
     assert legacy_promotion.evaluate_oos_promotion is promotion.evaluate_oos_promotion
