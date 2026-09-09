@@ -16,6 +16,7 @@ import { fetchCompanies, fetchCoverage, fetchOperationsQuality } from "@/lib/api
 import type { Company, CoverageResponse, OperationsQuality } from "@/lib/types";
 
 import { formatLatency, median, type SessionRun } from "./instruments";
+import { UniverseAudit } from "./universe-audit";
 
 type FoundationData = {
   companies: Company[];
@@ -455,6 +456,8 @@ export function DataFoundation({
               </span>
             </div>
           </section>
+
+          <UniverseAudit />
         </div>
       )}
     </section>
