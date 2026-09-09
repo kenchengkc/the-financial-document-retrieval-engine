@@ -20,7 +20,7 @@ from fdre.research.composite_study import (
     standardize_by_period,
 )
 from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent
-from fdre.research.experiment_registry import (
+from fdre.research.experiments.registry import (
     build_research_experiment_manifest,
     persist_research_experiment_manifest,
     verify_research_experiment,

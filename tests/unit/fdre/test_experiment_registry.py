@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
 from fdre.research.event_study import EventStudyConfig
-from fdre.research.experiment_registry import (
+from fdre.research.experiments.registry import (
     ResearchExperimentBundle,
     build_research_experiment_bundle,
     build_research_experiment_manifest,
