@@ -117,7 +117,7 @@ def _constituent(
         security_id=security_id,
         cik=f"{security_id:010d}",
         symbol=symbol,
-        name=f"Company {symbol}",
+        name=f"Company {security_id}",
         exchange="NYSE",
         membership_effective_from=date(2019, 1, 1),
         identity_effective_from=identity_effective_from,
