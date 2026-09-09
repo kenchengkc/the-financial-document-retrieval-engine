@@ -106,8 +106,7 @@ function experimentManifest() {
   };
 }
 
-test("inspects and verifies an immutable experiment root", async ({ page }) => {
-  await mockFoundation(page);
+async function mockStudies(page: Page) {
   await page.route("**/research/signal-studies", (route) =>
     route.fulfill({
       status: 200,
@@ -122,6 +121,18 @@ test("inspects and verifies an immutable experiment root", async ({ page }) => {
       body: JSON.stringify(signalStudy()),
     }),
   );
+}
+
+async function openRegistry(page: Page) {
+  await page.goto("/");
+  await page.getByRole("tab", { name: /Signals/ }).click();
+  await page.getByRole("tab", { name: "Registry", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Experiment registry" })).toBeVisible();
+}
+
+test("inspects, verifies, and exports an immutable experiment root", async ({ page }) => {
+  await mockFoundation(page);
+  await mockStudies(page);
   await page.route("**/research/experiments**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith(`/${EXPERIMENT_ID}/verify`)) {
@@ -133,6 +144,19 @@ test("inspects and verifies an immutable experiment root", async ({ page }) => {
           verified: true,
           artifact_count: 2,
           final_decisions: [{ status: "REJECT" }],
+        }),
+      });
+    }
+    if (url.pathname.endsWith(`/${EXPERIMENT_ID}/bundle`)) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          bundle_version: "research-experiment-bundle-v1",
+          experiment_id: EXPERIMENT_ID,
+          manifest: experimentManifest(),
+          artifacts: [],
+          bundle_sha256: "b".repeat(64),
         }),
       });
     }
@@ -150,19 +174,57 @@ test("inspects and verifies an immutable experiment root", async ({ page }) => {
     });
   });
 
-  await page.goto("/");
-  await page.getByRole("tab", { name: /Signals/ }).click();
-  await page.getByRole("tab", { name: "Registry", exact: true }).click();
+  await openRegistry(page);
 
-  await expect(page.getByRole("heading", { name: "Experiment registry" })).toBeVisible();
   await expect(page.locator(".monitor-table")).toContainText("risk churn acceleration");
   await expect(page.locator(".monitor-table")).toContainText("REJECT");
   await expect(page.locator(".audit-manifest")).toContainText("research-experiment-registry-v1");
   await expect(page.locator(".audit-gates")).toContainText("walk forward");
   await expect(page.locator(".audit-gates")).toContainText("oos promotion");
 
-  await page
-    .getByTitle("Recompute hashes and replay terminal decisions")
-    .click();
+  await page.getByTitle("Recompute hashes and replay terminal decisions").click();
   await expect(page.locator(".research-state.pass")).toContainText("Verified");
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTitle("Download verified portable bundle").click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("fdre-experiment-aaaaaaaaaaaa.json");
+});
+
+test("does not download a portable bundle when server verification fails", async ({ page }) => {
+  await mockFoundation(page);
+  await mockStudies(page);
+  let downloads = 0;
+  page.on("download", () => {
+    downloads += 1;
+  });
+  await page.route("**/research/experiments**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith(`/${EXPERIMENT_ID}/bundle`)) {
+      return route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "research experiment manifest digest mismatch" }),
+      });
+    }
+    if (url.pathname.endsWith(`/${EXPERIMENT_ID}`)) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(experimentManifest()),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ experiments: [experimentSummary()] }),
+    });
+  });
+
+  await openRegistry(page);
+  await page.getByTitle("Download verified portable bundle").click();
+
+  await expect(page.getByTitle("research experiment manifest digest mismatch")).toBeVisible();
+  expect(downloads).toBe(0);
 });
