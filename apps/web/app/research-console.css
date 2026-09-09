@@ -2554,3 +2554,7 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+.citations li > .filing-source-link {
+  margin-left: 10px;
+}
