@@ -22,7 +22,8 @@ from fdre.research.experiment_registry import (
     verify_research_experiment_bundle,
     write_research_experiment_bundle,
 )
-from fdre.research.oos_diagnostics import OOSDiagnosticsReport
+from fdre.research.event_study import EventStudyConfig
+from fdre.research.oos_diagnostics import OOSDiagnosticsConfig, OOSDiagnosticsReport
 from fdre.research.oos_implementation import OOSImplementationConfig, OOSImplementationReport
 from fdre.research.oos_promotion import (
     OOSPromotionConfig,
@@ -34,7 +35,11 @@ from fdre.research.oos_selection import (
     OOSSelectionConfig,
     OOSSelectionSuiteReport,
 )
-from fdre.research.walk_forward import WalkForwardOOSObservation, WalkForwardStudyReport
+from fdre.research.walk_forward import (
+    WalkForwardConfig,
+    WalkForwardOOSObservation,
+    WalkForwardStudyReport,
+)
 
 
 def _artifacts() -> tuple[
@@ -71,6 +76,12 @@ def _artifacts() -> tuple[
         code_sha="deadbeef",
         definition={"formula": "current churn minus prior churn"},
         feature_lineage_digest="lineage-sha",
+        event_study_config=EventStudyConfig(),
+        walk_forward_config=WalkForwardConfig(),
+        fold_count=0,
+        eligible_fold_count=0,
+        oos_event_count=1,
+        oos_observation_count=1,
         folds=[],
         oos_observations=[observation],
     )
@@ -80,20 +91,49 @@ def _artifacts() -> tuple[
         signal_name=source.signal_name,
         outcome_name=source.outcome_name,
         sealed_oos=True,
+        status="ready",
+        dataset_version=source.dataset_version,
+        feature_version=source.feature_version,
+        market_data_version=source.market_data_version,
+        universe_snapshot_id=source.universe_snapshot_id,
+        feature_snapshot_id=source.feature_snapshot_id,
+        code_sha=source.code_sha,
+        source_eligible_fold_count=source.eligible_fold_count,
+        source_oos_event_count=source.oos_event_count,
+        source_oos_observation_count=source.oos_observation_count,
+        config=OOSDiagnosticsConfig(),
         windows=[],
         folds=[],
     )
     selection = OOSSelectionSuiteReport.model_construct(
         selection_key="selection-1",
+        declared_hypothesis_count=1,
+        tested_hypothesis_count=1,
+        passing_count=1,
+        rejected_count=0,
+        insufficient_count=0,
+        input_diagnostics_keys=[diagnostics.diagnostics_key],
+        source_code_digest="fixture-code-digest",
         config=OOSSelectionConfig(),
         decisions=[
             OOSHypothesisDecision.model_construct(
                 hypothesis_id="hypothesis-1",
+                source_diagnostics_key=diagnostics.diagnostics_key,
                 source_experiment_key="walk-1",
                 signal_name=source.signal_name,
                 outcome_name=source.outcome_name,
                 window="1:21",
                 status="passes_statistical_gate",
+                ic_fold_count=4,
+                ic_mean=0.05,
+                icir=1.0,
+                positive_ic_share=1.0,
+                quantile_monotonicity_mean=0.8,
+                long_short_mean=0.01,
+                positive_long_short_share=1.0,
+                raw_p_value=0.01,
+                adjusted_q_value=0.01,
+                inference_method="test_fixture",
             )
         ],
     )
