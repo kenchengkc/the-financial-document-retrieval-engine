@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import requests
 
-from fdre.research.event_study import MarketBar
+from fdre.research.experiments.event_study import MarketBar
 from fdre.research.market_data import (
     MarketDataRateLimitError,
     _covering_tiingo_path,

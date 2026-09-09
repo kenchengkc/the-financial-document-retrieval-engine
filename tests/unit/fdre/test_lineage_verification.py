@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from fdre.research.event_study import EventStudyConfig
+from fdre.research.experiments.event_study import EventStudyConfig
 from fdre.research.panel import (
     FEATURE_VERSION,
     FeatureLineage,

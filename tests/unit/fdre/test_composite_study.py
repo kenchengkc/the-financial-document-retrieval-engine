@@ -8,7 +8,7 @@ from fdre.research.composite_study import (
     run_composite_study,
     standardize_by_period,
 )
-from fdre.research.event_study import EventStudyConfig, EventWindow, MarketBar
+from fdre.research.experiments.event_study import EventStudyConfig, EventWindow, MarketBar
 from fdre.research.sectors import sic_to_sector
 
 DATES = [date(2024, 1, day) for day in range(2, 9)]

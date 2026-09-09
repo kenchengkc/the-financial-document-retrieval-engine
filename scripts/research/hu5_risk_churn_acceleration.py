@@ -19,7 +19,7 @@ from fdre.research.composite_study import (
     period_label,
     standardize_by_period,
 )
-from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent
+from fdre.research.experiments.event_study import EventStudyConfig, EventWindow, FilingEvent
 from fdre.research.experiments.registry import (
     build_research_experiment_manifest,
     persist_research_experiment_manifest,

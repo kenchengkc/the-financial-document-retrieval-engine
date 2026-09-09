@@ -5,7 +5,12 @@ from datetime import UTC, date, datetime
 import pytest
 
 from fdre.research import hu5_multiclass as multiclass
-from fdre.research.event_study import EventStudyConfig, EventWindow, FilingEvent, MarketBar
+from fdre.research.experiments.event_study import (
+    EventStudyConfig,
+    EventWindow,
+    FilingEvent,
+    MarketBar,
+)
 from fdre.research.historical_universe import (
     SecurityIdentityRecord,
     UniverseMembershipRecord,
