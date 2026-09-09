@@ -54,15 +54,26 @@ The operating budget policy is defined in [`docs/operations/cost_budget.md`](doc
 
 Do not commit secrets, `.env` files, SEC filing corpora, HTTP caches, embeddings, market-data caches, generated panels, database dumps, or other production datasets. Canonical benchmark manifests and explicitly frozen evaluation artifacts are exceptions when their presence is required for reproducibility.
 
-## Verification
+## Python environment
 
-Run the relevant checks before merging:
+Python dependencies are resolved in `uv.lock`. Use the frozen environment for development and CI rather than resolving directly from lower bounds in `pyproject.toml`:
 
 ```bash
-pytest
-ruff check .
-mypy .
-alembic check
+python -m pip install uv==0.12.10
+uv sync --frozen --extra dev --extra data
+```
+
+When dependency declarations intentionally change, regenerate `uv.lock` with the pinned resolver and review the lockfile diff in the same pull request.
+
+## Verification
+
+After syncing the environment, run the relevant checks:
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run mypy .
+uv run alembic check
 docker compose config
 ```
 
