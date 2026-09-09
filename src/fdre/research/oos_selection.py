@@ -17,6 +17,7 @@ __all__ = [
     "OOSSelectionConfig",
     "OOSSelectionStatus",
     "OOSSelectionSuiteReport",
+    "_one_sided_sign_flip_p_value",
     "evaluate_oos_selection_suite",
     "persist_oos_selection_suite",
     "write_oos_selection_report",
