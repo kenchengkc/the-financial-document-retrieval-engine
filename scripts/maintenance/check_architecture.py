@@ -16,6 +16,7 @@ LEGACY_OOS_MODULE = re.compile(
     r"(?:diagnostics|selection|implementation|promotion)(?=[^A-Za-z0-9_]|$)"
 )
 LEGACY_MOCK_ANSWER_GENERATOR = re.compile(r"\bMockAnswerGenerator\b")
+LEGACY_AGENT_STATE = re.compile(r"\bAgentState\b")
 ALLOWED_SCRIPT_ROOT_FILES = {"__init__.py"}
 ALLOWED_DOC_ROOT_MARKDOWN = {"README.md", "roadmap.md"}
 
@@ -69,6 +70,11 @@ def architecture_violations() -> tuple[str, ...]:
                 message = (
                     f"legacy mock answer-generator reference: {relative}:{line_number}: "
                     f"{line.strip()}"
+                )
+                violations.append(message)
+            if LEGACY_AGENT_STATE.search(line):
+                message = (
+                    f"legacy agent-state reference: {relative}:{line_number}: {line.strip()}"
                 )
                 violations.append(message)
 

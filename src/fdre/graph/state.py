@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, TypedDict
 
 
-class AgentState(TypedDict, total=False):
+class AnswerWorkflowState(TypedDict, total=False):
     user_query: str
     rewritten_queries: list[str]
     filters: dict[str, Any]

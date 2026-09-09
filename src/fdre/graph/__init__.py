@@ -6,13 +6,13 @@ from fdre.graph.nodes import (
     GeneratedAnswer,
     WorkflowContext,
 )
-from fdre.graph.state import AgentState
+from fdre.graph.state import AnswerWorkflowState
 from fdre.graph.workflow import AnswerWorkflow, build_answer_workflow, run_answer_workflow
 
 __all__ = [
-    "AgentState",
     "AnswerGenerator",
     "AnswerWorkflow",
+    "AnswerWorkflowState",
     "ExtractiveAnswerGenerator",
     "GeneratedAnswer",
     "WorkflowContext",

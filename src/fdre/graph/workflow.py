@@ -16,7 +16,7 @@ from fdre.graph.nodes import (
     route_tools_node,
     verify_citations_node,
 )
-from fdre.graph.state import AgentState
+from fdre.graph.state import AnswerWorkflowState
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +25,7 @@ class AnswerWorkflow:
 
     context: WorkflowContext
 
-    def invoke(self, initial: AgentState) -> AgentState:
+    def invoke(self, initial: AnswerWorkflowState) -> AnswerWorkflowState:
         state = initial.copy()
 
         state.update(preprocess_query_node(self.context, state))
@@ -51,8 +51,8 @@ def build_answer_workflow(context: WorkflowContext) -> AnswerWorkflow:
     return AnswerWorkflow(context)
 
 
-def run_answer_workflow(context: WorkflowContext, question: str) -> AgentState:
-    initial: AgentState = {
+def run_answer_workflow(context: WorkflowContext, question: str) -> AnswerWorkflowState:
+    initial: AnswerWorkflowState = {
         "user_query": question,
         "errors": [],
         "citations": [],
