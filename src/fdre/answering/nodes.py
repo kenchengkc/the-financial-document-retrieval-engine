@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
 from fdre.citations.verifier import AnswerClaim, CitationVerifier
-from fdre.graph.state import AnswerWorkflowState
 from fdre.indexing.embeddings import embedding_provider_from_settings
 from fdre.research.financial_facts import FinancialFactQuery, query_financial_facts
 from fdre.retrieval.dense import DenseRetriever
@@ -23,6 +22,8 @@ from fdre.retrieval.preprocess import (
 from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 from fdre.retrieval.rerank import reranker_from_settings
 from fdre.retrieval.sparse import SparseRetriever
+
+from .state import AnswerWorkflowState
 
 PRIVATE_INFORMATION_PATTERN = re.compile(
     r"\b(?:private|non-public|inside information|insider|confidential)\b",

@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings
 from apps.api.app.models import AnswerRun, Citation
+from fdre.answering.nodes import ExtractiveAnswerGenerator, GeneratedAnswer, WorkflowContext
+from fdre.answering.workflow import run_answer_workflow
 from fdre.citations.verifier import CitationVerifier, VerifiedCitation
-from fdre.graph.nodes import ExtractiveAnswerGenerator, GeneratedAnswer, WorkflowContext
-from fdre.graph.workflow import run_answer_workflow
 from fdre.retrieval.query import RetrievalCandidate
 
 _EXTRACTIVE_GENERATOR_ALIASES = {"extractive", "mock"}

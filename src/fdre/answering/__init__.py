@@ -1,13 +1,13 @@
 """Bounded deterministic answer workflow."""
 
-from fdre.graph.nodes import (
+from .nodes import (
     AnswerGenerator,
     ExtractiveAnswerGenerator,
     GeneratedAnswer,
     WorkflowContext,
 )
-from fdre.graph.state import AnswerWorkflowState
-from fdre.graph.workflow import AnswerWorkflow, build_answer_workflow, run_answer_workflow
+from .state import AnswerWorkflowState
+from .workflow import AnswerWorkflow, build_answer_workflow, run_answer_workflow
 
 __all__ = [
     "AnswerGenerator",
