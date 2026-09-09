@@ -10,6 +10,7 @@ import {
   FlaskConical,
   HelpCircle,
   LoaderCircle,
+  Fingerprint,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import type {
   SignalWindow,
 } from "@/lib/types";
 
+import { ExperimentRegistryPanel } from "./experiment-registry-panel";
 import { ExperimentAudit, SignalMonitor } from "./signal-research-views";
 
 const WINDOW_LABELS: Record<string, string> = {
@@ -880,7 +882,7 @@ function SignalsModeIntro() {
 export function SignalsPanel() {
   const [studies, setStudies] = useState<SignalStudyResponse[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [view, setView] = useState<"study" | "monitor" | "audit">("study");
+  const [view, setView] = useState<"study" | "monitor" | "audit" | "registry">("study");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -961,6 +963,15 @@ export function SignalsPanel() {
           >
             <ShieldCheck size={14} aria-hidden="true" /> Method
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "registry"}
+            className={view === "registry" ? "on" : undefined}
+            onClick={() => setView("registry")}
+          >
+            <Fingerprint size={14} aria-hidden="true" /> Registry
+          </button>
         </div>
       </div>
       {view === "monitor" ? (
@@ -971,6 +982,8 @@ export function SignalsPanel() {
             setView("study");
           }}
         />
+      ) : view === "registry" ? (
+        <ExperimentRegistryPanel />
       ) : (
         <>
           {studies.length > 1 && (
