@@ -11,6 +11,7 @@ from sqlalchemy import Table, create_engine
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.event_study import EventStudyConfig
 from fdre.research.experiment_registry import (
     ResearchExperimentBundle,
     build_research_experiment_bundle,
@@ -22,7 +23,6 @@ from fdre.research.experiment_registry import (
     verify_research_experiment_bundle,
     write_research_experiment_bundle,
 )
-from fdre.research.event_study import EventStudyConfig
 from fdre.research.oos_diagnostics import OOSDiagnosticsConfig, OOSDiagnosticsReport
 from fdre.research.oos_implementation import OOSImplementationConfig, OOSImplementationReport
 from fdre.research.oos_promotion import (
