@@ -23,14 +23,14 @@ from fdre.research.experiment_registry import (
     verify_research_experiment_bundle,
     write_research_experiment_bundle,
 )
-from fdre.research.oos_diagnostics import OOSDiagnosticsConfig, OOSDiagnosticsReport
-from fdre.research.oos_implementation import OOSImplementationConfig, OOSImplementationReport
-from fdre.research.oos_promotion import (
+from fdre.research.oos.diagnostics import OOSDiagnosticsConfig, OOSDiagnosticsReport
+from fdre.research.oos.implementation import OOSImplementationConfig, OOSImplementationReport
+from fdre.research.oos.promotion import (
     OOSPromotionConfig,
     OOSPromotionDecision,
     OOSPromotionReport,
 )
-from fdre.research.oos_selection import (
+from fdre.research.oos.selection import (
     OOSHypothesisDecision,
     OOSSelectionConfig,
     OOSSelectionSuiteReport,
