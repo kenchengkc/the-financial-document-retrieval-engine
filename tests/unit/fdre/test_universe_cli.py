@@ -8,8 +8,8 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
+import scripts.research.universe as universe_cli
 from fdre.research.historical_universe import UniverseSnapshot, UniverseSnapshotConstituent
-from scripts.research import universe as universe_cli
 
 
 def _snapshot(
