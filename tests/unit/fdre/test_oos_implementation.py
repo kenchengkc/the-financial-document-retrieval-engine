@@ -4,11 +4,11 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from fdre.research.oos_implementation import (
+from fdre.research.oos.implementation import (
     OOSImplementationConfig,
     evaluate_oos_implementation,
 )
-from fdre.research.oos_selection import (
+from fdre.research.oos.selection import (
     OOSHypothesisDecision,
     OOSSelectionStatus,
     OOSSelectionSuiteReport,

@@ -11,6 +11,10 @@ SCAN_ROOTS = (".github", "apps", "docs", "scripts", "src", "tests")
 ROOT_TEXT_FILES = ("AGENTS.md", "README.md", "pyproject.toml")
 FLAT_SCRIPT_PATH = re.compile(r"(?<![A-Za-z0-9_])scripts/([A-Za-z0-9_]+\.py)")
 FLAT_SCRIPT_MODULE = re.compile(r"(?<![A-Za-z0-9_])scripts\.([A-Za-z0-9_]+)(?=[^A-Za-z0-9_.]|$)")
+LEGACY_OOS_MODULE = re.compile(
+    r"(?<![A-Za-z0-9_])fdre\.research\.oos_"
+    r"(?:diagnostics|selection|implementation|promotion)(?=[^A-Za-z0-9_]|$)"
+)
 ALLOWED_SCRIPT_ROOT_FILES = {"__init__.py"}
 ALLOWED_DOC_ROOT_MARKDOWN = {"README.md", "roadmap.md"}
 
@@ -54,6 +58,11 @@ def architecture_violations() -> tuple[str, ...]:
         for line_number, line in enumerate(text.splitlines(), start=1):
             if FLAT_SCRIPT_PATH.search(line) or FLAT_SCRIPT_MODULE.search(line):
                 message = f"stale flat-script reference: {relative}:{line_number}: {line.strip()}"
+                violations.append(message)
+            if LEGACY_OOS_MODULE.search(line):
+                message = (
+                    f"legacy OOS flat-module reference: {relative}:{line_number}: {line.strip()}"
+                )
                 violations.append(message)
 
     return tuple(violations)

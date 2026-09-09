@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from apps.api.app.db import Base
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_diagnostics import (
+from fdre.research.oos.diagnostics import (
     OOSDiagnosticsConfig,
     build_oos_diagnostics,
     persist_oos_diagnostics,
