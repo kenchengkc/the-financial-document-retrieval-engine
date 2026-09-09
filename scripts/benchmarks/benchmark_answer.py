@@ -1,4 +1,4 @@
-"""End-to-end answer-quality benchmark for the mock extractive generator.
+"""End-to-end answer-quality benchmark for the deterministic extractive generator.
 
 Runs the full answer workflow (preprocess -> multi-query retrieve -> rerank ->
 gate -> neighbor-expand -> generate -> verify) over the labeled query set with
@@ -10,8 +10,8 @@ neighbor expansion off vs on, and reports generation-step metrics:
 - abstention_rate      : fraction that abstain
 - mean_confidence
 
-Notes on interpretation: the mock generator is *extractive* (one claim from the
-top hit), so it is grounded by construction and neighbor context does not change
+Notes on interpretation: the extractive generator selects one claim from the
+top hit, so it is grounded by construction and neighbor context does not change
 the answer — neighbor expansion's value would only surface with a synthesizing
 (LLM) generator. A stricter "answer cites the exact labeled chunk" reads ~0
 because the top hit is usually a different, also-relevant chunk in the same
@@ -31,7 +31,7 @@ from apps.api.app.config import get_settings
 from apps.api.app.db import create_db_engine
 from fdre.citations.verifier import CitationVerifier
 from fdre.evals.datasets import EvalQuestion
-from fdre.graph.nodes import GeneratedAnswer, MockAnswerGenerator, WorkflowContext
+from fdre.graph.nodes import ExtractiveAnswerGenerator, GeneratedAnswer, WorkflowContext
 from fdre.graph.workflow import run_answer_workflow
 from fdre.retrieval.query import RetrievalCandidate
 from scripts.benchmarks.eval_guard import require_neon_optin
@@ -47,7 +47,7 @@ def _run(questions: list[EvalQuestion], window: int) -> dict[str, float]:
         context = WorkflowContext(
             session=session,
             settings=settings,
-            generator=MockAnswerGenerator(),
+            generator=ExtractiveAnswerGenerator(),
             verifier=CitationVerifier(),
         )
         for question in questions:

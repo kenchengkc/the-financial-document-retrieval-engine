@@ -119,10 +119,6 @@ class ExtractiveAnswerGenerator:
         )
 
 
-# Backwards-compatible import name for existing integrations/tests.
-MockAnswerGenerator = ExtractiveAnswerGenerator
-
-
 @dataclass(slots=True)
 class WorkflowContext:
     session: Session
