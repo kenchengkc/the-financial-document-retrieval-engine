@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -9,10 +12,15 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
 from fdre.research.experiment_registry import (
+    ResearchExperimentBundle,
+    build_research_experiment_bundle,
     build_research_experiment_manifest,
     persist_research_experiment_manifest,
+    read_research_experiment_bundle,
     replay_research_experiment,
     verify_research_experiment,
+    verify_research_experiment_bundle,
+    write_research_experiment_bundle,
 )
 from fdre.research.oos_diagnostics import OOSDiagnosticsReport
 from fdre.research.oos_implementation import OOSImplementationConfig, OOSImplementationReport
@@ -305,3 +313,89 @@ def test_registry_manifest_is_immutable_after_registration() -> None:
 
         with pytest.raises(ValueError, match="payload mismatch"):
             persist_research_experiment_manifest(session, manifest)
+
+
+def test_portable_bundle_is_deterministic_and_verifies_offline(tmp_path: Path) -> None:
+    source, diagnostics, selection, implementation, promotion = _artifacts()
+    manifest = build_research_experiment_manifest(
+        source, diagnostics, selection, implementation, promotion
+    )
+    with _session() as session:
+        _persist_all_children(
+            session, source, diagnostics, selection, implementation, promotion
+        )
+        persist_research_experiment_manifest(session, manifest)
+        first = build_research_experiment_bundle(session, manifest.experiment_id)
+        second = build_research_experiment_bundle(session, manifest.experiment_id)
+
+    assert first == second
+    assert first.bundle_sha256 == second.bundle_sha256
+    assert [item.kind for item in first.artifacts] == [
+        "walk_forward",
+        "oos_diagnostics",
+        "oos_selection",
+        "oos_implementation",
+        "oos_promotion",
+    ]
+
+    destination = write_research_experiment_bundle(tmp_path / "bundle.json", first)
+    loaded = read_research_experiment_bundle(destination)
+    replay = verify_research_experiment_bundle(
+        loaded,
+        expected_experiment_id=manifest.experiment_id,
+    )
+
+    assert replay.verified is True
+    assert replay.artifact_count == 5
+    assert replay.final_decisions[0]["status"] == "promote"
+
+
+def test_portable_bundle_rejects_substituted_root() -> None:
+    source, diagnostics, selection, implementation, promotion = _artifacts()
+    manifest = build_research_experiment_manifest(
+        source, diagnostics, selection, implementation, promotion
+    )
+    with _session() as session:
+        _persist_all_children(
+            session, source, diagnostics, selection, implementation, promotion
+        )
+        persist_research_experiment_manifest(session, manifest)
+        bundle = build_research_experiment_bundle(session, manifest.experiment_id)
+
+    with pytest.raises(ValueError, match="does not match expected experiment id"):
+        verify_research_experiment_bundle(
+            bundle,
+            expected_experiment_id="0" * 64,
+        )
+
+
+def test_portable_bundle_detects_inner_artifact_tampering_after_outer_rehash() -> None:
+    source, diagnostics, selection, implementation, promotion = _artifacts()
+    manifest = build_research_experiment_manifest(
+        source, diagnostics, selection, implementation, promotion
+    )
+    with _session() as session:
+        _persist_all_children(
+            session, source, diagnostics, selection, implementation, promotion
+        )
+        persist_research_experiment_manifest(session, manifest)
+        bundle = build_research_experiment_bundle(session, manifest.experiment_id)
+
+    payload = bundle.model_dump(mode="json")
+    artifacts = cast(list[dict[str, object]], payload["artifacts"])
+    promotion_artifact = artifacts[-1]
+    promotion_payload = cast(dict[str, object], promotion_artifact["payload"])
+    promotion_payload["slice_snapshot_id"] = "tampered"
+    payload["bundle_sha256"] = _digest(
+        {key: value for key, value in payload.items() if key != "bundle_sha256"}
+    )
+    tampered = ResearchExperimentBundle.model_validate(payload)
+
+    with pytest.raises(ValueError, match="artifact digest mismatch for oos_promotion"):
+        verify_research_experiment_bundle(tampered)
+
+
+def _digest(payload: object) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
