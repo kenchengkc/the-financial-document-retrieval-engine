@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fdre.graph.nodes import (
+from .nodes import (
     WorkflowContext,
     evaluate_retrieval_gate_node,
     finalize_or_abstain_node,
@@ -16,7 +16,7 @@ from fdre.graph.nodes import (
     route_tools_node,
     verify_citations_node,
 )
-from fdre.graph.state import AnswerWorkflowState
+from .state import AnswerWorkflowState
 
 
 @dataclass(frozen=True, slots=True)
