@@ -9,13 +9,13 @@ from sqlalchemy.pool import StaticPool
 
 from apps.api.app.db import Base
 from apps.api.app.models import ResearchExperiment
-from fdre.research.oos_diagnostics import (
+from fdre.research.oos.diagnostics import (
     OOSDiagnosticsConfig,
     OOSDiagnosticsReport,
     OOSFoldWindowDiagnostic,
     OOSWindowDiagnostic,
 )
-from fdre.research.oos_selection import (
+from fdre.research.oos.selection import (
     OOSSelectionConfig,
     _one_sided_sign_flip_p_value,
     evaluate_oos_selection_suite,
