@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 import pytest
 
@@ -35,11 +36,24 @@ def test_universe_diff_separates_membership_changes_from_identity_changes() -> N
         ),
     )
 
-    payload = universe_diff_to_dict(compare_universe_snapshots(before, after))
+    diff = compare_universe_snapshots(before, after)
+    assert diff.from_snapshot_id == "before-snapshot"
+    assert diff.to_snapshot_id == "after-snapshot"
+    assert [row.security_id for row in diff.added] == [3]
+    assert [row.security_id for row in diff.removed] == [2]
+    assert len(diff.changed) == 1
+    assert diff.changed[0].security_id == 1
+    assert diff.changed[0].before.symbol == "AAA"
+    assert diff.changed[0].after.symbol == "AAB"
+    assert diff.changed[0].changed_fields == (
+        "symbol",
+        "identity_effective_from",
+        "identity_source_hash",
+    )
 
-    assert payload["from_snapshot_id"] == "before-snapshot"
-    assert payload["to_snapshot_id"] == "after-snapshot"
-    assert payload["summary"] == {
+    payload = universe_diff_to_dict(diff)
+    summary = cast(dict[str, int], payload["summary"])
+    assert summary == {
         "from_count": 2,
         "to_count": 2,
         "added_count": 1,
@@ -47,18 +61,6 @@ def test_universe_diff_separates_membership_changes_from_identity_changes() -> N
         "changed_count": 1,
         "retained_count": 1,
     }
-    assert [row["security_id"] for row in payload["added"]] == [3]  # type: ignore[index]
-    assert [row["security_id"] for row in payload["removed"]] == [2]  # type: ignore[index]
-    changed = payload["changed"]  # type: ignore[assignment]
-    assert len(changed) == 1
-    assert changed[0]["security_id"] == 1
-    assert changed[0]["before"]["symbol"] == "AAA"
-    assert changed[0]["after"]["symbol"] == "AAB"
-    assert changed[0]["changed_fields"] == [
-        "symbol",
-        "identity_effective_from",
-        "identity_source_hash",
-    ]
 
 
 def test_universe_diff_rejects_incomparable_snapshots() -> None:
