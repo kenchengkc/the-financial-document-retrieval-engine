@@ -86,12 +86,10 @@ jobs:
           Frozen HU-5 final identity-closure evidence produced by GitHub Actions run ${SOURCE_RUN_ID}.
 
           This release preserves the exact generated evidence archive referenced by
-          `docs/research/historical-universe/final-identity-closure.md` outside Git history.
+          docs/research/historical-universe/final-identity-closure.md outside Git history.
           The archive is accepted only when its SHA-256 is:
 
-          ```text
           ${EXPECTED_SHA256}
-          ```
 
           Source Actions artifact: ${SOURCE_ARTIFACT_ID}
           Reviewed production commit: ${SOURCE_COMMIT}
