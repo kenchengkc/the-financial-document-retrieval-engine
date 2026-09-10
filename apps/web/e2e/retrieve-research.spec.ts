@@ -150,13 +150,14 @@ test("queries financial facts with ticker, metric, restatement, and as-of contro
   await page.getByLabel("Financial fact as-of date").fill("2026-02-01");
   await page.getByRole("button", { name: "Query facts" }).click();
 
+  const factRow = page.locator(".facts-table tbody tr");
   await expect(page.locator(".facts-result")).toContainText("1 reported facts");
   await expect(page.locator(".facts-result")).toContainText("latest");
-  await expect(page.locator(".facts-table tbody tr")).toContainText("AAPL");
-  await expect(page.locator(".facts-table tbody tr")).toContainText(
-    "RevenueFromContractWithCustomerExcludingAssessedTax",
-  );
-  await expect(page.locator(".facts-table tbody tr")).toContainText("restated");
+  await expect(factRow).toContainText("AAPL");
+  await expect(factRow).toContainText("revenue");
+  await expect(factRow).toContainText("restated");
+  await expect(factRow).toContainText("124.3B");
+  await expect(factRow).toContainText("0000320193-26-000012");
 
   expect(requestUrl).not.toBe("");
   const capturedRequest = new URL(requestUrl);
