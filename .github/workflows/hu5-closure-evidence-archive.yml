@@ -9,7 +9,8 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
+  packages: write
 
 concurrency:
   group: fdre-hu5-closure-evidence-archive
@@ -25,8 +26,9 @@ jobs:
       SOURCE_RUN_ID: "33971576262"
       SOURCE_COMMIT: "3e4f2df5a7d57c6d3cbd6da1ccb317f6cba9451a"
       EXPECTED_SHA256: "ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc"
-      RELEASE_TAG: "hu5-final-identity-closure-2026-09-05"
       ASSET_NAME: "hu5-final-identity-apply-33971576262.zip"
+      PACKAGE_NAME: "fdre-hu5-closure-evidence"
+      PACKAGE_TAG: "sha256-ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc"
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Validate pinned archive contract
@@ -37,6 +39,7 @@ jobs:
           test "${SOURCE_RUN_ID}" = "33971576262"
           test "${SOURCE_COMMIT}" = "3e4f2df5a7d57c6d3cbd6da1ccb317f6cba9451a"
           test "${EXPECTED_SHA256}" = "ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc"
+          test "${PACKAGE_TAG}" = "sha256-${EXPECTED_SHA256}"
 
       - name: Download exact GitHub Actions artifact
         run: |
@@ -80,72 +83,69 @@ jobs:
           PY
           printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" > "${ASSET_NAME}.sha256"
 
-      - name: Prepare immutable release notes
-        run: |
-          cat > release-notes.md <<EOF
-          Frozen HU-5 final identity-closure evidence produced by GitHub Actions run ${SOURCE_RUN_ID}.
-
-          This release preserves the exact generated evidence archive referenced by
-          docs/research/historical-universe/final-identity-closure.md outside Git history.
-          The archive is accepted only when its SHA-256 is:
-
-          ${EXPECTED_SHA256}
-
-          Source Actions artifact: ${SOURCE_ARTIFACT_ID}
-          Reviewed production commit: ${SOURCE_COMMIT}
-
-          The workflow fails closed on any digest or payload mismatch and never overwrites an
-          existing release asset. The checksum remains the authoritative integrity boundary.
-          EOF
-
-      - name: Check for an existing preserved release
-        id: existing
+      - name: Log in to GitHub Container Registry
         run: |
           set -euo pipefail
-          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            mkdir -p existing
-            gh release download "${RELEASE_TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --pattern "${ASSET_NAME}" \
-              --dir existing
-            (
-              cd existing
-              printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" | sha256sum --check --strict -
-            )
-            echo "exists=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          printf '%s' "${GH_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Prepare content-addressed evidence image
+        id: package
+        run: |
+          set -euo pipefail
+          package="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${PACKAGE_NAME}"
+          image_ref="${package}:${PACKAGE_TAG}"
+          echo "image_ref=${image_ref}" >> "${GITHUB_OUTPUT}"
+
+          if docker manifest inspect "${image_ref}" >/dev/null 2>&1; then
+            echo "existing=true" >> "${GITHUB_OUTPUT}"
+            exit 0
           fi
 
-      - name: Publish durable release assets
-        if: steps.existing.outputs.exists == 'false'
-        run: |
-          set -euo pipefail
-          gh release create "${RELEASE_TAG}" \
-            "${ASSET_NAME}" \
-            "${ASSET_NAME}.sha256" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --target "${SOURCE_COMMIT}" \
-            --title "HU-5 final identity closure — 2026-09-05" \
-            --notes-file release-notes.md
+          mkdir -p evidence
+          cp "${ASSET_NAME}" "${ASSET_NAME}.sha256" evidence/
+          cat > Dockerfile.evidence <<EOF
+          FROM scratch
+          LABEL org.opencontainers.image.title="FDRE HU-5 final identity closure evidence"
+          LABEL org.opencontainers.image.description="Frozen generated evidence archive for the HU-5 final identity closure"
+          LABEL org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}"
+          LABEL org.opencontainers.image.revision="${SOURCE_COMMIT}"
+          LABEL io.fdre.source-actions-run="${SOURCE_RUN_ID}"
+          LABEL io.fdre.source-artifact-id="${SOURCE_ARTIFACT_ID}"
+          LABEL io.fdre.archive-sha256="${EXPECTED_SHA256}"
+          COPY evidence/ /evidence/
+          CMD ["/evidence/${ASSET_NAME}"]
+          EOF
+          docker build --file Dockerfile.evidence --tag "${image_ref}" .
+          echo "existing=false" >> "${GITHUB_OUTPUT}"
 
-      - name: Verify published archive
+      - name: Publish content-addressed evidence package
+        if: steps.package.outputs.existing == 'false'
         run: |
           set -euo pipefail
-          rm -rf published
+          docker push "${{ steps.package.outputs.image_ref }}"
+
+      - name: Pull back and verify preserved archive
+        run: |
+          set -euo pipefail
+          image_ref="${{ steps.package.outputs.image_ref }}"
+          docker pull "${image_ref}"
+          container_id="$(docker create "${image_ref}")"
+          trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true' EXIT
           mkdir -p published
-          gh release download "${RELEASE_TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --pattern "${ASSET_NAME}" \
-            --dir published
+          docker cp "${container_id}:/evidence/${ASSET_NAME}" "published/${ASSET_NAME}"
+          docker cp "${container_id}:/evidence/${ASSET_NAME}.sha256" "published/${ASSET_NAME}.sha256"
           (
             cd published
-            printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" | sha256sum --check --strict -
+            sha256sum --check --strict "${ASSET_NAME}.sha256"
           )
+          actual_checksum="$(sha256sum "published/${ASSET_NAME}" | cut -d' ' -f1)"
+          test "${actual_checksum}" = "${EXPECTED_SHA256}"
+          image_id="$(docker image inspect "${image_ref}" --format '{{.Id}}')"
           {
             echo "### HU-5 closure evidence preserved"
             echo
-            echo "- Release: \`${RELEASE_TAG}\`"
+            echo "- Package: \`${image_ref}\`"
+            echo "- Package image ID: \`${image_id}\`"
             echo "- Source artifact: \`${SOURCE_ARTIFACT_ID}\` from run \`${SOURCE_RUN_ID}\`"
             echo "- Archive SHA-256: \`${EXPECTED_SHA256}\`"
             echo "- Payload files: 7 / 7 exact"
