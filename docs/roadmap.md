@@ -29,7 +29,7 @@ The production/research core is operational:
 - typed Company Facts, research panels, cross-sectional screens, and filing comparisons;
 - persisted retrieval traces, experiment manifests, market-data caches, and reproducible signal-study workflows;
 - deterministic historical-universe identity and membership with strict/provisional evidence modes;
-- independently verified 2010-01-01 through 2026-09-01 strict historical-universe eligibility;
+- independently verified **6,088 / 6,088** strict-eligible historical-universe days from 2010-01-01 through 2026-09-01;
 - frozen and implemented HU-5 multi-class outcome mapping for simultaneous share classes;
 - canonical historical-universe inspection/operations through one `scripts.research.universe` CLI;
 - explicit research ownership for historical-universe, signals, experiments, and sealed OOS domains;
@@ -37,24 +37,33 @@ The production/research core is operational:
 - historical filing research archive without unnecessary bulk embedding growth;
 - CI covering typing, linting, tests, PostgreSQL/pgvector migrations/indexes, Docker, frontend build, and browser E2E paths;
 - production container built non-editably, run as non-root, and smoke-tested in CI;
-- process-scoped provider/reranker reuse, bounded hosted-provider HTTP pools, request concurrency protection, API statement timeouts, and a bounded issuer-reference cache;
+- process-scoped provider/reranker reuse, bounded hosted-provider HTTP pools, request concurrency/rate protection, API statement timeouts, and bounded issuer-reference caching;
+- direct browser verification of filing comparison, financial facts, and point-in-time dataset preview/export contracts;
 - reproducible Python dependency resolution through the committed `uv.lock`.
 
-The original unchanged flagship risk-churn acceleration run remains **`INSUFFICIENT`**, not promoted or rejected for alpha. That immutable run hit the predeclared multi-security ambiguity rule and remains preserved as originally executed. The multi-class outcome policy has since been frozen and implemented; any amended flagship evaluation must therefore use a new versioned experiment identity rather than rewriting the original result.
+The flagship risk-churn acceleration study now has **two separate immutable `INSUFFICIENT` terminal records**:
+
+1. the unchanged post-HU-5-closure rerun failed closed on `ambiguous_security_mapping` before outcome evaluation;
+2. the separately versioned multi-class amended rerun passed the frozen identity and market-symbology preflight, then failed closed on `multiclass_component_outcome_unavailable` because three predeclared Alphabet benchmark horizons were not yet realized.
+
+Neither run is a `REJECT` or `PROMOTE` result. The second result closes the methodology/symbology design work for this blocker: the next flagship rerun is waiting on outcome observability, not another methodology amendment.
 
 ## Active priorities
 
-### 1. Execute the amended flagship under the frozen multi-class policy
+### 1. Hold the amended flagship methodology fixed until all frozen horizons are observable
 
-The outcome-mapping contract is no longer an open design problem. The next research step is to run the amended flagship path under the already-frozen point-in-time multi-class policy and preserve the original `INSUFFICIENT` root unchanged.
+The multi-class issuer-outcome policy and market-provider symbology contract are frozen. The amended 2026-09-06 execution is `INSUFFICIENT` solely because its latest required benchmark endpoints are right-censored in the frozen market cache.
 
-Acceptance criteria:
+Acceptance criteria for the next canonical rerun:
 
-- use the frozen multi-class security-selection policy and pinned market symbology without outcome-driven changes;
-- create a new versioned experiment identity rather than mutating the original run;
-- preserve exact feature, filing, universe, market-data, and assumption lineage;
-- produce an honest terminal `PROMOTE`, `REJECT`, or `INSUFFICIENT` result under the predeclared gates;
-- register, bundle, and independently verify the resulting artifact chain before making a research claim.
+- do **not** drop recent Alphabet events, shorten horizons, substitute benchmark dates, select one share class post hoc, or renormalize around unavailable outcomes;
+- wait until every predeclared benchmark/component endpoint is actually present in the refreshed market cache;
+- refresh through the existing provider/symbology contract and rerun the unchanged preflight first;
+- execute the unchanged amended study only after the preflight confirms complete frozen-horizon availability;
+- preserve the prior unchanged and amended `INSUFFICIENT` artifacts as immutable historical records;
+- create a new run artifact/provenance chain for the later execution and report its terminal `PROMOTE`, `REJECT`, or `INSUFFICIENT` state without reinterpretation.
+
+The latest currently blocking `1:126` endpoint is expected around **2027-01-22**, but the real gate is observed endpoint availability in the refreshed benchmark/component cache, not the calendar estimate.
 
 ### 2. Improve retrieval quality under a clean evaluation lifecycle
 
@@ -69,23 +78,23 @@ Priorities:
 
 Do not optimize directly against the published historical holdout and then describe the result as unseen performance.
 
-### 3. Finish repository surface-area cleanup without inventing architecture
+### 3. Maintain repository boundaries; refactor only when coupling demonstrates a need
 
-The target structure is a small deployed core, reusable domain packages, thin operational entry points, and archived run history. Historical-universe, signals, experiments, and OOS now have explicit ownership; remaining changes should be justified by real coupling rather than directory symmetry.
+The broad ownership cleanup is complete enough to stop. Historical-universe, signals, experiments, OOS, and the retrieval research workflows have explicit boundaries, and the remaining small frontend/routes do not justify decomposition merely for file-size symmetry.
 
-Priorities:
+Going forward:
 
-- keep large operational scripts thin by moving genuinely reusable logic into existing domain packages;
-- retire temporary compatibility imports only after active callers have migrated and architecture checks can enforce the canonical path;
-- reduce giant frontend files through component ownership, then split global CSS only where selectors have a clear route/component owner;
-- keep `panel.py` and `screen.py` at their current cross-cutting boundary unless a concrete ownership split improves the dependency graph;
-- keep active docs focused on contracts/current state and move dated forensic notes to `docs/archive/`.
+- keep operational entry points thin when reusable logic genuinely emerges;
+- retire compatibility paths only after active callers have migrated and architecture checks can enforce the canonical path;
+- split frontend/CSS ownership only when a real component or route boundary is obscured;
+- keep `panel.py` and `screen.py` at their current cross-cutting boundary unless a concrete dependency problem appears;
+- keep active docs focused on current contracts/results and move dated forensic history to `docs/archive/`.
 
-Refactors must preserve existing tests, experiment identities where applicable, and data/research contracts.
+Do not continue broad repository cleanup as an end in itself.
 
 ### 4. Optimize production from measurements, not from an infrastructure wish list
 
-The previously listed client reuse, hosted-provider connection pooling, process-level request protection, issuer-reference caching, and dependency locking are implemented. Further runtime work should start from measured production bottlenecks.
+Client reuse, hosted-provider connection pooling, process-level request protection, issuer-reference caching, request-scoped PostgreSQL timeouts, and dependency locking are implemented and acceptance-tested. Further runtime work should start from measured production bottlenecks.
 
 Priorities:
 
@@ -132,5 +141,6 @@ Likewise, do not simplify away the controls that provide the strongest research 
 - [`evaluations/holdout_policy.md`](evaluations/holdout_policy.md) — benchmark visibility lifecycle
 - [`evaluations/eval_results.md`](evaluations/eval_results.md) — current and frozen measurements
 - [`research/historical_universe.md`](research/historical_universe.md) — historical-universe contract
-- [`research/historical-universe/final-identity-closure.md`](research/historical-universe/final-identity-closure.md) — identity-closure provenance
+- [`research/historical-universe/final-identity-closure.md`](research/historical-universe/final-identity-closure.md) — HU-5 identity-closure provenance and durable evidence locator
 - [`research/historical-universe/flagship-rerun-2026-09-06.md`](research/historical-universe/flagship-rerun-2026-09-06.md) — frozen unchanged flagship rerun
+- [`research/historical-universe/flagship-amended-rerun-2026-09-06.md`](research/historical-universe/flagship-amended-rerun-2026-09-06.md) — frozen amended multi-class rerun and observability gate
