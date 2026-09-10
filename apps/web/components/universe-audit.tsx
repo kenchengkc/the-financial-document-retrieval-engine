@@ -135,9 +135,8 @@ export function UniverseAudit() {
             <GitCompareArrows size={16} aria-hidden="true" /> Point-in-time universe audit
           </h3>
           <p className={styles.description}>
-            Compare two S&amp;P 500 snapshots by stable security identity. Membership additions and
-            removals are separated from ticker, name, exchange, effective-date, and source-provenance
-            changes.
+            Compare historical S&amp;P 500 membership and track changes to security identities
+            and source evidence.
           </p>
         </div>
         <span className={styles.badge}>

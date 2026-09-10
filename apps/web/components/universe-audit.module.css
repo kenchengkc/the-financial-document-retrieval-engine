@@ -1,7 +1,21 @@
 .panel {
+  /* This component lives on the dark data-status surface, not the page canvas. */
+  --ink: #fffdfb;
+  --prose: #e1d6e5;
+  --muted: #c5b6ca;
+  --surface: #382440;
+  --surface-muted: #321d39;
+  --line: #503b57;
+  --line-strong: #806987;
+  --cyan: #a0ddcb;
+  --cyan-soft: #a0ddcb12;
+  --red: #ffb4c4;
+  --red-soft: #ffb4c410;
   grid-column: 1 / -1;
+  min-width: 0;
   border-top: 1px solid var(--line);
-  padding-top: 18px;
+  padding: 24px 26px 28px;
+  color: var(--ink);
 }
 
 .header {
@@ -9,7 +23,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 14px;
+  margin-bottom: 20px;
 }
 
 .title {
@@ -17,15 +31,19 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 14px;
-  font-weight: 700;
+  font: var(--type-ui-md);
+}
+
+.title svg {
+  flex: none;
+  color: #e9b48f;
 }
 
 .description {
-  max-width: 760px;
-  margin: 6px 0 0;
+  max-width: 68ch;
+  margin: 8px 0 0;
   color: var(--muted);
-  line-height: 1.5;
+  font: var(--type-body-sm);
 }
 
 .badge {
@@ -33,9 +51,9 @@
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  border: 1px solid var(--line);
+  border: 1px solid #a0ddcb30;
   border-radius: 999px;
-  padding: 6px 9px;
+  padding: 7px 10px;
   color: var(--cyan);
   background: var(--cyan-soft);
   font-size: 11px;
@@ -45,14 +63,16 @@
 
 .form {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) minmax(150px, 190px) auto;
+  grid-template-columns: repeat(2, minmax(0, 190px)) max-content;
+  justify-content: start;
   align-items: end;
-  gap: 10px;
+  gap: 14px;
 }
 
 .field {
   display: grid;
-  gap: 6px;
+  min-width: 0;
+  gap: 8px;
 }
 
 .field span {
@@ -64,17 +84,21 @@
 }
 
 .field input {
+  color-scheme: dark;
+  min-width: 0;
   width: 100%;
+  height: 44px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
-  padding: 9px 10px;
+  padding: 10px 12px;
+  font: var(--type-body-sm);
 }
 
 .field input:focus-visible,
 .runButton:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid #e9b48f;
   outline-offset: 2px;
 }
 
@@ -83,22 +107,24 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 38px;
+  min-height: 44px;
   border: 0;
   border-radius: 8px;
-  padding: 9px 13px;
-  background: var(--green);
-  color: white;
+  padding: 10px 18px;
+  background: #e9b48f;
+  color: #2a1530;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .runButton:hover:not(:disabled) {
-  background: var(--green-deep);
+  background: #f3c8a7;
 }
 
 .runButton:disabled {
-  opacity: 0.52;
+  background: #49334f;
+  color: #c5b6ca;
   cursor: not-allowed;
 }
 
@@ -158,6 +184,7 @@
 .snapshots code {
   color: var(--prose);
   font-family: var(--mono);
+  overflow-wrap: anywhere;
 }
 
 .groups {
@@ -275,6 +302,7 @@
 @media (max-width: 900px) {
   .header {
     display: grid;
+    gap: 12px;
   }
 
   .badge {
@@ -291,6 +319,10 @@
 }
 
 @media (max-width: 620px) {
+  .panel {
+    padding: 22px 18px 24px;
+  }
+
   .form {
     grid-template-columns: 1fr;
   }

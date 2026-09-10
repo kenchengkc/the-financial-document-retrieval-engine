@@ -1,5 +1,54 @@
 import { expect, test, type Page } from "@playwright/test";
 
+for (const width of [1440, 768, 390]) {
+  test(`keeps the universe audit readable and contained at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await mockFoundation(page);
+    await page.goto("/");
+    const audit = page.getByRole("region", { name: "Point-in-time universe audit" });
+    const from = audit.getByLabel("From snapshot");
+    const to = audit.getByLabel("To snapshot");
+    const compare = audit.getByRole("button", { name: "Compare snapshots" });
+    await expect(compare).toBeDisabled();
+    await audit.scrollIntoViewIfNeeded();
+
+    const panel = (await audit.boundingBox())!;
+    const inputs = [(await from.boundingBox())!, (await to.boundingBox())!];
+    const button = (await compare.boundingBox())!;
+    for (const box of [...inputs, button]) {
+      expect(box.x - panel.x).toBeGreaterThanOrEqual(18);
+      expect(panel.x + panel.width - box.x - box.width).toBeGreaterThanOrEqual(18);
+      expect(panel.y + panel.height - box.y - box.height).toBeGreaterThanOrEqual(24);
+    }
+    if (width > 620) {
+      expect(button.width).toBeLessThan(250);
+      expect(Math.abs(button.y - inputs[0].y)).toBeLessThan(2);
+    } else {
+      expect(button.y).toBeGreaterThanOrEqual(inputs[1].y + inputs[1].height);
+    }
+
+    // The audit previously inherited light-page text tokens on a dark surface.
+    const contrast = await audit.locator("p").first().evaluate((description) => {
+      const foreground = getComputedStyle(description).color;
+      const background = getComputedStyle(description.closest(".data-foundation")!).backgroundColor;
+      const luminance = (color: string) => {
+        const channels = color.match(/[\d.]+/g)!.slice(0, 3).map((part) => {
+          const channel = Number(part) / 255;
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+      };
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+      return (values[1] + 0.05) / (values[0] + 0.05);
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    await from.fill("2020-01-15");
+    await to.fill("2021-01-01");
+    await expect(compare).toBeEnabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  });
+}
+
 async function mockFoundation(page: Page) {
   await page.route("**/health", (route) =>
     route.fulfill({

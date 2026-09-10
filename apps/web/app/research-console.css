@@ -1907,7 +1907,7 @@
 
 .foundation-stat small {
   overflow: hidden;
-  color: rgba(241, 231, 239, 0.56);
+  color: #c5b6ca;
   font: var(--type-mono-xs);
   letter-spacing: 0;
   text-overflow: ellipsis;
@@ -1969,7 +1969,7 @@
   padding: 24px 26px 26px;
 }
 
-.foundation-column:first-child {
+.foundation-column:has(+ .foundation-column) {
   border-right: 1px solid rgba(241, 231, 239, 0.14);
 }
 
@@ -2026,6 +2026,10 @@
   gap: 12px;
 }
 
+.foundation-company {
+  grid-template-columns: 48px minmax(60px, 1fr) 128px;
+}
+
 .foundation-ticker {
   color: #e9b48f;
   font: var(--type-mono-md);
@@ -2076,7 +2080,7 @@
 
 .foundation-company code,
 .foundation-meter code {
-  color: rgba(241, 231, 239, 0.68);
+  color: #c5b6ca;
   font: var(--type-mono-sm);
   text-align: right;
 }
@@ -2225,7 +2229,7 @@
     grid-column: 1 / -1;
   }
 
-  .foundation-column:first-child {
+  .foundation-column:has(+ .foundation-column) {
     border-right: 0;
     border-bottom: 1px solid rgba(241, 231, 239, 0.14);
   }
@@ -2534,6 +2538,10 @@
   .foundation-meter {
     grid-template-columns: 94px minmax(60px, 1fr) 70px;
     gap: 8px;
+  }
+
+  .foundation-company {
+    grid-template-columns: 40px minmax(30px, 1fr) 112px;
   }
 
   .research-stack {
