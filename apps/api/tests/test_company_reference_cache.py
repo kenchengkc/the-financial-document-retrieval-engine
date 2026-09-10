@@ -7,7 +7,10 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from apps.api.app.services.company_reference_cache import CompanyReferenceCache
+from apps.api.app.services.company_reference_cache import (
+    CompanyReferenceCache,
+    _company_reference_cache,
+)
 from fdre.retrieval.preprocess import CompanyReference
 
 
@@ -122,3 +125,16 @@ def test_company_reference_cache_serializes_concurrent_refreshes() -> None:
 
     assert first_result == second_result
     assert calls == 2
+
+
+def test_company_reference_cache_factory_bounds_configuration_state() -> None:
+    _company_reference_cache.cache_clear()
+    try:
+        for ttl_seconds in range(20):
+            _company_reference_cache(ttl_seconds, 30)
+
+        cache_info = _company_reference_cache.cache_info()
+        assert cache_info.maxsize == 16
+        assert cache_info.currsize == 16
+    finally:
+        _company_reference_cache.cache_clear()
