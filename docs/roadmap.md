@@ -30,26 +30,31 @@ The production/research core is operational:
 - persisted retrieval traces, experiment manifests, market-data caches, and reproducible signal-study workflows;
 - deterministic historical-universe identity and membership with strict/provisional evidence modes;
 - independently verified 2010-01-01 through 2026-09-01 strict historical-universe eligibility;
+- frozen and implemented HU-5 multi-class outcome mapping for simultaneous share classes;
+- canonical historical-universe inspection/operations through one `scripts.research.universe` CLI;
+- explicit research ownership for historical-universe, signals, experiments, and sealed OOS domains;
+- market-data replay manifests, deterministic covering-cache reuse, and fail-closed adjusted-price parsing;
 - historical filing research archive without unnecessary bulk embedding growth;
 - CI covering typing, linting, tests, PostgreSQL/pgvector migrations/indexes, Docker, frontend build, and browser E2E paths;
 - production container built non-editably, run as non-root, and smoke-tested in CI;
-- explicit API readiness, request bounds, and PostgreSQL connection-pool policy.
+- process-scoped provider/reranker reuse, bounded hosted-provider HTTP pools, request concurrency protection, API statement timeouts, and a bounded issuer-reference cache;
+- reproducible Python dependency resolution through the committed `uv.lock`.
 
-The latest unchanged flagship risk-churn acceleration run remains **`INSUFFICIENT`**, not promoted or rejected for alpha. The verified universe passed its gate, but issuer-level filings for one multi-security issuer could not be mapped unambiguously to a single security under the predeclared fail-closed rule. That result is preserved rather than guessed through.
+The original unchanged flagship risk-churn acceleration run remains **`INSUFFICIENT`**, not promoted or rejected for alpha. That immutable run hit the predeclared multi-security ambiguity rule and remains preserved as originally executed. The multi-class outcome policy has since been frozen and implemented; any amended flagship evaluation must therefore use a new versioned experiment identity rather than rewriting the original result.
 
 ## Active priorities
 
-### 1. Close the multi-security outcome-mapping contract
+### 1. Execute the amended flagship under the frozen multi-class policy
 
-Define a versioned, point-in-time rule for research outcomes when a filing issuer has multiple simultaneously active securities. The rule must be specified before examining amended-run return results and must preserve share-class identity rather than silently choosing a ticker.
+The outcome-mapping contract is no longer an open design problem. The next research step is to run the amended flagship path under the already-frozen point-in-time multi-class policy and preserve the original `INSUFFICIENT` root unchanged.
 
 Acceptance criteria:
 
-- deterministic security selection or explicit ambiguity;
-- source/provenance for the mapping rule;
-- no outcome information used to select the rule;
-- replay tests around simultaneous share classes and ticker changes;
-- amended flagship run uses a new versioned experiment identity and leaves the original frozen run unchanged.
+- use the frozen multi-class security-selection policy and pinned market symbology without outcome-driven changes;
+- create a new versioned experiment identity rather than mutating the original run;
+- preserve exact feature, filing, universe, market-data, and assumption lineage;
+- produce an honest terminal `PROMOTE`, `REJECT`, or `INSUFFICIENT` result under the predeclared gates;
+- register, bundle, and independently verify the resulting artifact chain before making a research claim.
 
 ### 2. Improve retrieval quality under a clean evaluation lifecycle
 
@@ -64,32 +69,31 @@ Priorities:
 
 Do not optimize directly against the published historical holdout and then describe the result as unseen performance.
 
-### 3. Finish production runtime hardening
+### 3. Finish repository surface-area cleanup without inventing architecture
 
-Keep the API small and explicit while removing request-path construction overhead.
-
-Priorities:
-
-- reuse expensive embedding/reranking/provider clients by configuration;
-- use persistent HTTP connection pools for hosted providers;
-- make provider rate limits reflect process-level concurrency rather than per-request object lifetime;
-- cache the immutable issuer/alias lookup used by query preprocessing with an explicit refresh/invalidation contract;
-- lock Python dependency resolution reproducibly;
-- retain durable retrieval/audit traces while optimizing persistence only when measurements justify it.
-
-### 4. Reduce repository surface area without reducing rigor
-
-The target structure is a small deployed core, reusable domain packages, thin operational entry points, and archived run history.
+The target structure is a small deployed core, reusable domain packages, thin operational entry points, and archived run history. Historical-universe, signals, experiments, and OOS now have explicit ownership; remaining changes should be justified by real coupling rather than directory symmetry.
 
 Priorities:
 
-- move reusable logic out of large `scripts/` entry points into `src/fdre/`;
-- consolidate historical-universe operations behind a small coherent CLI;
-- split `src/fdre/research/` into clear universe, signals, panels, experiments, and OOS domains;
-- reduce giant frontend files and global CSS through route/component ownership and verified dead-style removal;
+- keep large operational scripts thin by moving genuinely reusable logic into existing domain packages;
+- retire temporary compatibility imports only after active callers have migrated and architecture checks can enforce the canonical path;
+- reduce giant frontend files through component ownership, then split global CSS only where selectors have a clear route/component owner;
+- keep `panel.py` and `screen.py` at their current cross-cutting boundary unless a concrete ownership split improves the dependency graph;
 - keep active docs focused on contracts/current state and move dated forensic notes to `docs/archive/`.
 
 Refactors must preserve existing tests, experiment identities where applicable, and data/research contracts.
+
+### 4. Optimize production from measurements, not from an infrastructure wish list
+
+The previously listed client reuse, hosted-provider connection pooling, process-level request protection, issuer-reference caching, and dependency locking are implemented. Further runtime work should start from measured production bottlenecks.
+
+Priorities:
+
+- use bounded retrieval telemetry and request traces to identify the next material latency or failure source;
+- profile semantic retrieval and reranking tail latency before changing provider/index configuration;
+- preserve process-level provider budgets and request rejection behavior while tuning concurrency;
+- keep durable retrieval/audit traces while optimizing persistence only when measurements justify it;
+- add no recurring service unless a measured correctness, quality, latency, scale, or cost problem cannot be solved cleanly in the current stack.
 
 ## Research promotion rules
 
