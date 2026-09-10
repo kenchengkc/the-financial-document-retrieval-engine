@@ -1,0 +1,152 @@
+name: Archive HU-5 closure evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hu5-closure-evidence-archive.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: fdre-hu5-closure-evidence-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    name: Preserve pinned HU-5 closure archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_ARTIFACT_ID: "9971101844"
+      SOURCE_RUN_ID: "33971576262"
+      SOURCE_COMMIT: "3e4f2df5a7d57c6d3cbd6da1ccb317f6cba9451a"
+      EXPECTED_SHA256: "ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc"
+      RELEASE_TAG: "hu5-final-identity-closure-2026-09-05"
+      ASSET_NAME: "hu5-final-identity-apply-33971576262.zip"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate pinned archive contract
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = "kenchengkc/the-financial-document-retrieval-engine"
+          test "${SOURCE_ARTIFACT_ID}" = "9971101844"
+          test "${SOURCE_RUN_ID}" = "33971576262"
+          test "${SOURCE_COMMIT}" = "3e4f2df5a7d57c6d3cbd6da1ccb317f6cba9451a"
+          test "${EXPECTED_SHA256}" = "ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc"
+
+      - name: Download exact GitHub Actions artifact
+        run: |
+          set -euo pipefail
+          curl \
+            --fail-with-body \
+            --location \
+            --silent \
+            --show-error \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" \
+            --output "${ASSET_NAME}"
+
+      - name: Verify archive digest and payload
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" | sha256sum --check --strict -
+          python - <<'PY'
+          import os
+          from zipfile import ZipFile
+
+          expected = {
+              "apply.json",
+              "closure-audit.json",
+              "identity-strict-coverage.json",
+              "projection.json",
+              "run-provenance.json",
+              "sec-evidence.json",
+              "topology.json",
+          }
+          with ZipFile(os.environ["ASSET_NAME"]) as archive:
+              actual = {item.filename for item in archive.infolist() if not item.is_dir()}
+          if actual != expected:
+              missing = sorted(expected - actual)
+              unexpected = sorted(actual - expected)
+              raise SystemExit(
+                  f"HU-5 closure archive payload changed: missing={missing}, unexpected={unexpected}"
+              )
+          PY
+          printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" > "${ASSET_NAME}.sha256"
+
+      - name: Prepare immutable release notes
+        run: |
+          cat > release-notes.md <<EOF
+          Frozen HU-5 final identity-closure evidence produced by GitHub Actions run ${SOURCE_RUN_ID}.
+
+          This release preserves the exact generated evidence archive referenced by
+          docs/research/historical-universe/final-identity-closure.md outside Git history.
+          The archive is accepted only when its SHA-256 is:
+
+          ${EXPECTED_SHA256}
+
+          Source Actions artifact: ${SOURCE_ARTIFACT_ID}
+          Reviewed production commit: ${SOURCE_COMMIT}
+
+          The workflow fails closed on any digest or payload mismatch and never overwrites an
+          existing release asset. The checksum remains the authoritative integrity boundary.
+          EOF
+
+      - name: Check for an existing preserved release
+        id: existing
+        run: |
+          set -euo pipefail
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            mkdir -p existing
+            gh release download "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "${ASSET_NAME}" \
+              --dir existing
+            (
+              cd existing
+              printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" | sha256sum --check --strict -
+            )
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Publish durable release assets
+        if: steps.existing.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          gh release create "${RELEASE_TAG}" \
+            "${ASSET_NAME}" \
+            "${ASSET_NAME}.sha256" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${SOURCE_COMMIT}" \
+            --title "HU-5 final identity closure — 2026-09-05" \
+            --notes-file release-notes.md
+
+      - name: Verify published archive
+        run: |
+          set -euo pipefail
+          rm -rf published
+          mkdir -p published
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${ASSET_NAME}" \
+            --dir published
+          (
+            cd published
+            printf '%s  %s\n' "${EXPECTED_SHA256}" "${ASSET_NAME}" | sha256sum --check --strict -
+          )
+          {
+            echo "### HU-5 closure evidence preserved"
+            echo
+            echo "- Release: \`${RELEASE_TAG}\`"
+            echo "- Source artifact: \`${SOURCE_ARTIFACT_ID}\` from run \`${SOURCE_RUN_ID}\`"
+            echo "- Archive SHA-256: \`${EXPECTED_SHA256}\`"
+            echo "- Payload files: 7 / 7 exact"
+          } >> "${GITHUB_STEP_SUMMARY}"
