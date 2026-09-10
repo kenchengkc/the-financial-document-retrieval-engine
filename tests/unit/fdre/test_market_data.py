@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -11,6 +11,7 @@ from fdre.research.experiments.event_study import MarketBar
 from fdre.research.market_data import (
     MarketDataRateLimitError,
     _covering_tiingo_path,
+    _parse_chart,
     build_market_cache_manifest,
     fetch_market_bars,
     fetch_ticker_bars,
@@ -45,6 +46,63 @@ def test_covering_cache_is_reused_for_narrower_window(tmp_path: Path) -> None:
         "AAPL", date(2023, 1, 1), date(2024, 1, 1), token="unused", cache_dir=tmp_path
     )
     assert date(2023, 6, 1) in {bar.date for bar in bars}
+
+
+def test_covering_cache_selection_prefers_smallest_window_deterministically(
+    tmp_path: Path,
+) -> None:
+    rows = [{"date": "2023-06-01", "adjClose": 110.0}]
+    _write_cache(tmp_path, "AAPL", "20200101", "20261231", rows)
+    _write_cache(tmp_path, "AAPL", "20220101", "20250101", rows)
+    _write_cache(tmp_path, "AAPL", "20221201", "20240201", rows)
+
+    covering = _covering_tiingo_path(
+        tmp_path,
+        "AAPL",
+        date(2023, 1, 1),
+        date(2024, 1, 1),
+    )
+
+    assert covering is not None
+    assert covering.name == "tiingo_AAPL_20221201_20240201.json"
+
+
+def test_yahoo_parser_requires_adjusted_close_series() -> None:
+    when = datetime(2024, 1, 2, tzinfo=UTC)
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "timestamp": [int(when.timestamp())],
+                    "indicators": {"quote": [{"close": [123.45]}]},
+                }
+            ]
+        }
+    }
+
+    assert _parse_chart("AAPL", payload) == []
+
+
+def test_yahoo_parser_uses_adjusted_close_not_raw_close() -> None:
+    when = datetime(2024, 1, 2, tzinfo=UTC)
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "timestamp": [int(when.timestamp())],
+                    "indicators": {
+                        "adjclose": [{"adjclose": [98.5]}],
+                        "quote": [{"close": [123.45]}],
+                    },
+                }
+            ]
+        }
+    }
+
+    bars = _parse_chart("AAPL", payload)
+
+    assert len(bars) == 1
+    assert bars[0].adjusted_close == 98.5
 
 
 def test_fetch_market_bars_cache_only_reuses_covering_caches(
