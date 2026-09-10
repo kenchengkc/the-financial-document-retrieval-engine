@@ -6,8 +6,8 @@ from datetime import date
 
 import pytest
 
-from fdre.research import historical_universe_identity_adjudication as adjudication
-from fdre.research.historical_universe_identity_adjudication import (
+from fdre.research.historical_universe import identity_adjudication as adjudication
+from fdre.research.historical_universe.identity_adjudication import (
     IdentityAction,
     IdentityAdjudicationCase,
     IdentityAnchor,
@@ -16,7 +16,7 @@ from fdre.research.historical_universe_identity_adjudication import (
     identity_adjudication_manifest_id,
     identity_adjudication_plan_id,
 )
-from fdre.research.historical_universe_identity_adjudication_manifest import (
+from fdre.research.historical_universe.identity_adjudication_manifest import (
     CORRECTION_SPECS,
     INSERT_SPECS,
     VERIFY_IDENTITY_IDS,
