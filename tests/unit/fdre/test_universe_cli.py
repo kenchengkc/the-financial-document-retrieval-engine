@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 from typing import cast
@@ -125,3 +126,33 @@ def test_parquet_snapshot_requires_an_output_path(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(ValueError, match="--output is required"):
         universe_cli._snapshot_command(cast(Session, object()), args)
+
+
+def test_operational_commands_are_discoverable_from_one_surface() -> None:
+    help_text = universe_cli._parser().format_help()
+
+    for command in ("snapshot", "diff", "audit", "reconcile", "validate", "promote"):
+        assert command in help_text
+
+
+def test_operational_delegation_preserves_arguments_exit_code_and_sys_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_argv = sys.argv
+    observed: list[str] = []
+
+    def delegated_main() -> int:
+        observed.extend(sys.argv[1:])
+        return 2
+
+    monkeypatch.setattr(
+        universe_cli,
+        "_operation_entrypoint",
+        lambda command: delegated_main,
+    )
+
+    result = universe_cli.main(["validate", "--require-pass", "--output", "gate.json"])
+
+    assert result == 2
+    assert observed == ["--require-pass", "--output", "gate.json"]
+    assert sys.argv is original_argv
