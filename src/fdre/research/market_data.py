@@ -165,14 +165,16 @@ def fetch_ticker_bars(
 def _covering_tiingo_path(
     cache_dir: Path, ticker: str, start: date, end: date
 ) -> Path | None:
-    """Path of a cached Tiingo file whose window covers [start, end], if any.
+    """Path of the smallest cached Tiingo window covering [start, end], if any.
 
     The cache key embeds the exact requested window, so a wider study universe
     that shifts the date range by even a day would otherwise miss every cached
-    file and re-fetch the whole universe. Any cached file spanning at least
-    [start, end] already holds the bars we need.
+    file and re-fetch the whole universe. When multiple cached files cover the
+    request, selecting the smallest window with a filename tie-break keeps replay
+    deterministic instead of depending on filesystem iteration order.
     """
     prefix = f"tiingo_{ticker.upper()}_"
+    candidates: list[tuple[int, str, Path]] = []
     for path in cache_dir.glob(f"{prefix}*.json"):
         match = re.fullmatch(rf"{re.escape(prefix)}(\d{{8}})_(\d{{8}})\.json", path.name)
         if match is None:
@@ -180,8 +182,10 @@ def _covering_tiingo_path(
         cached_start = datetime.strptime(match.group(1), "%Y%m%d").date()
         cached_end = datetime.strptime(match.group(2), "%Y%m%d").date()
         if cached_start <= start and cached_end >= end:
-            return path
-    return None
+            candidates.append(((cached_end - cached_start).days, path.name, path))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: (item[0], item[1]))[2]
 
 
 def fetch_ticker_bars_tiingo(
@@ -508,9 +512,6 @@ def _parse_chart(ticker: str, payload: dict) -> list[MarketBar]:
     indicators = block.get("indicators") or {}
     adjclose_blocks = indicators.get("adjclose") or []
     closes = adjclose_blocks[0].get("adjclose") if adjclose_blocks else None
-    if not closes:
-        quote = (indicators.get("quote") or [{}])[0]
-        closes = quote.get("close")
     if not closes:
         return []
     bars: list[MarketBar] = []
