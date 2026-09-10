@@ -158,7 +158,8 @@ Historical-universe identity closure was verified in production on September 5, 
 reviewed actions committed, and both the merged HU-5 gate and independent identity-strict audit
 report 6,088/6,088 eligible calendar days (2010-01-01 through 2026-09-01), with zero invalid or
 blocked days. See the [closure record](docs/research/historical-universe/final-identity-closure.md)
-for run/artifact provenance. The unchanged flagship rerun remains a separate research step.
+for run/artifact provenance. The original flagship rerun remains preserved as an immutable research
+result; the frozen multi-class outcome policy is a separate versioned path for any amended evaluation.
 
 ## Local development
 
@@ -199,20 +200,28 @@ uv run python -m scripts.pipelines.retrieval_pipeline panel --tickers AAPL MSFT 
 uv run python -m scripts.pipelines.retrieval_pipeline audit
 ```
 
-For normal point-in-time universe inspection, use the canonical researcher-facing commands rather
-than the historical adjudication and repair scripts:
+For point-in-time universe inspection and historical-universe operations, use the consolidated
+researcher-facing CLI. `snapshot` and `diff` use the canonical database-backed universe API; the
+maintenance commands delegate to their existing authoritative parsers and guards:
 
 ```bash
+uv run python -m scripts.research.universe --help
 uv run python -m scripts.research.universe snapshot sp500 \
   --as-of 2026-06-01 --output universe-2026-06-01.json
 uv run python -m scripts.research.universe diff sp500 \
   --from 2025-06-01 --to 2026-06-01 --output universe-diff.json
+uv run python -m scripts.research.universe audit --help
+uv run python -m scripts.research.universe reconcile --help
+uv run python -m scripts.research.universe validate --help
+uv run python -m scripts.research.universe promote --help
 ```
 
 Snapshots fail closed on unresolved provisional or overlapping identity evidence unless
 `--include-provisional` is explicitly supplied. Diffs key on stable `security_id`, so a ticker rename
 is reported as an identity/provenance change rather than a removal plus addition. Snapshot export
-also supports Parquet with `--format parquet --output <path>`.
+also supports Parquet with `--format parquet --output <path>`. The delegated audit, reconcile,
+validate, and promote commands retain their existing parsers, output contracts, and mutation guards;
+legacy command paths remain available for compatibility.
 
 A registered experiment chain can be exported from a database and verified later without database
 or live-data access:
