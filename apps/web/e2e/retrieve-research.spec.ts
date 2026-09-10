@@ -39,10 +39,10 @@ async function openRetrieve(page: Page) {
 
 test("compares filings with the exact point-in-time cutoff", async ({ page }) => {
   await mockBase(page);
-  let requestUrl: URL | null = null;
+  let requestUrl = "";
 
   await page.route(/\/research\/filing-differences\/[^?]+/, (route) => {
-    requestUrl = new URL(route.request().url());
+    requestUrl = route.request().url();
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -90,21 +90,26 @@ test("compares filings with the exact point-in-time cutoff", async ({ page }) =>
   await expect(page.locator(".delta-result")).toContainText("vs. prior comparable filing");
   await expect(page.locator(".delta-result")).toContainText("as-of date check passed");
   await expect(page.locator(".delta-stats")).toContainText("2");
-  await expect(page.locator(".delta-change").first()).toContainText("New supply-chain concentration language.");
+  await expect(page.locator(".delta-change").first()).toContainText(
+    "New supply-chain concentration language.",
+  );
 
-  expect(requestUrl).not.toBeNull();
-  expect(requestUrl?.pathname).toContain("/research/filing-differences/0000320193-26-000012");
-  expect(requestUrl?.searchParams.get("as_of")).toBe("2026-01-31T23:59:59+00:00");
+  expect(requestUrl).not.toBe("");
+  const capturedRequest = new URL(requestUrl);
+  expect(capturedRequest.pathname).toContain(
+    "/research/filing-differences/0000320193-26-000012",
+  );
+  expect(capturedRequest.searchParams.get("as_of")).toBe("2026-01-31T23:59:59+00:00");
 });
 
 test("queries financial facts with ticker, metric, restatement, and as-of controls", async ({
   page,
 }) => {
   await mockBase(page);
-  let requestUrl: URL | null = null;
+  let requestUrl = "";
 
   await page.route(/\/research\/facts(?:\?|$)/, (route) => {
-    requestUrl = new URL(route.request().url());
+    requestUrl = route.request().url();
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -148,26 +153,29 @@ test("queries financial facts with ticker, metric, restatement, and as-of contro
   await expect(page.locator(".facts-result")).toContainText("1 reported facts");
   await expect(page.locator(".facts-result")).toContainText("latest");
   await expect(page.locator(".facts-table tbody tr")).toContainText("AAPL");
-  await expect(page.locator(".facts-table tbody tr")).toContainText("RevenueFromContractWithCustomerExcludingAssessedTax");
+  await expect(page.locator(".facts-table tbody tr")).toContainText(
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+  );
   await expect(page.locator(".facts-table tbody tr")).toContainText("restated");
 
-  expect(requestUrl).not.toBeNull();
-  expect(requestUrl?.searchParams.getAll("tickers")).toEqual(["AAPL", "MSFT"]);
-  expect(requestUrl?.searchParams.getAll("metrics")).toEqual(["revenue"]);
-  expect(requestUrl?.searchParams.get("as_of")).toBe("2026-02-01T23:59:59+00:00");
-  expect(requestUrl?.searchParams.get("restatement_policy")).toBe("latest");
-  expect(requestUrl?.searchParams.get("limit")).toBe("100");
+  expect(requestUrl).not.toBe("");
+  const capturedRequest = new URL(requestUrl);
+  expect(capturedRequest.searchParams.getAll("tickers")).toEqual(["AAPL", "MSFT"]);
+  expect(capturedRequest.searchParams.getAll("metrics")).toEqual(["revenue"]);
+  expect(capturedRequest.searchParams.get("as_of")).toBe("2026-02-01T23:59:59+00:00");
+  expect(capturedRequest.searchParams.get("restatement_policy")).toBe("latest");
+  expect(capturedRequest.searchParams.get("limit")).toBe("100");
 });
 
 test("previews and exports a point-in-time research dataset without changing export limits", async ({
   page,
 }) => {
   await mockBase(page);
-  let previewUrl: URL | null = null;
-  let exportUrl: URL | null = null;
+  let previewUrl = "";
+  let exportUrl = "";
 
   await page.route(/\/research\/panel(?:\?|$)/, (route) => {
-    previewUrl = new URL(route.request().url());
+    previewUrl = route.request().url();
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -209,7 +217,7 @@ test("previews and exports a point-in-time research dataset without changing exp
   });
 
   await page.route(/\/research\/panel\/export(?:\?|$)/, (route) => {
-    exportUrl = new URL(route.request().url());
+    exportUrl = route.request().url();
     return route.fulfill({
       status: 200,
       contentType: "text/csv",
@@ -232,14 +240,15 @@ test("previews and exports a point-in-time research dataset without changing exp
   await expect(page.locator(".panel-table tbody tr")).toContainText("0.812");
   await expect(page.locator(".panel-table tbody tr")).toContainText("31.0%");
 
-  expect(previewUrl).not.toBeNull();
-  expect(previewUrl?.searchParams.getAll("tickers")).toEqual(["AAPL", "MSFT"]);
-  expect(previewUrl?.searchParams.getAll("form_types")).toEqual(["10-K", "10-Q"]);
-  expect(previewUrl?.searchParams.get("period_end_from")).toBe("2025-01-01");
-  expect(previewUrl?.searchParams.get("period_end_to")).toBe("2025-12-31");
-  expect(previewUrl?.searchParams.get("as_of")).toBe("2026-02-01T23:59:59+00:00");
-  expect(previewUrl?.searchParams.get("include_amendments")).toBe("false");
-  expect(previewUrl?.searchParams.get("limit")).toBe("25");
+  expect(previewUrl).not.toBe("");
+  const capturedPreview = new URL(previewUrl);
+  expect(capturedPreview.searchParams.getAll("tickers")).toEqual(["AAPL", "MSFT"]);
+  expect(capturedPreview.searchParams.getAll("form_types")).toEqual(["10-K", "10-Q"]);
+  expect(capturedPreview.searchParams.get("period_end_from")).toBe("2025-01-01");
+  expect(capturedPreview.searchParams.get("period_end_to")).toBe("2025-12-31");
+  expect(capturedPreview.searchParams.get("as_of")).toBe("2026-02-01T23:59:59+00:00");
+  expect(capturedPreview.searchParams.get("include_amendments")).toBe("false");
+  expect(capturedPreview.searchParams.get("limit")).toBe("25");
 
   await page.getByLabel("Dataset download format").selectOption("csv");
   const downloadPromise = page.waitForEvent("download");
@@ -247,10 +256,11 @@ test("previews and exports a point-in-time research dataset without changing exp
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("fdre-test-panel.csv");
 
-  expect(exportUrl).not.toBeNull();
-  expect(exportUrl?.searchParams.getAll("tickers")).toEqual(["AAPL", "MSFT"]);
-  expect(exportUrl?.searchParams.getAll("form_types")).toEqual(["10-K", "10-Q"]);
-  expect(exportUrl?.searchParams.get("as_of")).toBe("2026-02-01T23:59:59+00:00");
-  expect(exportUrl?.searchParams.get("output_format")).toBe("csv");
-  expect(exportUrl?.searchParams.get("limit")).toBe("500");
+  expect(exportUrl).not.toBe("");
+  const capturedExport = new URL(exportUrl);
+  expect(capturedExport.searchParams.getAll("tickers")).toEqual(["AAPL", "MSFT"]);
+  expect(capturedExport.searchParams.getAll("form_types")).toEqual(["10-K", "10-Q"]);
+  expect(capturedExport.searchParams.get("as_of")).toBe("2026-02-01T23:59:59+00:00");
+  expect(capturedExport.searchParams.get("output_format")).toBe("csv");
+  expect(capturedExport.searchParams.get("limit")).toBe("500");
 });
