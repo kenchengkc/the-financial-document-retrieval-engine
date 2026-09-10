@@ -93,8 +93,17 @@ The exact owner command is retained in
 
 Artifact `hu5-final-identity-apply-33971576262` contains the frozen topology, SEC evidence,
 projection, `run-provenance.json`, `apply.json`, `identity-strict-coverage.json`, and
-`closure-audit.json`. Its configured 90-day retention expires 2026-12-04; the inputs and measured
-IDs above remain documented in Git. Generated evidence artifacts are not committed to the repo.
+`closure-audit.json`. Its configured 90-day Actions retention expires 2026-12-04. The unchanged ZIP
+and companion checksum were therefore preserved on 2026-09-10 by
+[archive run 34451986167](https://github.com/kenchengkc/the-financial-document-retrieval-engine/actions/runs/34451986167)
+in the repository-associated GHCR package
+`ghcr.io/kenchengkc/fdre-hu5-closure-evidence` under the content-addressed tag
+`sha256-ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc`.
+The published registry manifest digest is
+`sha256:05c5c9e7f3c3ccbe3986948b1950fd0ec957fc38256a4243626e44d3944d768b`.
+That workflow pulled the stored package back, extracted the ZIP, and reverified archive SHA-256
+`ac326c69c936a859a6af0155653d0c55e3ca4464b5cf130004f77223e0dbf0cc` before succeeding.
+Generated evidence artifacts remain outside Git history.
 
 ## Transaction and operational controls
 
@@ -118,7 +127,28 @@ Frontend audit, lint, types, build, and 20 Playwright tests passed.
 
 ## Read-only verification
 
-Download artifact `9971101844` from run `33971576262`, verify its digest, and run:
+Before 2026-12-04, artifact `9971101844` from run `33971576262` remains the original download path.
+The durable GHCR copy can be retrieved by immutable registry digest instead. Authenticate to GHCR
+first if the package is not publicly readable, then run:
+
+```bash
+docker pull \
+  ghcr.io/kenchengkc/fdre-hu5-closure-evidence@sha256:05c5c9e7f3c3ccbe3986948b1950fd0ec957fc38256a4243626e44d3944d768b
+
+container_id="$(docker create \
+  ghcr.io/kenchengkc/fdre-hu5-closure-evidence@sha256:05c5c9e7f3c3ccbe3986948b1950fd0ec957fc38256a4243626e44d3944d768b)"
+docker cp \
+  "${container_id}:/evidence/hu5-final-identity-apply-33971576262.zip" \
+  hu5-final-identity-apply-33971576262.zip
+docker cp \
+  "${container_id}:/evidence/hu5-final-identity-apply-33971576262.zip.sha256" \
+  hu5-final-identity-apply-33971576262.zip.sha256
+docker rm "${container_id}"
+sha256sum --check --strict hu5-final-identity-apply-33971576262.zip.sha256
+unzip hu5-final-identity-apply-33971576262.zip -d hu5-final-identity-apply-33971576262
+```
+
+Then run the read-only database checks against the preserved `apply.json`:
 
 ```bash
 python -m scripts.research.historical_universe.historical_universe_identity_strict_coverage \
@@ -128,7 +158,7 @@ python -m scripts.research.historical_universe.historical_universe_identity_stri
 
 python -m scripts.research.historical_universe.historical_universe_identity_closure_audit \
   --database-url "$DATABASE_URL" \
-  --apply-report /path/to/downloaded/apply.json \
+  --apply-report hu5-final-identity-apply-33971576262/apply.json \
   --output closure-audit.json
 ```
 
