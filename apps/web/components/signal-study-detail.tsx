@@ -1,0 +1,855 @@
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Briefcase,
+  CheckCircle2,
+  CircleSlash,
+  FlaskConical,
+  HelpCircle,
+  TrendingUp,
+} from "lucide-react";
+
+import type {
+  ComponentResult,
+  SignalConstituent,
+  SignalCorrelation,
+  SignalStudyResponse,
+  SignalWindow,
+} from "@/lib/types";
+
+const WINDOW_LABELS: Record<string, string> = {
+  "0:1": "Filing day",
+  "-1:1": "Around filing",
+  "1:5": "+1 week",
+  "1:21": "+1 month",
+  "1:63": "+1 quarter",
+  "1:126": "+6 months",
+  "1:252": "+12 months",
+};
+
+const SIGNAL_LABELS: Record<string, string> = {
+  disclosure_similarity: "Disclosure similarity",
+  risk_factor_churn: "Risk churn",
+  filing_delay_surprise: "Delay surprise",
+  risk_factor_expansion: "Risk expansion",
+  filing_lateness: "Filing lateness",
+  earnings_quality: "Cash conversion",
+  operating_profitability: "Profitability",
+  operating_margin_momentum: "Margin momentum",
+  asset_growth: "Asset growth",
+  net_share_issuance: "Share issuance",
+  composite: "Composite",
+};
+
+function prettySignal(signal: string) {
+  return SIGNAL_LABELS[signal] ?? signal;
+}
+
+function ComponentsPanel({
+  windows,
+  components,
+  correlations,
+  neutralization,
+}: {
+  windows: string[];
+  components: ComponentResult[];
+  correlations: SignalCorrelation[];
+  neutralization?: string;
+}) {
+  const neutralLabel =
+    neutralization === "period+sector" ? "Period + sector neutral" : "Period neutral";
+  const signals = [...new Set(components.map((c) => c.signal))];
+  const ordered = [
+    ...signals.filter((s) => s !== "composite"),
+    ...(signals.includes("composite") ? ["composite"] : []),
+  ];
+  const icFor = (signal: string, window: string) =>
+    components.find((c) => c.signal === signal && c.window === window)
+      ?.information_coefficient ?? null;
+  return (
+    <div className="comp-panel">
+      <div className="comp-head">
+        <div className="comp-head-row">
+          <h3>Signal components: information coefficient by horizon</h3>
+          <span className="comp-neutral">{neutralLabel}</span>
+        </div>
+        <p>
+          Each component is weak; the composite (last row) averages their cross-sectionally
+          standardized z-scores. The pairwise correlations near zero are why they are worth
+          combining.
+        </p>
+      </div>
+      <div className="comp-table">
+        <div className="comp-row comp-th">
+          <span>signal</span>
+          {windows.map((w) => (
+            <span key={w}>{windowLabel(w)}</span>
+          ))}
+        </div>
+        {ordered.map((signal) => (
+          <div
+            className={`comp-row${signal === "composite" ? " comp-composite" : ""}`}
+            key={signal}
+          >
+            <span className="comp-name">{prettySignal(signal)}</span>
+            {windows.map((w) => {
+              const ic = icFor(signal, w);
+              return (
+                <span
+                  key={w}
+                  className={`comp-ic ${ic === null ? "" : ic >= 0 ? "pos" : "neg"}`}
+                >
+                  {ic === null ? "N/A" : ic.toFixed(3)}
+                </span>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {correlations.length > 0 && (
+        <div className="comp-corr">
+          <span className="comp-corr-title">Pairwise correlation (near zero = diversifying)</span>
+          <div className="comp-corr-list">
+            {correlations.map((c) => (
+              <span key={`${c.signal_a}-${c.signal_b}`} className="comp-corr-item">
+                {prettySignal(c.signal_a)} · {prettySignal(c.signal_b)}
+                <strong>{c.correlation === null ? "N/A" : c.correlation.toFixed(2)}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function windowLabel(window: string) {
+  return WINDOW_LABELS[window] ?? window;
+}
+
+function pct(value: number | null, digits = 2) {
+  return value === null ? "n/a" : `${(value * 100).toFixed(digits)}%`;
+}
+
+function outcomeName(study: SignalStudyResponse) {
+  return study.report.outcome_name ?? "abnormal_return";
+}
+
+function adjustedP(window: SignalWindow) {
+  return (
+    window.suite_adjusted_p_value ??
+    window.long_short_adjusted_p_value ??
+    window.long_short_p_value
+  );
+}
+
+export function studyKey(study: SignalStudyResponse) {
+  return `${study.report.signal_name}:${outcomeName(study)}`;
+}
+
+function isWindowSignificant(w: SignalWindow) {
+  const p = adjustedP(w);
+  return p !== null && p < 0.05;
+}
+
+function bestAdjustedP(results: SignalWindow[]) {
+  return Math.min(
+    1,
+    ...results.map((w) => adjustedP(w) ?? 1),
+  );
+}
+
+function studyVerdict(study: SignalStudyResponse) {
+  const quality = study.report.quality;
+  if (quality) {
+    const stability =
+      quality.stability_basis === "annual_periods"
+        ? `annual direction stability = ${Math.round(quality.direction_stability * 100)}% across ${quality.periods_tested} years`
+        : "annual stability is not yet measurable";
+    return {
+      tone:
+        quality.status === "Validated"
+          ? ("sig" as const)
+          : quality.status === "Promising"
+            ? ("watch" as const)
+            : ("flat" as const),
+      headline: `${quality.status} research signal`,
+      plain: `${quality.reason} Best multiple-test-adjusted p = ${quality.best_suite_adjusted_p_value?.toFixed(3) ?? "n/a"}; ${stability}.`,
+    };
+  }
+  const results = study.report.results;
+  const sig = results.filter(isWindowSignificant);
+  if (sig.length === 0) {
+    return {
+      tone: "flat" as const,
+      headline: "No adjusted evidence",
+      plain: `None of the ${results.length} holding horizons remains below p = 0.05 after correcting for the other published tests (best adjusted p = ${bestAdjustedP(results).toFixed(2)}). The signal is too weak and noisy to trade on its own after costs.`,
+    };
+  }
+  const horizons = sig.map((w) => windowLabel(w.window)).join(", ");
+  return {
+    tone: "sig" as const,
+    headline: `${sig.length} of ${results.length} horizons pass the adjusted test`,
+    plain: `The spread remains below p = 0.05 after correcting across the published signal and horizon tests at ${horizons}. This older study has not yet received the full robustness rating.`,
+  };
+}
+
+function StudyVerdict({ study }: { study: SignalStudyResponse }) {
+  const v = studyVerdict(study);
+  const Icon =
+    v.tone === "sig" ? CheckCircle2 : v.tone === "watch" ? FlaskConical : CircleSlash;
+  return (
+    <div className={`sig-banner ${v.tone}`} role="status">
+      <Icon size={22} aria-hidden="true" />
+      <div>
+        <p className="sig-banner-label">Verdict</p>
+        <strong>{v.headline}</strong>
+        <p className="sig-banner-plain">{v.plain}</p>
+      </div>
+    </div>
+  );
+}
+
+function SummaryTable({
+  results,
+  isVolatility,
+}: {
+  results: SignalWindow[];
+  isVolatility: boolean;
+}) {
+  return (
+    <div className="sig-summary">
+      <table>
+        <thead>
+          <tr>
+            <th>Holding horizon</th>
+            <th className="num">{isVolatility ? "High−low vol" : "Long–short return"}</th>
+            <th className="num">Rank skill (IC)</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((w) => {
+            const sig = isWindowSignificant(w);
+            const rising = (w.long_short_mean ?? 0) >= 0;
+            const p = adjustedP(w);
+            return (
+              <tr key={w.window}>
+                <td>
+                  <strong>{windowLabel(w.window)}</strong>
+                  <small>
+                    n = {w.sample_size.toLocaleString()}
+                    {w.cluster_count ? ` · ${w.cluster_count.toLocaleString()} issuers` : ""}
+                  </small>
+                </td>
+                <td className={`num ${sig ? (rising ? "pos" : "neg") : ""}`}>
+                  {pct(w.long_short_mean)}
+                </td>
+                <td className="num">
+                  {w.information_coefficient === null ? "N/A" : w.information_coefficient.toFixed(3)}
+                </td>
+                <td>
+                  <span className={`sig-verdict ${sig ? "sig" : "flat"}`}>
+                    {sig ? `Passes adjusted test ${rising ? "↑" : "↓"}` : "Does not pass"}
+                  </span>
+                  {p !== null && <small className="sig-p">adjusted p = {p.toFixed(2)}</small>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PeriodStability({
+  study,
+  isVolatility,
+}: {
+  study: SignalStudyResponse;
+  isVolatility: boolean;
+}) {
+  const bestWindow = study.report.quality?.best_window;
+  const minimumSample = study.report.quality?.period_sample_minimum ?? 50;
+  const rows = (study.report.period_results ?? [])
+    .filter(
+      (row) =>
+        bestWindow !== null && row.window === bestWindow && row.sample_size >= minimumSample,
+    )
+    .sort((left, right) => left.period.localeCompare(right.period));
+  if (!bestWindow || rows.length < 2) {
+    return null;
+  }
+  return (
+    <section className="period-stability" aria-labelledby="annual-stability-title">
+      <div className="period-stability-head">
+        <div>
+          <p className="eyebrow">Temporal robustness</p>
+          <h3 id="annual-stability-title">Annual cross-sections</h3>
+        </div>
+        <p>
+          {windowLabel(bestWindow)} held constant; each row uses at least {minimumSample} filing
+          events from that year.
+        </p>
+      </div>
+      <div className="sig-summary">
+        <table>
+          <thead>
+            <tr>
+              <th>Event year</th>
+              <th className="num">Filings</th>
+              <th className="num">Rank IC</th>
+              <th className="num">{isVolatility ? "High-low vol" : "Long-short return"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.period}-${row.window}`}>
+                <td><strong>{row.period}</strong></td>
+                <td className="num">{row.sample_size.toLocaleString()}</td>
+                <td className={`num ${(row.information_coefficient ?? 0) >= 0 ? "pos" : "neg"}`}>
+                  {row.information_coefficient?.toFixed(3) ?? "N/A"}
+                </td>
+                <td className={`num ${(row.long_short_mean ?? 0) >= 0 ? "pos" : "neg"}`}>
+                  {pct(row.long_short_mean)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function Glossary({ isVolatility }: { isVolatility: boolean }) {
+  const outcome = isVolatility ? "next-period volatility" : "next-period return";
+  const items: [string, string][] = [
+    [
+      "The 5 groups",
+      `Every filing is sorted into 5 equal buckets by the signal (Group 1 = lowest score, Group 5 = highest score). Each bar is that group's average ${outcome}.`,
+    ],
+    [
+      "Long–short return",
+      "What you would earn buying the top group and shorting the bottom: the tradeable edge if the signal works. Shown as Q5−Q1.",
+    ],
+    [
+      "Rank skill (IC)",
+      "How accurately the signal ranks winners vs. losers, from −1 to +1. 0 is a coin flip; genuinely useful signals run about 0.02–0.05.",
+    ],
+    [
+      "Adjusted p-value",
+      "How likely the result is just luck after accounting for every published signal and horizon, not only the selected result. Values below 0.05 pass the adjusted test.",
+    ],
+  ];
+  return (
+    <details className="sig-glossary">
+      <summary>
+        <HelpCircle size={14} aria-hidden="true" /> How to read this
+      </summary>
+      <dl>
+        {items.map(([term, def]) => (
+          <div key={term}>
+            <dt>{term}</dt>
+            <dd>{def}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+export function signalTabLabel(study: SignalStudyResponse) {
+  if (study.report.signal_name === "composite") {
+    const count = study.report.component_signals?.length ?? 0;
+    return `Composite (${count} signals)`;
+  }
+  return prettySignal(study.report.signal_name);
+}
+
+type StudyCopy = {
+  headlinePrefix: string;
+  headlineAccent: string;
+  headlineSuffix: string;
+  lede: string;
+  leftAxis: string;
+  rightAxis: string;
+  note: string;
+  desk: string[];
+};
+
+function studyCopy(study: SignalStudyResponse): StudyCopy {
+  if (study.report.signal_name === "composite") {
+    return {
+      headlinePrefix: "Can combining weak signals ",
+      headlineAccent: "beat any single one",
+      headlineSuffix: "?",
+      lede:
+        "Three point-in-time filing signals (disclosure similarity, net risk-factor expansion, and filing lateness) are each z-scored within their filing period and sector (cross-sectionally neutral, with a period fallback where a sector is thin), sign-aligned, and averaged into one composite. The Fundamental Law of Active Management (IR ≈ IC × √breadth) says uncorrelated signals combine into more information than any single one.",
+      leftAxis: "← composite bearish",
+      rightAxis: "composite bullish →",
+      note:
+        "The components are genuinely uncorrelated, which is the prerequisite for combination, but individually weak and sign-unstable across horizons, so naive equal-weighting does not beat the best single signal here. Sector-neutralizing the cross-section shrinks the raw ICs: part of a single signal's apparent edge was a sector tilt, not issuer-specific information. The realistic levers are breadth and IC-weighting the components out-of-sample, not a free lunch from averaging.",
+      desk: [
+        "IC-weight the sleeves, not equal-weight: weight each component by its out-of-sample rank skill so the weakest signal stops dragging the blend.",
+        "Breadth over conviction: at ~500 names the Fundamental Law says many small tilts beat a few large bets. Apply the composite as basis-point overweights across the whole book.",
+        "Keep it sector-neutral (as here), so the tilt expresses issuer-specific information instead of a hidden sector bet.",
+      ],
+    };
+  }
+  const definition = study.report.definition;
+  if (definition) {
+    const isVolatility = outcomeName(study) === "realized_volatility";
+    const qualityReading =
+      study.report.quality?.reason ??
+      "This result is a versioned research hypothesis, not a production trading claim.";
+    return {
+      headlinePrefix: "Does ",
+      headlineAccent: definition.label.toLowerCase(),
+      headlineSuffix: isVolatility ? " rank forward risk?" : " rank forward returns?",
+      lede: `${definition.thesis} The point-in-time feature is ${definition.formula.toLowerCase()}, computed from ${definition.source.toLowerCase()}.`,
+      leftAxis: `← lower ${definition.label.toLowerCase()}`,
+      rightAxis: `higher ${definition.label.toLowerCase()} →`,
+      note: `${qualityReading} The universe follows indexed issuer coverage rather than a historical constituent file; return studies are gross of costs and borrow.`,
+      desk: [
+        "Evidence review: inspect the extreme constituents and trace every score to its source filing before assigning an economic interpretation.",
+        "Portfolio research: use sector-period neutral ranks so an apparent effect is not a disguised industry or reporting-calendar exposure.",
+        "Falsification: require stable direction, monotonic quantiles, and walk-forward replication before allocating risk.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "earnings_quality") {
+    return {
+      headlinePrefix: "Are earnings backed by ",
+      headlineAccent: "real cash",
+      headlineSuffix: " rewarded?",
+      lede:
+        "A point-in-time replication of the accruals anomaly (Sloan, 1996). For each 10-K we compute balance-sheet accruals, defined as (net income − operating cash flow) ÷ total assets, straight from the reported XBRL facts. Low accruals mean profits are backed by cash rather than accounting estimates; high accruals have historically preceded weaker returns. Filings are sorted into 5 groups by accrual quality and tracked forward.",
+      leftAxis: "← low-quality (high accruals)",
+      rightAxis: "high-quality (low accruals) →",
+      note:
+        "Accruals is a real, published fundamental factor, but in this survivorship-biased S&P 500 large-cap sample it shows no standalone edge after winsorizing forward returns at the 2.5/97.5th percentile. The anomaly is historically strongest in smaller, less-liquid names. Two cautions on the current constituents: banks carry large working-capital swings that inflate accruals for non-quality reasons, and hyper-growth firms build inventory and receivables ahead of sales, so a high reading there reflects expansion, not distress.",
+      desk: [
+        "Negative screen, not a long engine: historically most of the accrual anomaly's payoff came from the short leg. Desks exclude or underweight the worst-accrual quintile rather than chase the best.",
+        "Defensive overlay: quality factors earn most of their keep in drawdowns (Asness–Frazzini–Pedersen's Quality-Minus-Junk), so a cash-backed-earnings tilt is sized as downside insurance, not alpha.",
+        "Sector-adjust before acting: financials and hyper-growth names read low-quality for structural reasons, so raw accruals get neutralized against sector peers first.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "asset_growth") {
+    return {
+      headlinePrefix: "Does a ",
+      headlineAccent: "growing balance sheet",
+      headlineSuffix: " predict weaker returns?",
+      lede:
+        "A point-in-time test of the asset growth anomaly (Cooper, Gulen & Schill, 2008), one of the few anomalies documented to survive in large caps. Each 10-K reports the current and prior-year balance sheet, so year-over-year total-asset growth is computable the day the filing lands. Historically, aggressive balance-sheet expansion through acquisitions or capacity build-outs preceded weaker returns.",
+      leftAxis: "← high growth (expanding)",
+      rightAxis: "low growth (disciplined) →",
+      note:
+        "In this 2023–26 window the classic effect does not replicate. If anything, it leans the other way because the market paid up for balance-sheet expansion during the AI capex cycle (NVDA grew assets 85% and kept outperforming), and the extreme-growth tail is dominated by completed acquisitions (SNPS+Ansys, AMCR+Berry) rather than empire-building. A one-regime sample cannot reject a factor documented over 40 years; it can tell you the regime.",
+      desk: [
+        "Regime filter first: the anomaly's premise (expansion destroys value) held in normal regimes but inverted during the AI capex boom. Desks condition the tilt on the capex cycle before deploying.",
+        "M&A integration flag: the extreme-growth tail is mostly closed deals. These names are more useful routed to event-driven coverage as integration risks than naively shorted.",
+        "Condition on funding: expansion funded by operating cash flow behaves differently from expansion funded by issuance. Cross this signal with share issuance (next tab) before tilting.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "net_share_issuance") {
+    return {
+      headlinePrefix: "Do ",
+      headlineAccent: "buybacks beat issuers",
+      headlineSuffix: "?",
+      lede:
+        "A point-in-time test of the net share issuance anomaly (Pontiff & Woodgate, 2008): firms shrinking their share count historically outperformed net issuers, an effect documented as robust even in large caps. Year-over-year change in weighted diluted shares comes straight from each 10-K's income statement, knowable at acceptance.",
+      leftAxis: "← net issuers (dilution)",
+      rightAxis: "net buybacks (shrinking) →",
+      note:
+        "This window produced the study's most interesting result: a statistically significant one-month effect (adjusted p ≈ 0.02) in the OPPOSITE direction of the literature. The biggest issuers outperformed buyback names. Look at who the issuers are: merger completions (Paramount–Skydance, Expand Energy, IP–DS Smith) and recovering turnarounds (Carvana issued 70% more shares and was one of the market's best performers). In 2023–26, big issuance marked corporate events the market rewarded, not value destruction. A significant inversion is information because it tells you the naive factor would have lost money this regime.",
+      desk: [
+        "Treat large issuance as an event flag, not a factor score: 40%+ share-count jumps are deal closes and recapitalizations. Route them to event-driven and merger-arb coverage.",
+        "The buyback side still matters as carry: consistent net-buyback names compound per-share value slowly. Desks hold it as a small, long-horizon tilt rather than a timing signal.",
+        "Inversion risk management: when a documented anomaly flips sign with significance, factor desks cut the sleeve's risk budget and investigate crowding/regime before re-arming it.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "filing_lateness") {
+    return {
+      headlinePrefix: "Does filing later signal ",
+      headlineAccent: "unresolved operating risk",
+      headlineSuffix: "?",
+      lede:
+        "Each filing is scored by the elapsed days from fiscal period end to public acceptance, using only timestamps known when the filing arrived. The cross-section tests whether slower reporting is associated with weaker benchmark-adjusted returns or higher subsequent volatility.",
+      leftAxis: "← faster reporters",
+      rightAxis: "slower reporters →",
+      note:
+        "Reporting delay is a useful operational-risk feature, but raw delay also reflects filer status, form type, fiscal calendar, and transaction complexity. A production sleeve should neutralize those mechanical deadline effects and validate stability out of sample before assigning a directional interpretation.",
+      desk: [
+        "Exception queue: flag issuers whose delay widens versus their own history, then route them for accounting, control, or transaction review.",
+        "Event-risk sizing: a late filing can raise uncertainty even without a return edge, supporting smaller pre-event exposure or wider risk limits.",
+        "Composite input: combine standardized lateness with language change and risk-factor expansion so no single noisy disclosure feature dominates.",
+      ],
+    };
+  }
+  if (
+    study.report.signal_name === "risk_factor_expansion" &&
+    outcomeName(study) === "realized_volatility"
+  ) {
+    return {
+      headlinePrefix: "Do expanded risk factors predict ",
+      headlineAccent: "higher volatility",
+      headlineSuffix: "?",
+      lede:
+        "Each filing is scored by net risk-factor expansion versus the prior comparable filing: added risk passages minus removed passages, knowable at acceptance. Quantiles are then tested against forward realized daily-return volatility.",
+      leftAxis: "← fewer added risks",
+      rightAxis: "more added risks →",
+      note:
+        "This is a reproducible risk-monitoring signal, not a trading claim. The outcome is raw realized volatility over each window; inference is bootstrap-based and remains sample-size sensitive.",
+      desk: [
+        "Position sizing input: forward volatility is the denominator of inverse-vol weighting, so names with big net risk-factor expansions get mechanically smaller weights at the next rebalance.",
+        "Hedging trigger: predicted volatility without a return edge argues for buying protection (puts, collars) on affected names rather than selling the position.",
+        "Vol relative value: a filing-implied vol signal knowable at acceptance is exactly the kind of input options desks compare against implied vol to find rich/cheap protection.",
+      ],
+    };
+  }
+  if (study.report.signal_name === "risk_factor_expansion") {
+    return {
+      headlinePrefix: "Do newly disclosed risks predict ",
+      headlineAccent: "future underperformance",
+      headlineSuffix: "?",
+      lede:
+        "Each filing is compared with its prior point-in-time comparable. The signal is net added Item 1A passages (additions minus removals), measured when the filing became public, then tested against benchmark-adjusted forward returns.",
+      leftAxis: "← fewer added risks",
+      rightAxis: "more added risks →",
+      note:
+        "Risk-factor expansion is partly disclosure behavior and partly real operating change. Boilerplate refreshes, acquisitions, and new regulation can all widen Item 1A without the same economic meaning, so passage-level attribution matters before this becomes a directional sleeve.",
+      desk: [
+        "Change triage: route the largest net additions into the filing comparison workspace and identify the exact new risk language before acting.",
+        "Catalyst map: connect newly disclosed risks with upcoming earnings, litigation, refinancing, or regulatory dates for scenario analysis.",
+        "Risk overlay: use expansion as a sizing or hedge input when it agrees with volatility and fundamental deterioration signals.",
+      ],
+    };
+  }
+  return {
+    headlinePrefix: "Do filings that ",
+    headlineAccent: "change their language",
+    headlineSuffix: " underperform?",
+    lede:
+      "A no-lookahead replication of the Lazy Prices anomaly (Cohen, Malloy & Nguyen, 2020). Each filing is scored by its disclosure similarity to the prior comparable filing, knowable only at acceptance, then sorted into quantiles.",
+    leftAxis: "← revised filings underperform",
+    rightAxis: "unchanged outperform →",
+    note:
+      "The signal is directionally consistent with Lazy Prices at short horizons but remains sample-size sensitive. Returns are market-adjusted gross of transaction costs and ignore borrow; the universe is survivorship-biased.",
+    desk: [
+      "Analyst triage: bottom-decile similarity (heavily revised filings) is a same-day reading list. The language changed for a reason, and someone should know why before the market does.",
+      "Composite ingredient: too weak alone, but uncorrelated with risk-expansion and lateness. That is exactly the profile worth z-scoring into a multi-signal blend (see Composite tab).",
+      "Event-risk sizing: a heavily revised filing marks elevated idiosyncratic risk. Trim size or widen risk limits into the next print rather than taking a directional view.",
+    ],
+  };
+}
+
+const CONSTITUENT_COPY: Record<
+  string,
+  { description: string; longTitle: string; shortTitle: string; footer: string }
+> = {
+  earnings_quality: {
+    description:
+      "The current highest- and lowest-quality names, ranked by operating cash flow minus net income over average assets on each issuer's most recent 10-K.",
+    longTitle: "Cash-backed · top quality",
+    shortTitle: "Accrual-heavy · watch quality",
+    footer:
+      "Cash conversion = (operating cash flow - net income) / average assets.",
+  },
+  operating_profitability: {
+    description:
+      "Operating income scaled by average assets, using annual XBRL facts available when each filing was accepted.",
+    longTitle: "Efficient · high profitability",
+    shortTitle: "Weak · low profitability",
+    footer: "Operating profitability = operating income / average assets.",
+  },
+  operating_margin_momentum: {
+    description:
+      "The latest year-over-year change in operating margin, calculated from comparative annual facts in the same 10-K.",
+    longTitle: "Improving · positive inflection",
+    shortTitle: "Deteriorating · negative inflection",
+    footer: "Margin momentum = current operating margin - prior operating margin.",
+  },
+  asset_growth: {
+    description:
+      "A higher score means more disciplined year-over-year asset growth from each issuer's most recent 10-K.",
+    longTitle: "Shrinking · disciplined",
+    shortTitle: "Expanding · watch integration",
+    footer:
+      "Score = negative year-over-year asset growth, using comparative facts from the same 10-K.",
+  },
+  net_share_issuance: {
+    description:
+      "A higher score means the issuer reduced its reported common share count. Common shares outstanding are preferred, with annual diluted weighted-average shares as fallback.",
+    longTitle: "Net buybacks · shrinking count",
+    shortTitle: "Net issuers · rising count",
+    footer:
+      "Score = negative year-over-year share-count growth from the same 10-K.",
+  },
+};
+
+function Constituents({
+  constituents,
+  signalName,
+}: {
+  constituents: SignalConstituent[];
+  signalName: string;
+}) {
+  const copy = CONSTITUENT_COPY[signalName];
+  if (!constituents.length || !copy) {
+    return null;
+  }
+  const longs = constituents.filter((c) => c.side === "long");
+  const shorts = constituents.filter((c) => c.side === "short");
+  const fmt = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+  const column = (
+    rows: SignalConstituent[],
+    tone: "long" | "short",
+    Icon: typeof ArrowDownRight,
+    title: string,
+  ) => (
+    <div className={`sig-const-col ${tone}`}>
+      <p className="sig-const-title">
+        <Icon size={15} aria-hidden="true" /> {title}
+      </p>
+      <ul>
+        {rows.map((c) => (
+          <li key={c.ticker}>
+            <span className="sig-const-tk">{c.ticker}</span>
+            <span className="sig-const-nm">{c.name}</span>
+            <span className={`sig-const-v ${tone === "long" ? "good" : "warn"}`}>
+              {fmt(c.value)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  return (
+    <div className="sig-constituents">
+      <div className="sig-const-head">
+        <h3>Where the S&amp;P 500 sits today</h3>
+        <p>{copy.description}</p>
+      </div>
+      <div className="sig-const-cols">
+        {column(longs, "long", ArrowDownRight, copy.longTitle)}
+        {column(shorts, "short", ArrowUpRight, copy.shortTitle)}
+      </div>
+      <p className="sig-const-foot">
+        {copy.footer} Illustrative factor research, not investment advice.
+      </p>
+    </div>
+  );
+}
+
+function DeskApplications({ items }: { items: string[] }) {
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <div className="sig-desk">
+      <div className="sig-desk-head">
+        <h3>
+          <Briefcase size={15} aria-hidden="true" /> How a desk would use this
+        </h3>
+        <p>
+          A signal without standalone alpha is not a dead end. It changes how you screen,
+          size, hedge, and combine. The realistic applications:
+        </p>
+      </div>
+      <ul>
+        {items.map((item) => {
+          const [lead, ...rest] = item.split(": ");
+          return (
+            <li key={lead}>
+              <strong>{lead}:</strong> {rest.join(": ")}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function QuantileChart({
+  window,
+  isVolatility,
+}: {
+  window: SignalWindow;
+  isVolatility: boolean;
+}) {
+  const values = window.quantiles.map((q) => q.mean_abnormal_return ?? 0);
+  const maxAbs = Math.max(0.0001, ...values.map((v) => Math.abs(v)));
+  const n = window.quantiles.length;
+  return (
+    <div className="sig-quantiles">
+      {window.quantiles.map((q) => {
+        const value = q.mean_abnormal_return ?? 0;
+        const positive = value >= 0;
+        const edge = q.quantile === 1 || q.quantile === n ? " edge" : "";
+        if (isVolatility) {
+          const width = (Math.abs(value) / maxAbs) * 100;
+          return (
+            <div className={`sig-qrow${edge}`} key={q.quantile}>
+              <span className="sig-qlabel">Q{q.quantile}</span>
+              <span className="sig-qtrack" aria-hidden="true">
+                <span className="sig-qfill vol" style={{ left: "0%", width: `${width}%` }} />
+              </span>
+              <span className="sig-qval vol">{pct(value)}</span>
+            </div>
+          );
+        }
+        const width = (Math.abs(value) / maxAbs) * 50;
+        return (
+          <div className={`sig-qrow${edge}`} key={q.quantile}>
+            <span className="sig-qlabel">Q{q.quantile}</span>
+            <span className="sig-qtrack" aria-hidden="true">
+              <span className="sig-qzero" />
+              <span
+                className={`sig-qfill ${positive ? "pos" : "neg"}`}
+                style={{
+                  width: `${width}%`,
+                  left: positive ? "50%" : `${50 - width}%`,
+                }}
+              />
+            </span>
+            <span className={`sig-qval ${positive ? "pos" : "neg"}`}>{pct(value)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WindowCard({
+  window,
+  leftAxis,
+  rightAxis,
+  isVolatility,
+}: {
+  window: SignalWindow;
+  leftAxis: string;
+  rightAxis: string;
+  isVolatility: boolean;
+}) {
+  const pValue = adjustedP(window);
+  const significant = pValue !== null && pValue < 0.05;
+  const rising = (window.long_short_mean ?? 0) >= 0;
+  const verdict = significant ? `Passes adjusted test ${rising ? "↑" : "↓"}` : "Does not pass";
+  return (
+    <article className="sig-card">
+      <header>
+        <div>
+          <strong>{windowLabel(window.window)}</strong>
+          <small>{window.sample_size.toLocaleString()} filings</small>
+        </div>
+        <span className={`sig-verdict ${significant ? "sig" : "flat"}`}>{verdict}</span>
+      </header>
+      <p className="sig-axis">
+        <span>{leftAxis}</span>
+        <span>{rightAxis}</span>
+      </p>
+      <QuantileChart window={window} isVolatility={isVolatility} />
+      <footer className={significant ? "ok" : undefined}>
+        <span>{isVolatility ? "High−low volatility" : "Long–short return"}</span>
+        <strong>{pct(window.long_short_mean)}</strong>
+      </footer>
+    </article>
+  );
+}
+
+export function SignalStudyDetail({ study }: { study: SignalStudyResponse }) {
+  const report = study.report;
+  const copy = studyCopy(study);
+  const isVol = outcomeName(study) === "realized_volatility";
+
+  return (
+    <>
+      <div className="panel-intro">
+        <p className="eyebrow">Historical filing event study</p>
+        <h2>
+          {copy.headlinePrefix}
+          <span className="accent">{copy.headlineAccent}</span>
+          {copy.headlineSuffix}
+        </h2>
+        <p className="panel-lede">{copy.lede}</p>
+      </div>
+
+      <StudyVerdict study={study} />
+
+      <dl className="sig-stats">
+        <div>
+          <dt>Filing events</dt>
+          <dd>{report.event_count.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Research state</dt>
+          <dd>{report.quality?.status ?? "Unrated"}</dd>
+        </div>
+        <div>
+          <dt>Best adjusted p</dt>
+          <dd>
+            {(report.quality?.best_suite_adjusted_p_value ?? bestAdjustedP(report.results)).toFixed(3)}
+          </dd>
+        </div>
+        <div>
+          <dt>Annual stability</dt>
+          <dd>
+            {report.quality?.stability_basis === "annual_periods"
+              ? `${Math.round(report.quality.direction_stability * 100)}% / ${report.quality.periods_tested}y`
+              : "Not scored"}
+          </dd>
+        </div>
+      </dl>
+
+      <SummaryTable results={report.results} isVolatility={isVol} />
+      <PeriodStability study={study} isVolatility={isVol} />
+      <Glossary isVolatility={isVol} />
+
+      {report.constituents && report.constituents.length > 0 && (
+        <Constituents constituents={report.constituents} signalName={report.signal_name} />
+      )}
+
+      <div className="sig-grid">
+        {report.results.map((window) => (
+          <WindowCard
+            key={window.window}
+            window={window}
+            leftAxis={copy.leftAxis}
+            rightAxis={copy.rightAxis}
+            isVolatility={isVol}
+          />
+        ))}
+      </div>
+
+      {report.components && report.components.length > 0 && (
+        <ComponentsPanel
+          windows={report.results.map((window) => window.window)}
+          components={report.components}
+          correlations={report.signal_correlations ?? []}
+          neutralization={report.neutralization}
+        />
+      )}
+
+      <DeskApplications items={copy.desk} />
+
+      <div className="sig-note">
+        <FlaskConical size={14} aria-hidden="true" />
+        <p>
+          <strong>Interpretation:</strong> {copy.note} The sample grows as more filing history
+          becomes available.
+        </p>
+      </div>
+
+      <p className="sig-foot">
+        <TrendingUp size={13} aria-hidden="true" />
+        experiment {study.experiment_id} · code {study.code_sha.slice(0, 7)} · published{" "}
+        {study.created_at.slice(0, 10)}
+      </p>
+    </>
+  );
+}
