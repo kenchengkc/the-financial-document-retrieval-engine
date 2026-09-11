@@ -97,6 +97,53 @@ def test_preprocess_does_not_match_company_names_inside_words() -> None:
     assert result.filters.tickers == ["AAPL"]
 
 
+def test_preprocess_does_not_scope_common_principal_language_to_pfg() -> None:
+    companies = [
+        *COMPANIES,
+        CompanyReference(ticker="PFG", name="Principal Financial Group, Inc."),
+    ]
+
+    result = preprocess_query(
+        "Which companies describe their principal markets and distribution channels?",
+        companies=companies,
+    )
+
+    assert result.filters.tickers == []
+
+
+def test_preprocess_still_resolves_unambiguous_principal_financial_name() -> None:
+    companies = [
+        *COMPANIES,
+        CompanyReference(ticker="PFG", name="Principal Financial Group, Inc."),
+    ]
+
+    result = preprocess_query(
+        "What did Principal Financial say about retirement demand?",
+        companies=companies,
+    )
+
+    assert result.filters.tickers == ["PFG"]
+
+
+def test_preprocess_does_not_infer_controls_section_from_export_controls() -> None:
+    result = preprocess_query(
+        "Which companies discuss export controls and trade restrictions?",
+        companies=COMPANIES,
+    )
+
+    assert result.filters.sections == []
+
+
+def test_preprocess_still_resolves_explicit_controls_section_language() -> None:
+    result = preprocess_query(
+        "What changed in Apple's controls and procedures?",
+        companies=COMPANIES,
+    )
+
+    assert result.filters.tickers == ["AAPL"]
+    assert result.filters.sections == ["Controls and Procedures"]
+
+
 def test_preprocess_leaves_cross_sectional_theme_queries_unfiltered() -> None:
     result = preprocess_query(
         "Which companies mention data center power constraints?",
