@@ -28,7 +28,8 @@ SECTION_PATTERNS = {
     "Financial Statements": re.compile(r"\bfinancial statements?\b", re.I),
     "Legal Proceedings": re.compile(r"\blegal proceedings?\b", re.I),
     "Controls and Procedures": re.compile(
-        r"\b(?:controls? and procedures|disclosure controls?|internal control(?: over financial reporting)?)\b",
+        r"\b(?:controls? and procedures|disclosure controls?|"
+        r"internal controls?(?: over financial reporting)?)\b",
         re.I,
     ),
 }
