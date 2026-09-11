@@ -23,11 +23,14 @@ FORM_PATTERNS = {
 }
 SECTION_PATTERNS = {
     "Risk Factors": re.compile(r"\brisk factors?\b", re.I),
-    "MD&A": re.compile(r"\b(?:md&a|management(?:'s|\u2019s) discussion)\b", re.I),
+    "MD&A": re.compile(r"\b(?:md&a|management(?:'s|’s) discussion)\b", re.I),
     "Business": re.compile(r"\bbusiness\b", re.I),
     "Financial Statements": re.compile(r"\bfinancial statements?\b", re.I),
     "Legal Proceedings": re.compile(r"\blegal proceedings?\b", re.I),
-    "Controls and Procedures": re.compile(r"\bcontrols?(?: and procedures)?\b", re.I),
+    "Controls and Procedures": re.compile(
+        r"\b(?:controls? and procedures|disclosure controls?|internal control(?: over financial reporting)?)\b",
+        re.I,
+    ),
 }
 TABLE_PATTERN = re.compile(r"\b(?:table|tabular|rows?|columns?|segment revenue)\b", re.I)
 FIGURE_PATTERN = re.compile(r"\b(?:chart|figure|graph)\b", re.I)
@@ -271,6 +274,7 @@ _AMBIGUOUS_SINGLE_WORD_ALIASES = {
     "international",
     "on",
     "one",
+    "principal",
     "target",
     "the",
     "trade",
@@ -289,6 +293,8 @@ def _company_aliases(name: str) -> set[str]:
     while tokens and tokens[-1] in _COMPANY_SUFFIXES:
         tokens.pop()
     aliases = {normalized, " ".join(tokens)}
+    if len(tokens) >= 2:
+        aliases.add(" ".join(tokens[:2]))
     if tokens:
         first = tokens[0]
         if len(first) >= 3 and first not in _AMBIGUOUS_SINGLE_WORD_ALIASES:
