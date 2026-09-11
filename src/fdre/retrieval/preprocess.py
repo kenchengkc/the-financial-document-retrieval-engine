@@ -23,7 +23,7 @@ FORM_PATTERNS = {
 }
 SECTION_PATTERNS = {
     "Risk Factors": re.compile(r"\brisk factors?\b", re.I),
-    "MD&A": re.compile(r"\b(?:md&a|management(?:'s|’s) discussion)\b", re.I),
+    "MD&A": re.compile(r"\b(?:md&a|management(?:'s|\u2019s) discussion)\b", re.I),
     "Business": re.compile(r"\bbusiness\b", re.I),
     "Financial Statements": re.compile(r"\bfinancial statements?\b", re.I),
     "Legal Proceedings": re.compile(r"\blegal proceedings?\b", re.I),
