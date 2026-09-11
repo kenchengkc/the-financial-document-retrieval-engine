@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from time import perf_counter
 
 from sqlalchemy.orm import Session
