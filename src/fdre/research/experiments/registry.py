@@ -12,6 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.experiments.replay_input import (
+    WalkForwardReplayInput,
+    replay_walk_forward_input,
+)
 from fdre.research.experiments.walk_forward import WalkForwardStudyReport
 from fdre.research.oos.diagnostics import OOSDiagnosticsReport, build_oos_diagnostics
 from fdre.research.oos.implementation import (
@@ -25,17 +29,24 @@ from fdre.research.oos.selection import (
 )
 
 ArtifactKind = Literal[
+    "walk_forward_input",
     "walk_forward",
     "oos_diagnostics",
     "oos_selection",
     "oos_implementation",
     "oos_promotion",
 ]
-ReplayMode = Literal["artifact_verification", "downstream_computational_replay"]
+ReplayMode = Literal[
+    "artifact_verification",
+    "downstream_computational_replay",
+    "walk_forward_computational_replay",
+]
 _REGISTRY_VERSION_V1 = "research-experiment-registry-v1"
-_REGISTRY_VERSION = "research-experiment-registry-v2"
+_REGISTRY_VERSION_V2 = "research-experiment-registry-v2"
+_REGISTRY_VERSION = "research-experiment-registry-v3"
 _BUNDLE_VERSION = "research-experiment-bundle-v1"
 _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
+    "walk_forward_input": "walk_forward_replay_input",
     "walk_forward": "walk_forward_signal_study",
     "oos_diagnostics": "oos_signal_diagnostics",
     "oos_selection": "oos_signal_selection_suite",
@@ -43,13 +54,21 @@ _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
     "oos_promotion": "oos_signal_promotion",
 }
 _EXPECTED_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
+    "walk_forward_input": WalkForwardReplayInput,
     "walk_forward": WalkForwardStudyReport,
     "oos_diagnostics": OOSDiagnosticsReport,
     "oos_selection": OOSSelectionSuiteReport,
     "oos_implementation": OOSImplementationReport,
     "oos_promotion": OOSPromotionReport,
 }
-_RECOMPUTED_ARTIFACTS: list[ArtifactKind] = [
+_BASE_ARTIFACTS: list[ArtifactKind] = [
+    "walk_forward",
+    "oos_diagnostics",
+    "oos_selection",
+    "oos_implementation",
+    "oos_promotion",
+]
+_RECOMPUTED_DOWNSTREAM: list[ArtifactKind] = [
     "oos_diagnostics",
     "oos_selection",
     "oos_implementation",
@@ -133,6 +152,7 @@ def build_research_experiment_manifest(
     promotion: OOSPromotionReport,
     *,
     promotion_slices: dict[str, set[str]] | None = None,
+    walk_forward_input: WalkForwardReplayInput | None = None,
 ) -> ResearchExperimentManifest:
     """Bind every research layer and source identity into one immutable manifest."""
     _validate_chain(source, diagnostics, selection, implementation, promotion)
@@ -141,7 +161,15 @@ def build_research_experiment_manifest(
         if promotion_slices is not None
         else None
     )
-    registry_version = _REGISTRY_VERSION if normalized_slices is not None else _REGISTRY_VERSION_V1
+    if walk_forward_input is not None and normalized_slices is None:
+        raise ValueError("walk-forward computational replay requires promotion slices")
+    if walk_forward_input is not None:
+        registry_version = _REGISTRY_VERSION
+    elif normalized_slices is not None:
+        registry_version = _REGISTRY_VERSION_V2
+    else:
+        registry_version = _REGISTRY_VERSION_V1
+
     if normalized_slices is not None:
         if selection.input_diagnostics_keys != [diagnostics.diagnostics_key]:
             raise ValueError(
@@ -149,14 +177,23 @@ def build_research_experiment_manifest(
             )
         if _stable_digest(normalized_slices) != promotion.slice_snapshot_id:
             raise ValueError("promotion slice memberships do not match slice snapshot id")
+    if walk_forward_input is not None:
+        _validate_walk_forward_input_binding(source, walk_forward_input)
 
-    reports: list[tuple[ArtifactKind, str, BaseModel]] = [
-        ("walk_forward", source.experiment_key, source),
-        ("oos_diagnostics", diagnostics.diagnostics_key, diagnostics),
-        ("oos_selection", selection.selection_key, selection),
-        ("oos_implementation", implementation.implementation_key, implementation),
-        ("oos_promotion", promotion.promotion_key, promotion),
-    ]
+    reports: list[tuple[ArtifactKind, str, BaseModel]] = []
+    if walk_forward_input is not None:
+        reports.append(
+            ("walk_forward_input", walk_forward_input.input_key, walk_forward_input)
+        )
+    reports.extend(
+        [
+            ("walk_forward", source.experiment_key, source),
+            ("oos_diagnostics", diagnostics.diagnostics_key, diagnostics),
+            ("oos_selection", selection.selection_key, selection),
+            ("oos_implementation", implementation.implementation_key, implementation),
+            ("oos_promotion", promotion.promotion_key, promotion),
+        ]
+    )
     artifacts = [
         ResearchArtifactRef(
             kind=kind,
@@ -324,7 +361,7 @@ def verify_research_experiment_bundle(
     *,
     expected_experiment_id: str | None = None,
 ) -> ResearchReplayResult:
-    """Verify and, for v2 roots, computationally replay a portable offline bundle."""
+    """Verify and computationally replay a portable offline bundle when supported."""
 
     if expected_experiment_id is not None and bundle.experiment_id != expected_experiment_id:
         raise ValueError("research experiment bundle root does not match expected experiment id")
@@ -421,6 +458,31 @@ def _validate_chain(
         raise ValueError("promotion implementation key mismatch")
 
 
+def _validate_walk_forward_input_binding(
+    source: WalkForwardStudyReport,
+    replay_input: WalkForwardReplayInput,
+) -> None:
+    if replay_input.signal_name != source.signal_name:
+        raise ValueError("walk-forward replay input signal name mismatch")
+    if replay_input.dataset_version != source.dataset_version:
+        raise ValueError("walk-forward replay input dataset version mismatch")
+    if replay_input.feature_version != source.feature_version:
+        raise ValueError("walk-forward replay input feature version mismatch")
+    if replay_input.code_sha != source.code_sha:
+        raise ValueError("walk-forward replay input code SHA mismatch")
+    if replay_input.definition != source.definition:
+        raise ValueError("walk-forward replay input signal definition mismatch")
+    effective_event_config = replay_input.event_study_config.model_copy(
+        update={"walk_forward_splits": []}
+    )
+    if effective_event_config != source.event_study_config:
+        raise ValueError("walk-forward replay input event-study config mismatch")
+    if replay_input.walk_forward_config != source.walk_forward_config:
+        raise ValueError("walk-forward replay input fold config mismatch")
+    if replay_input.market_data_version != source.market_data_version:
+        raise ValueError("walk-forward replay input market-data version mismatch")
+
+
 def _filing_lineage(source: WalkForwardStudyReport) -> list[FilingLineageRef]:
     unique: dict[str, FilingLineageRef] = {}
     for item in source.oos_observations:
@@ -453,31 +515,46 @@ def _normalize_promotion_slices(
 
 
 def _validate_manifest_version(manifest: ResearchExperimentManifest) -> None:
+    supported = {_REGISTRY_VERSION_V1, _REGISTRY_VERSION_V2, _REGISTRY_VERSION}
+    if manifest.registry_version not in supported:
+        raise ValueError(f"unsupported research registry version {manifest.registry_version!r}")
     if manifest.registry_version == _REGISTRY_VERSION_V1:
         return
-    if manifest.registry_version != _REGISTRY_VERSION:
-        raise ValueError(f"unsupported research registry version {manifest.registry_version!r}")
     if manifest.promotion_slices is None:
-        raise ValueError("registry v2 manifest is missing frozen promotion slice memberships")
+        raise ValueError("computational replay manifest is missing frozen promotion slices")
     normalized = {
         name: sorted({ticker.upper() for ticker in members})
         for name, members in sorted(manifest.promotion_slices.items())
     }
     if normalized != manifest.promotion_slices:
-        raise ValueError("registry v2 promotion slice memberships are not canonical")
+        raise ValueError("promotion slice memberships are not canonical")
     if _stable_digest(normalized) != manifest.slice_snapshot_id:
-        raise ValueError("registry v2 promotion slice snapshot mismatch")
+        raise ValueError("promotion slice snapshot mismatch")
+    input_refs = [
+        item for item in manifest.artifacts if item.kind == "walk_forward_input"
+    ]
+    if manifest.registry_version == _REGISTRY_VERSION_V2 and input_refs:
+        raise ValueError("registry v2 manifest cannot contain a walk-forward replay input")
+    if manifest.registry_version == _REGISTRY_VERSION and len(input_refs) != 1:
+        raise ValueError("registry v3 manifest requires exactly one walk-forward replay input")
+
+
+def _required_artifact_kinds(manifest: ResearchExperimentManifest) -> list[ArtifactKind]:
+    required = list(_BASE_ARTIFACTS)
+    if manifest.registry_version == _REGISTRY_VERSION:
+        required.insert(0, "walk_forward_input")
+    return required
 
 
 def _replay_artifact_chain(
     manifest: ResearchExperimentManifest,
     payloads: dict[ArtifactKind, dict[str, Any]],
 ) -> ResearchReplayResult:
-    missing = [kind for kind in _EXPECTED_ARTIFACT_MODELS if kind not in payloads]
+    missing = [kind for kind in _required_artifact_kinds(manifest) if kind not in payloads]
     if missing:
         raise ValueError("research replay is missing artifacts: " + ", ".join(missing))
 
-    source = WalkForwardStudyReport.model_validate(payloads["walk_forward"])
+    persisted_source = WalkForwardStudyReport.model_validate(payloads["walk_forward"])
     diagnostics = OOSDiagnosticsReport.model_validate(payloads["oos_diagnostics"])
     selection = OOSSelectionSuiteReport.model_validate(payloads["oos_selection"])
     implementation = OOSImplementationReport.model_validate(payloads["oos_implementation"])
@@ -496,8 +573,19 @@ def _replay_artifact_chain(
             final_decisions=replayed_decisions,
         )
 
+    source = persisted_source
+    replay_mode: ReplayMode = "downstream_computational_replay"
+    recomputed_artifacts = list(_RECOMPUTED_DOWNSTREAM)
+    if manifest.registry_version == _REGISTRY_VERSION:
+        replay_input = WalkForwardReplayInput.model_validate(payloads["walk_forward_input"])
+        recomputed_source = replay_walk_forward_input(replay_input)
+        _require_recomputed_match("walk_forward", recomputed_source, persisted_source)
+        source = recomputed_source
+        replay_mode = "walk_forward_computational_replay"
+        recomputed_artifacts = ["walk_forward", *_RECOMPUTED_DOWNSTREAM]
+
     if manifest.promotion_slices is None:
-        raise ValueError("registry v2 manifest is missing frozen promotion slice memberships")
+        raise ValueError("computational replay manifest is missing frozen promotion slices")
     if selection.input_diagnostics_keys != [diagnostics.diagnostics_key]:
         raise ValueError(
             "computational replay requires exactly one registered diagnostics input"
@@ -540,8 +628,8 @@ def _replay_artifact_chain(
         experiment_id=manifest.experiment_id,
         verified=True,
         artifact_count=len(manifest.artifacts),
-        replay_mode="downstream_computational_replay",
-        recomputed_artifacts=list(_RECOMPUTED_ARTIFACTS),
+        replay_mode=replay_mode,
+        recomputed_artifacts=recomputed_artifacts,
         final_decisions=final_decisions,
     )
 
