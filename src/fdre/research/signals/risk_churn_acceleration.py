@@ -8,10 +8,18 @@ from datetime import datetime
 
 from fdre.research.experiments.event_study import FilingEvent
 from fdre.research.panel import FeatureLineage, ResearchPanelRow
+from fdre.research.signals.composite import (
+    CompositeEvent,
+    SignalComponent,
+    period_label,
+    standardize_by_period,
+)
 
+RISK_CHURN_SIGNAL_NAME = "risk_factor_churn_acceleration"
 RISK_CHURN_ACCELERATION_VERSION = "risk-churn-acceleration-v1"
+RISK_CHURN_NEUTRALIZATION_VERSION = "period-sector-v1"
 RISK_CHURN_ACCELERATION_DEFINITION: dict[str, object] = {
-    "signal": "risk_factor_churn_acceleration",
+    "signal": RISK_CHURN_SIGNAL_NAME,
     "raw_formula": (
         "current comparable-filing risk_churn_rate minus the selected prior "
         "comparable filing's risk_churn_rate"
@@ -100,6 +108,60 @@ def build_risk_churn_acceleration_events(
             )
         )
     return events
+
+
+def neutralize_risk_churn_events(
+    events: list[FilingEvent],
+    sector_by_ticker: dict[str, str],
+    *,
+    min_group: int = 4,
+) -> list[FilingEvent]:
+    """Apply the flagship's predeclared period/sector standardization deterministically."""
+
+    composite_events = [
+        CompositeEvent(
+            ticker=event.ticker,
+            accession_number=event.accession_number,
+            available_at_period=period_label(event.available_at.date()),
+            available_at=event.available_at,
+            max_source_available_at=event.max_source_available_at,
+            raw={RISK_CHURN_SIGNAL_NAME: float(event.feature_value)},
+        )
+        for event in events
+        if event.feature_value is not None
+    ]
+    sector_by_accession = {
+        event.accession_number: sector_by_ticker.get(event.ticker.upper(), "Unknown")
+        for event in events
+    }
+    standardized = standardize_by_period(
+        composite_events,
+        [SignalComponent(name=RISK_CHURN_SIGNAL_NAME, sign=1)],
+        sector_by_accession=sector_by_accession,
+        min_group=min_group,
+    )
+    normalized: list[FilingEvent] = []
+    for event in events:
+        score = standardized.get(event.accession_number, {}).get(RISK_CHURN_SIGNAL_NAME)
+        if score is None:
+            continue
+        normalized.append(event.model_copy(update={"feature_value": score}))
+    return normalized
+
+
+def build_neutralized_risk_churn_acceleration_events(
+    rows: list[ResearchPanelRow],
+    sector_by_ticker: dict[str, str],
+    *,
+    min_group: int = 4,
+) -> list[FilingEvent]:
+    """Rebuild the exact scored events consumed by the flagship walk-forward study."""
+
+    return neutralize_risk_churn_events(
+        build_risk_churn_acceleration_events(rows),
+        sector_by_ticker,
+        min_group=min_group,
+    )
 
 
 def _selected_prior_accession(
