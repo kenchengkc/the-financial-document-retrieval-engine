@@ -90,7 +90,10 @@ class ResearchExperimentManifest(BaseModel):
     statistical_assumptions: dict[str, object]
     robustness_assumptions: dict[str, object]
     slice_snapshot_id: str
-    promotion_slices: dict[str, list[str]] | None = None
+    promotion_slices: dict[str, list[str]] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     artifacts: list[ResearchArtifactRef]
     final_decisions: list[dict[str, object]]
 
