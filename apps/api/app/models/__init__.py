@@ -14,6 +14,7 @@ from apps.api.app.models.historical_universe import (
     UniverseMembershipEvidence,
 )
 from apps.api.app.models.ingestion_runs import IngestionRun
+from apps.api.app.models.operation_receipts import OperationReceipt
 from apps.api.app.models.research_experiments import ResearchExperiment
 from apps.api.app.models.research_metric_snapshots import ResearchMetricSnapshot
 from apps.api.app.models.retrieval_runs import RetrievalResult, RetrievalRun
@@ -31,6 +32,7 @@ __all__ = [
     "EvalResult",
     "FinancialFact",
     "IngestionRun",
+    "OperationReceipt",
     "ResearchExperiment",
     "ResearchMetricSnapshot",
     "RetrievalResult",

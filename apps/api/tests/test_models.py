@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "eval_results",
     "financial_facts",
     "ingestion_runs",
+    "operation_receipts",
     "research_metric_snapshots",
     "research_experiments",
     "retrieval_results",
@@ -63,6 +64,7 @@ def test_metadata_creates_expected_tables_and_indexes() -> None:
         "documents": {"company_id", "filing_date", "form_type"},
         "document_elements": {"document_id", "element_type", "section"},
         "chunks": {"chunk_type", "document_id", "section"},
+        "operation_receipts": {"operation_type", "created_at"},
         "securities": {"company_id", "security_type"},
         "security_identity_evidence": {
             "security_identity_period_id",
