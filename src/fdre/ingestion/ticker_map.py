@@ -1,18 +1,38 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from fdre.ingestion.sec_client import normalize_cik
 
-LISTED_COMPANIES_PATH = (
-    Path(__file__).resolve().parents[3] / "data" / "sample" / "listed_companies.json"
-)
-SP500_TICKERS_PATH = (
-    Path(__file__).resolve().parents[3] / "data" / "sample" / "sp500_tickers.json"
-)
+
+def _sample_data_path(filename: str) -> Path:
+    """Resolve checked-in catalog data in source checkouts and installed runtimes.
+
+    Source checkouts can locate ``data/sample`` relative to this module. Production
+    images install ``fdre`` into a virtualenv, so the module path no longer shares
+    the repository root; those images provide ``FDRE_DATA_ROOT=/app/data``.
+    """
+
+    configured_root = os.environ.get("FDRE_DATA_ROOT")
+    if configured_root:
+        return Path(configured_root) / "sample" / filename
+
+    checkout_path = Path(__file__).resolve().parents[3] / "data" / "sample" / filename
+    if checkout_path.is_file():
+        return checkout_path
+
+    runtime_path = Path.cwd() / "data" / "sample" / filename
+    if runtime_path.is_file():
+        return runtime_path
+    return checkout_path
+
+
+LISTED_COMPANIES_PATH = _sample_data_path("listed_companies.json")
+SP500_TICKERS_PATH = _sample_data_path("sp500_tickers.json")
 
 
 @dataclass(frozen=True, slots=True)
