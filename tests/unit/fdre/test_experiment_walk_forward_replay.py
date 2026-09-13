@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import Table, create_engine
 from sqlalchemy.orm import Session
 
@@ -32,10 +33,26 @@ from fdre.research.experiments.replay_input import (
     replay_walk_forward_input,
 )
 from fdre.research.experiments.walk_forward import WalkForwardConfig, WalkForwardStudyReport
-from fdre.research.oos.diagnostics import OOSDiagnosticsConfig, build_oos_diagnostics
-from fdre.research.oos.implementation import OOSImplementationConfig, evaluate_oos_implementation
-from fdre.research.oos.promotion import OOSPromotionConfig, evaluate_oos_promotion
-from fdre.research.oos.selection import OOSSelectionConfig, evaluate_oos_selection_suite
+from fdre.research.oos.diagnostics import (
+    OOSDiagnosticsConfig,
+    OOSDiagnosticsReport,
+    build_oos_diagnostics,
+)
+from fdre.research.oos.implementation import (
+    OOSImplementationConfig,
+    OOSImplementationReport,
+    evaluate_oos_implementation,
+)
+from fdre.research.oos.promotion import (
+    OOSPromotionConfig,
+    OOSPromotionReport,
+    evaluate_oos_promotion,
+)
+from fdre.research.oos.selection import (
+    OOSSelectionConfig,
+    OOSSelectionSuiteReport,
+    evaluate_oos_selection_suite,
+)
 
 
 def _digest(payload: object) -> str:
@@ -109,10 +126,10 @@ def _inputs() -> tuple[
 def _chain() -> tuple[
     WalkForwardReplayInput,
     WalkForwardStudyReport,
-    object,
-    object,
-    object,
-    object,
+    OOSDiagnosticsReport,
+    OOSSelectionSuiteReport,
+    OOSImplementationReport,
+    OOSPromotionReport,
     dict[str, set[str]],
 ]:
     events, bars, event_config, walk_config = _inputs()
@@ -181,7 +198,7 @@ def _persist_child(
     session: Session,
     key: str,
     kind: str,
-    report: Any,
+    report: BaseModel,
 ) -> None:
     session.add(
         ResearchExperiment(
@@ -200,19 +217,20 @@ def _persist_chain(
     session: Session,
     replay_input: WalkForwardReplayInput,
     source: WalkForwardStudyReport,
-    diagnostics: Any,
-    selection: Any,
-    implementation: Any,
-    promotion: Any,
+    diagnostics: OOSDiagnosticsReport,
+    selection: OOSSelectionSuiteReport,
+    implementation: OOSImplementationReport,
+    promotion: OOSPromotionReport,
 ) -> None:
     persist_walk_forward_replay_input(session, replay_input)
-    for key, kind, report in [
+    reports: list[tuple[str, str, BaseModel]] = [
         (source.experiment_key, "walk_forward_signal_study", source),
         (diagnostics.diagnostics_key, "oos_signal_diagnostics", diagnostics),
         (selection.selection_key, "oos_signal_selection_suite", selection),
         (implementation.implementation_key, "oos_signal_implementation", implementation),
         (promotion.promotion_key, "oos_signal_promotion", promotion),
-    ]:
+    ]
+    for key, kind, report in reports:
         _persist_child(session, key, kind, report)
     session.commit()
 
