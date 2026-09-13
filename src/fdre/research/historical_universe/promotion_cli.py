@@ -19,6 +19,10 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
 from apps.api.app.models.operation_receipts import OperationReceipt
+from fdre.research.historical_component_history import (
+    HistoricalComponentHistoryAdapter,
+    HistoricalComponentRecord,
+)
 from fdre.research.historical_universe import promotion
 
 _OPERATION_TYPE = "hu2_production_materialization_v1"
@@ -179,13 +183,13 @@ def _build_report(
 def _load_inputs(
     args: argparse.Namespace,
 ) -> tuple[
-    tuple[promotion.HistoricalComponentRecord, ...],
+    tuple[HistoricalComponentRecord, ...],
     dict[str, promotion.CurrentIssuer],
     set[tuple[str, date, date | None]],
     promotion.AnchorExpectation,
     promotion.BoundaryVerification,
 ]:
-    records = promotion.HistoricalComponentHistoryAdapter(
+    records = HistoricalComponentHistoryAdapter(
         source_ref=cast(str, args.component_history_ref)
     ).load(cast(Path, args.component_history))
     current = promotion._load_current(cast(Path, args.current_components))
@@ -373,7 +377,7 @@ def _execute_new(
                 session.rollback()
             return payload
 
-        validation_payload: dict[str, object] = {
+        dry_run_validation_payload: dict[str, object] = {
             "anchor_id": anchor.anchor_id,
             "universe_code": anchor.universe_code,
             "as_of": anchor.effective_at.isoformat(),
@@ -389,7 +393,7 @@ def _execute_new(
             plan=plan,
             apply_requested=False,
             applied=False,
-            validation_payload=validation_payload,
+            validation_payload=dry_run_validation_payload,
         )
     except Exception:
         session.rollback()
