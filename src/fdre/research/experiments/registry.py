@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -13,10 +13,16 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
 from fdre.research.experiments.walk_forward import WalkForwardStudyReport
-from fdre.research.oos.diagnostics import OOSDiagnosticsReport
-from fdre.research.oos.implementation import OOSImplementationReport
-from fdre.research.oos.promotion import OOSPromotionReport
-from fdre.research.oos.selection import OOSSelectionSuiteReport
+from fdre.research.oos.diagnostics import OOSDiagnosticsReport, build_oos_diagnostics
+from fdre.research.oos.implementation import (
+    OOSImplementationReport,
+    evaluate_oos_implementation,
+)
+from fdre.research.oos.promotion import OOSPromotionReport, evaluate_oos_promotion
+from fdre.research.oos.selection import (
+    OOSSelectionSuiteReport,
+    evaluate_oos_selection_suite,
+)
 
 ArtifactKind = Literal[
     "walk_forward",
@@ -25,7 +31,9 @@ ArtifactKind = Literal[
     "oos_implementation",
     "oos_promotion",
 ]
-_REGISTRY_VERSION = "research-experiment-registry-v1"
+ReplayMode = Literal["artifact_verification", "downstream_computational_replay"]
+_REGISTRY_VERSION_V1 = "research-experiment-registry-v1"
+_REGISTRY_VERSION = "research-experiment-registry-v2"
 _BUNDLE_VERSION = "research-experiment-bundle-v1"
 _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
     "walk_forward": "walk_forward_signal_study",
@@ -41,6 +49,12 @@ _EXPECTED_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
     "oos_implementation": OOSImplementationReport,
     "oos_promotion": OOSPromotionReport,
 }
+_RECOMPUTED_ARTIFACTS: list[ArtifactKind] = [
+    "oos_diagnostics",
+    "oos_selection",
+    "oos_implementation",
+    "oos_promotion",
+]
 
 
 class ResearchArtifactRef(BaseModel):
@@ -76,6 +90,10 @@ class ResearchExperimentManifest(BaseModel):
     statistical_assumptions: dict[str, object]
     robustness_assumptions: dict[str, object]
     slice_snapshot_id: str
+    promotion_slices: dict[str, list[str]] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     artifacts: list[ResearchArtifactRef]
     final_decisions: list[dict[str, object]]
 
@@ -84,6 +102,8 @@ class ResearchReplayResult(BaseModel):
     experiment_id: str
     verified: bool
     artifact_count: int
+    replay_mode: ReplayMode = "artifact_verification"
+    recomputed_artifacts: list[ArtifactKind] = Field(default_factory=list)
     final_decisions: list[dict[str, object]]
 
 
@@ -111,9 +131,25 @@ def build_research_experiment_manifest(
     selection: OOSSelectionSuiteReport,
     implementation: OOSImplementationReport,
     promotion: OOSPromotionReport,
+    *,
+    promotion_slices: dict[str, set[str]] | None = None,
 ) -> ResearchExperimentManifest:
     """Bind every research layer and source identity into one immutable manifest."""
     _validate_chain(source, diagnostics, selection, implementation, promotion)
+    normalized_slices = (
+        _normalize_promotion_slices(promotion_slices)
+        if promotion_slices is not None
+        else None
+    )
+    registry_version = _REGISTRY_VERSION if normalized_slices is not None else _REGISTRY_VERSION_V1
+    if normalized_slices is not None:
+        if selection.input_diagnostics_keys != [diagnostics.diagnostics_key]:
+            raise ValueError(
+                "computational replay requires exactly one registered diagnostics input"
+            )
+        if _stable_digest(normalized_slices) != promotion.slice_snapshot_id:
+            raise ValueError("promotion slice memberships do not match slice snapshot id")
+
     reports: list[tuple[ArtifactKind, str, BaseModel]] = [
         ("walk_forward", source.experiment_key, source),
         ("oos_diagnostics", diagnostics.diagnostics_key, diagnostics),
@@ -143,7 +179,7 @@ def build_research_experiment_manifest(
         for fold in source.folds
     ]
     payload: dict[str, Any] = {
-        "registry_version": _REGISTRY_VERSION,
+        "registry_version": registry_version,
         "signal_name": source.signal_name,
         "outcome_name": source.outcome_name,
         "signal_definition": source.definition,
@@ -163,6 +199,8 @@ def build_research_experiment_manifest(
         "artifacts": [item.model_dump(mode="json") for item in artifacts],
         "final_decisions": [item.model_dump(mode="json") for item in promotion.decisions],
     }
+    if normalized_slices is not None:
+        payload["promotion_slices"] = normalized_slices
     experiment_id = _stable_digest(payload)
     return ResearchExperimentManifest(experiment_id=experiment_id, **payload)
 
@@ -177,7 +215,7 @@ def persist_research_experiment_manifest(
             ResearchExperiment.experiment_key == manifest.experiment_id
         )
     )
-    payload = manifest.model_dump(mode="json")
+    payload = _manifest_storage_payload(manifest)
     config_json = {
         "registry_version": manifest.registry_version,
         "artifact_keys": [item.experiment_key for item in manifest.artifacts],
@@ -219,6 +257,7 @@ def verify_research_experiment(
 ) -> ResearchExperimentManifest:
     """Verify manifest identity plus child type and exact persisted payload hashes."""
     manifest = inspect_research_experiment(session, experiment_id)
+    _validate_manifest_version(manifest)
     if _manifest_identity(manifest) != manifest.experiment_id:
         raise ValueError("research experiment manifest digest mismatch")
     for artifact in manifest.artifacts:
@@ -240,25 +279,13 @@ def replay_research_experiment(
     session: Session,
     experiment_id: str,
 ) -> ResearchReplayResult:
-    """Fail-closed replay from persisted immutable artifacts, without live refetches."""
+    """Replay a registered experiment without live data or provider refetches."""
     manifest = verify_research_experiment(session, experiment_id)
-    promotion_ref = next(
-        (item for item in manifest.artifacts if item.kind == "oos_promotion"),
-        None,
-    )
-    if promotion_ref is None:
-        raise ValueError("registered experiment has no OOS promotion artifact")
-    promotion_row = _get_experiment(session, promotion_ref.experiment_key)
-    promotion = OOSPromotionReport.model_validate(promotion_row.results_json)
-    replayed_decisions = [item.model_dump(mode="json") for item in promotion.decisions]
-    if replayed_decisions != manifest.final_decisions:
-        raise ValueError("replayed final decisions differ from registered manifest")
-    return ResearchReplayResult(
-        experiment_id=manifest.experiment_id,
-        verified=True,
-        artifact_count=len(manifest.artifacts),
-        final_decisions=replayed_decisions,
-    )
+    payloads = {
+        artifact.kind: dict(_get_experiment(session, artifact.experiment_key).results_json)
+        for artifact in manifest.artifacts
+    }
+    return _replay_artifact_chain(manifest, payloads)
 
 
 def build_research_experiment_bundle(
@@ -283,7 +310,7 @@ def build_research_experiment_bundle(
     payload: dict[str, Any] = {
         "bundle_version": _BUNDLE_VERSION,
         "experiment_id": manifest.experiment_id,
-        "manifest": manifest.model_dump(mode="json"),
+        "manifest": _manifest_storage_payload(manifest),
         "artifacts": [item.model_dump(mode="json") for item in artifacts],
     }
     return ResearchExperimentBundle(
@@ -297,10 +324,11 @@ def verify_research_experiment_bundle(
     *,
     expected_experiment_id: str | None = None,
 ) -> ResearchReplayResult:
-    """Verify a portable bundle without a database or live data dependency."""
+    """Verify and, for v2 roots, computationally replay a portable offline bundle."""
 
     if expected_experiment_id is not None and bundle.experiment_id != expected_experiment_id:
         raise ValueError("research experiment bundle root does not match expected experiment id")
+    _validate_manifest_version(bundle.manifest)
     if bundle.bundle_sha256 != _bundle_identity(bundle):
         raise ValueError("research experiment bundle digest mismatch")
     if bundle.experiment_id != bundle.manifest.experiment_id:
@@ -310,6 +338,7 @@ def verify_research_experiment_bundle(
     if len(bundle.artifacts) != len(bundle.manifest.artifacts):
         raise ValueError("research experiment bundle artifact count mismatch")
 
+    payloads: dict[ArtifactKind, dict[str, Any]] = {}
     for reference, artifact in zip(bundle.manifest.artifacts, bundle.artifacts, strict=True):
         if (
             artifact.kind != reference.kind
@@ -329,25 +358,9 @@ def verify_research_experiment_bundle(
                 f"research experiment bundle artifact digest mismatch for {reference.kind}"
             )
         _EXPECTED_ARTIFACT_MODELS[reference.kind].model_validate(artifact.payload)
+        payloads[artifact.kind] = artifact.payload
 
-    promotion = next(
-        (item for item in bundle.artifacts if item.kind == "oos_promotion"),
-        None,
-    )
-    if promotion is None:
-        raise ValueError("research experiment bundle has no OOS promotion artifact")
-    promotion_report = OOSPromotionReport.model_validate(promotion.payload)
-    replayed_decisions = [
-        item.model_dump(mode="json") for item in promotion_report.decisions
-    ]
-    if replayed_decisions != bundle.manifest.final_decisions:
-        raise ValueError("bundle replayed final decisions differ from registered manifest")
-    return ResearchReplayResult(
-        experiment_id=bundle.experiment_id,
-        verified=True,
-        artifact_count=len(bundle.artifacts),
-        final_decisions=replayed_decisions,
-    )
+    return _replay_artifact_chain(bundle.manifest, payloads)
 
 
 def write_research_experiment_manifest(
@@ -357,7 +370,7 @@ def write_research_experiment_manifest(
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
-        json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+        json.dumps(_manifest_storage_payload(manifest), indent=2, sort_keys=True) + "\n"
     )
     return destination
 
@@ -430,13 +443,134 @@ def _filing_lineage(source: WalkForwardStudyReport) -> list[FilingLineageRef]:
     )
 
 
+def _normalize_promotion_slices(
+    slices: dict[str, set[str]],
+) -> dict[str, list[str]]:
+    return {
+        name: sorted({ticker.upper() for ticker in members})
+        for name, members in sorted(slices.items())
+    }
+
+
+def _validate_manifest_version(manifest: ResearchExperimentManifest) -> None:
+    if manifest.registry_version == _REGISTRY_VERSION_V1:
+        return
+    if manifest.registry_version != _REGISTRY_VERSION:
+        raise ValueError(f"unsupported research registry version {manifest.registry_version!r}")
+    if manifest.promotion_slices is None:
+        raise ValueError("registry v2 manifest is missing frozen promotion slice memberships")
+    normalized = {
+        name: sorted({ticker.upper() for ticker in members})
+        for name, members in sorted(manifest.promotion_slices.items())
+    }
+    if normalized != manifest.promotion_slices:
+        raise ValueError("registry v2 promotion slice memberships are not canonical")
+    if _stable_digest(normalized) != manifest.slice_snapshot_id:
+        raise ValueError("registry v2 promotion slice snapshot mismatch")
+
+
+def _replay_artifact_chain(
+    manifest: ResearchExperimentManifest,
+    payloads: dict[ArtifactKind, dict[str, Any]],
+) -> ResearchReplayResult:
+    missing = [kind for kind in _EXPECTED_ARTIFACT_MODELS if kind not in payloads]
+    if missing:
+        raise ValueError("research replay is missing artifacts: " + ", ".join(missing))
+
+    source = WalkForwardStudyReport.model_validate(payloads["walk_forward"])
+    diagnostics = OOSDiagnosticsReport.model_validate(payloads["oos_diagnostics"])
+    selection = OOSSelectionSuiteReport.model_validate(payloads["oos_selection"])
+    implementation = OOSImplementationReport.model_validate(payloads["oos_implementation"])
+    promotion = OOSPromotionReport.model_validate(payloads["oos_promotion"])
+    replayed_decisions = [item.model_dump(mode="json") for item in promotion.decisions]
+    if replayed_decisions != manifest.final_decisions:
+        raise ValueError("replayed final decisions differ from registered manifest")
+
+    if manifest.registry_version == _REGISTRY_VERSION_V1:
+        return ResearchReplayResult(
+            experiment_id=manifest.experiment_id,
+            verified=True,
+            artifact_count=len(manifest.artifacts),
+            replay_mode="artifact_verification",
+            recomputed_artifacts=[],
+            final_decisions=replayed_decisions,
+        )
+
+    if manifest.promotion_slices is None:
+        raise ValueError("registry v2 manifest is missing frozen promotion slice memberships")
+    if selection.input_diagnostics_keys != [diagnostics.diagnostics_key]:
+        raise ValueError(
+            "computational replay requires exactly one registered diagnostics input"
+        )
+    slices = {
+        name: set(members) for name, members in manifest.promotion_slices.items()
+    }
+    recomputed_diagnostics = build_oos_diagnostics(source, diagnostics.config)
+    _require_recomputed_match("oos_diagnostics", recomputed_diagnostics, diagnostics)
+    recomputed_selection = evaluate_oos_selection_suite(
+        [recomputed_diagnostics],
+        selection.config,
+    )
+    _require_recomputed_match("oos_selection", recomputed_selection, selection)
+    recomputed_implementation = evaluate_oos_implementation(
+        source,
+        recomputed_selection,
+        implementation.config,
+    )
+    _require_recomputed_match(
+        "oos_implementation",
+        recomputed_implementation,
+        implementation,
+    )
+    recomputed_promotion = evaluate_oos_promotion(
+        source,
+        recomputed_diagnostics,
+        recomputed_selection,
+        recomputed_implementation,
+        slices=slices,
+        config=promotion.config,
+    )
+    _require_recomputed_match("oos_promotion", recomputed_promotion, promotion)
+    final_decisions = [
+        item.model_dump(mode="json") for item in recomputed_promotion.decisions
+    ]
+    if final_decisions != manifest.final_decisions:
+        raise ValueError("computationally replayed decisions differ from registered manifest")
+    return ResearchReplayResult(
+        experiment_id=manifest.experiment_id,
+        verified=True,
+        artifact_count=len(manifest.artifacts),
+        replay_mode="downstream_computational_replay",
+        recomputed_artifacts=list(_RECOMPUTED_ARTIFACTS),
+        final_decisions=final_decisions,
+    )
+
+
+def _require_recomputed_match(
+    kind: ArtifactKind,
+    recomputed: BaseModel,
+    persisted: BaseModel,
+) -> None:
+    if recomputed.model_dump(mode="json") != persisted.model_dump(mode="json"):
+        raise ValueError(f"computational replay mismatch for {kind}")
+
+
+def _manifest_storage_payload(manifest: ResearchExperimentManifest) -> dict[str, Any]:
+    exclude = {"promotion_slices"} if manifest.registry_version == _REGISTRY_VERSION_V1 else set()
+    return manifest.model_dump(mode="json", exclude=exclude)
+
+
 def _manifest_identity(manifest: ResearchExperimentManifest) -> str:
-    payload = manifest.model_dump(mode="json", exclude={"experiment_id"})
+    payload = _manifest_storage_payload(manifest)
+    payload.pop("experiment_id", None)
     return _stable_digest(payload)
 
 
 def _bundle_identity(bundle: ResearchExperimentBundle) -> str:
     payload = bundle.model_dump(mode="json", exclude={"bundle_sha256"})
+    if bundle.manifest.registry_version == _REGISTRY_VERSION_V1:
+        manifest_payload = cast(dict[str, Any], payload["manifest"])
+        manifest_payload.pop("promotion_slices", None)
     return _stable_digest(payload)
 
 

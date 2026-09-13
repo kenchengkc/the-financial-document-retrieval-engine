@@ -390,6 +390,7 @@ def main() -> int:
             selection,
             implementation,
             promotion,
+            promotion_slices=slices,
         )
         persist_research_experiment_manifest(session, manifest)
         verify_research_experiment(session, manifest.experiment_id)
