@@ -11,9 +11,9 @@ import argparse
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from sqlalchemy.orm import Session
 
@@ -181,7 +181,7 @@ def _load_inputs(
 ) -> tuple[
     tuple[promotion.HistoricalComponentRecord, ...],
     dict[str, promotion.CurrentIssuer],
-    set[tuple[str, promotion.date, promotion.date | None]],
+    set[tuple[str, date, date | None]],
     promotion.AnchorExpectation,
     promotion.BoundaryVerification,
 ]:
