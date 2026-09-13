@@ -12,6 +12,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AskWorkspace, type SessionRun } from "@/components/ask-workspace";
 import { DataFoundation } from "@/components/data-foundation";
+import { RetrievalPipeline } from "@/components/retrieval-pipeline";
 import { LandingHero } from "@/components/landing-hero";
 import { RetrievePanel } from "@/components/retrieve-panel";
 import { ScreenPanel } from "@/components/screen-panel";
@@ -47,14 +48,6 @@ const MODES: { id: ModeId; label: string; hint: string; icon: typeof Search }[] 
   { id: "retrieve", label: "Retrieve", hint: "Search filing text and data", icon: Search },
   { id: "screen", label: "Screen", hint: "Compare company filings", icon: ScanSearch },
   { id: "signals", label: "Signals", hint: "Filing event studies", icon: LineChart },
-];
-
-const STACK_STEPS = [
-  { title: "Identify", detail: "Company and date filters" },
-  { title: "Search", detail: "Keyword and semantic search" },
-  { title: "Rank", detail: "Rank the most relevant passages" },
-  { title: "Validate", detail: "Check citations before answering" },
-  { title: "Analyze", detail: "Historical datasets and studies" },
 ];
 
 export default function Home() {
@@ -284,15 +277,7 @@ export default function Home() {
                 ranks the results, checks citations, and declines unsupported requests.
               </p>
             </div>
-            <ol className="stack-steps">
-              {STACK_STEPS.map((step, index) => (
-                <li key={step.title}>
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{step.title}</strong>
-                  <small>{step.detail}</small>
-                </li>
-              ))}
-            </ol>
+            <RetrievalPipeline />
           </section>
         </div>
       </main>
