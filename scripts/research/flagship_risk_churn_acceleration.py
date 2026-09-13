@@ -26,6 +26,11 @@ from fdre.research.experiments.registry import (
     verify_research_experiment,
     write_research_experiment_manifest,
 )
+from fdre.research.experiments.replay_input import (
+    build_walk_forward_replay_input,
+    persist_walk_forward_replay_input,
+    write_walk_forward_replay_input,
+)
 from fdre.research.experiments.walk_forward import (
     WalkForwardConfig,
     persist_walk_forward_study,
@@ -348,6 +353,18 @@ def main() -> int:
             f"all known sectors with at least {MIN_SECTOR_SLICE_ISSUERS} scored issuers"
         ),
     }
+    code_sha = _git_sha()
+    replay_input = build_walk_forward_replay_input(
+        events,
+        bars,
+        event_config,
+        walk_config,
+        signal_name=SIGNAL_NAME,
+        dataset_version=dataset_version,
+        feature_version=FLAGSHIP_FEATURE_VERSION,
+        code_sha=code_sha,
+        definition=definition,
+    )
     source = run_walk_forward_signal_study(
         events,
         bars,
@@ -356,7 +373,7 @@ def main() -> int:
         signal_name=SIGNAL_NAME,
         dataset_version=dataset_version,
         feature_version=FLAGSHIP_FEATURE_VERSION,
-        code_sha=_git_sha(),
+        code_sha=code_sha,
         definition=definition,
     )
     diagnostics = build_oos_diagnostics(source, OOSDiagnosticsConfig())
@@ -379,6 +396,7 @@ def main() -> int:
     # Persistence uses a fresh short-lived database transaction after all network
     # and CPU-heavy evaluation has completed.
     with Session(create_db_engine()) as session:
+        persist_walk_forward_replay_input(session, replay_input)
         persist_walk_forward_study(session, source)
         persist_oos_diagnostics(session, diagnostics)
         persist_oos_selection_suite(session, selection)
@@ -391,10 +409,12 @@ def main() -> int:
             implementation,
             promotion,
             promotion_slices=slices,
+            walk_forward_input=replay_input,
         )
         persist_research_experiment_manifest(session, manifest)
         verify_research_experiment(session, manifest.experiment_id)
 
+    write_walk_forward_replay_input(output_dir / "walk-forward-replay-input.json", replay_input)
     write_walk_forward_report(output_dir / "walk-forward.json", source)
     write_oos_diagnostics_report(output_dir / "oos-diagnostics.json", diagnostics)
     write_oos_selection_report(output_dir / "statistical-selection.json", selection)
@@ -416,6 +436,7 @@ def main() -> int:
     summary: dict[str, object] = {
         "experiment_id": manifest.experiment_id,
         "source_experiment_key": source.experiment_key,
+        "walk_forward_replay_input_key": replay_input.input_key,
         "signal_name": SIGNAL_NAME,
         "primary_window": PRIMARY_WINDOW,
         "primary_status": primary_status,
