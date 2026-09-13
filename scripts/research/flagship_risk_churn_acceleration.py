@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
 from apps.api.app.models import Company, Document
-from fdre.research.composite_study import (
-    CompositeEvent,
-    SignalComponent,
-    period_label,
-    standardize_by_period,
-)
 from fdre.research.experiments.event_study import EventStudyConfig, EventWindow, FilingEvent
+from fdre.research.experiments.feature_replay import (
+    build_risk_churn_feature_replay_input,
+    persist_risk_churn_feature_replay_input,
+    replay_risk_churn_feature_input,
+    write_risk_churn_feature_replay_input,
+)
 from fdre.research.experiments.registry import (
     build_research_experiment_manifest,
     persist_research_experiment_manifest,
@@ -63,16 +63,17 @@ from fdre.research.oos.selection import (
     write_oos_selection_report,
 )
 from fdre.research.panel import ResearchPanelQuery, build_research_panel
-from fdre.research.risk_churn_acceleration import (
+from fdre.research.signals.risk_churn_acceleration import (
     RISK_CHURN_ACCELERATION_DEFINITION,
     RISK_CHURN_ACCELERATION_VERSION,
-    build_risk_churn_acceleration_events,
+    RISK_CHURN_NEUTRALIZATION_VERSION,
+    RISK_CHURN_SIGNAL_NAME,
 )
 
-SIGNAL_NAME = "risk_factor_churn_acceleration"
+SIGNAL_NAME = RISK_CHURN_SIGNAL_NAME
 PRIMARY_WINDOW = "1:63"
 PREDECLARED_WINDOWS = ("1:21", PRIMARY_WINDOW, "1:126")
-NEUTRALIZATION_VERSION = "period-sector-v1"
+NEUTRALIZATION_VERSION = RISK_CHURN_NEUTRALIZATION_VERSION
 FLAGSHIP_FEATURE_VERSION = f"{RISK_CHURN_ACCELERATION_VERSION}+{NEUTRALIZATION_VERSION}"
 MIN_SECTOR_SLICE_ISSUERS = 20
 FORWARD_BUFFER_DAYS = 230
@@ -113,41 +114,6 @@ def _select_universe(
     tickers = [str(row.ticker).upper() for row in rows]
     sectors = {str(row.ticker).upper(): str(row.sector or "Unknown") for row in rows}
     return tickers, sectors
-
-
-def _neutralize_events(
-    events: list[FilingEvent],
-    sector_by_ticker: dict[str, str],
-) -> list[FilingEvent]:
-    composite_events = [
-        CompositeEvent(
-            ticker=event.ticker,
-            accession_number=event.accession_number,
-            available_at_period=period_label(event.available_at.date()),
-            available_at=event.available_at,
-            max_source_available_at=event.max_source_available_at,
-            raw={SIGNAL_NAME: float(event.feature_value)},
-        )
-        for event in events
-        if event.feature_value is not None
-    ]
-    sector_by_accession = {
-        event.accession_number: sector_by_ticker.get(event.ticker.upper(), "Unknown")
-        for event in events
-    }
-    standardized = standardize_by_period(
-        composite_events,
-        [SignalComponent(name=SIGNAL_NAME, sign=1)],
-        sector_by_accession=sector_by_accession,
-        min_group=4,
-    )
-    normalized: list[FilingEvent] = []
-    for event in events:
-        score = standardized.get(event.accession_number, {}).get(SIGNAL_NAME)
-        if score is None:
-            continue
-        normalized.append(event.model_copy(update={"feature_value": score}))
-    return normalized
 
 
 def _sector_slices(
@@ -293,9 +259,12 @@ def main() -> int:
                 limit=10_000,
             ),
         )
-        dataset_version = f"panel:{panel.corpus_snapshot_id}"
-        raw_events = build_risk_churn_acceleration_events(panel.rows)
-        events = _neutralize_events(raw_events, sector_by_ticker)
+        feature_input = build_risk_churn_feature_replay_input(
+            panel.rows,
+            sector_by_ticker,
+        )
+        dataset_version = feature_input.dataset_version
+        events = replay_risk_churn_feature_input(feature_input)
 
     if len(events) < 50:
         raise RuntimeError(
@@ -396,6 +365,7 @@ def main() -> int:
     # Persistence uses a fresh short-lived database transaction after all network
     # and CPU-heavy evaluation has completed.
     with Session(create_db_engine()) as session:
+        persist_risk_churn_feature_replay_input(session, feature_input)
         persist_walk_forward_replay_input(session, replay_input)
         persist_walk_forward_study(session, source)
         persist_oos_diagnostics(session, diagnostics)
@@ -410,10 +380,15 @@ def main() -> int:
             promotion,
             promotion_slices=slices,
             walk_forward_input=replay_input,
+            feature_input=feature_input,
         )
         persist_research_experiment_manifest(session, manifest)
         verify_research_experiment(session, manifest.experiment_id)
 
+    write_risk_churn_feature_replay_input(
+        output_dir / "feature-replay-input.json",
+        feature_input,
+    )
     write_walk_forward_replay_input(output_dir / "walk-forward-replay-input.json", replay_input)
     write_walk_forward_report(output_dir / "walk-forward.json", source)
     write_oos_diagnostics_report(output_dir / "oos-diagnostics.json", diagnostics)
@@ -436,6 +411,7 @@ def main() -> int:
     summary: dict[str, object] = {
         "experiment_id": manifest.experiment_id,
         "source_experiment_key": source.experiment_key,
+        "feature_replay_input_key": feature_input.input_key,
         "walk_forward_replay_input_key": replay_input.input_key,
         "signal_name": SIGNAL_NAME,
         "primary_window": PRIMARY_WINDOW,
