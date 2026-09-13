@@ -12,6 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.app.models import ResearchExperiment
+from fdre.research.experiments.feature_replay import (
+    RiskChurnFeatureReplayInput,
+    replay_risk_churn_feature_input,
+)
 from fdre.research.experiments.replay_input import (
     WalkForwardReplayInput,
     replay_walk_forward_input,
@@ -29,6 +33,7 @@ from fdre.research.oos.selection import (
 )
 
 ArtifactKind = Literal[
+    "feature_input",
     "walk_forward_input",
     "walk_forward",
     "oos_diagnostics",
@@ -40,12 +45,15 @@ ReplayMode = Literal[
     "artifact_verification",
     "downstream_computational_replay",
     "walk_forward_computational_replay",
+    "feature_computational_replay",
 ]
 _REGISTRY_VERSION_V1 = "research-experiment-registry-v1"
 _REGISTRY_VERSION_V2 = "research-experiment-registry-v2"
-_REGISTRY_VERSION = "research-experiment-registry-v3"
+_REGISTRY_VERSION_V3 = "research-experiment-registry-v3"
+_REGISTRY_VERSION = "research-experiment-registry-v4"
 _BUNDLE_VERSION = "research-experiment-bundle-v1"
 _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
+    "feature_input": "risk_churn_feature_replay_input",
     "walk_forward_input": "walk_forward_replay_input",
     "walk_forward": "walk_forward_signal_study",
     "oos_diagnostics": "oos_signal_diagnostics",
@@ -54,6 +62,7 @@ _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
     "oos_promotion": "oos_signal_promotion",
 }
 _EXPECTED_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
+    "feature_input": RiskChurnFeatureReplayInput,
     "walk_forward_input": WalkForwardReplayInput,
     "walk_forward": WalkForwardStudyReport,
     "oos_diagnostics": OOSDiagnosticsReport,
@@ -153,6 +162,7 @@ def build_research_experiment_manifest(
     *,
     promotion_slices: dict[str, set[str]] | None = None,
     walk_forward_input: WalkForwardReplayInput | None = None,
+    feature_input: RiskChurnFeatureReplayInput | None = None,
 ) -> ResearchExperimentManifest:
     """Bind every research layer and source identity into one immutable manifest."""
     _validate_chain(source, diagnostics, selection, implementation, promotion)
@@ -163,8 +173,12 @@ def build_research_experiment_manifest(
     )
     if walk_forward_input is not None and normalized_slices is None:
         raise ValueError("walk-forward computational replay requires promotion slices")
-    if walk_forward_input is not None:
+    if feature_input is not None and walk_forward_input is None:
+        raise ValueError("feature computational replay requires a walk-forward replay input")
+    if feature_input is not None:
         registry_version = _REGISTRY_VERSION
+    elif walk_forward_input is not None:
+        registry_version = _REGISTRY_VERSION_V3
     elif normalized_slices is not None:
         registry_version = _REGISTRY_VERSION_V2
     else:
@@ -179,8 +193,12 @@ def build_research_experiment_manifest(
             raise ValueError("promotion slice memberships do not match slice snapshot id")
     if walk_forward_input is not None:
         _validate_walk_forward_input_binding(source, walk_forward_input)
+    if feature_input is not None and walk_forward_input is not None:
+        _validate_feature_input_binding(feature_input, walk_forward_input)
 
     reports: list[tuple[ArtifactKind, str, BaseModel]] = []
+    if feature_input is not None:
+        reports.append(("feature_input", feature_input.input_key, feature_input))
     if walk_forward_input is not None:
         reports.append(
             ("walk_forward_input", walk_forward_input.input_key, walk_forward_input)
@@ -458,6 +476,20 @@ def _validate_chain(
         raise ValueError("promotion implementation key mismatch")
 
 
+def _validate_feature_input_binding(
+    feature_input: RiskChurnFeatureReplayInput,
+    walk_forward_input: WalkForwardReplayInput,
+) -> None:
+    if feature_input.signal_name != walk_forward_input.signal_name:
+        raise ValueError("feature replay input signal name mismatch")
+    if feature_input.dataset_version != walk_forward_input.dataset_version:
+        raise ValueError("feature replay input dataset version mismatch")
+    if feature_input.feature_version != walk_forward_input.feature_version:
+        raise ValueError("feature replay input feature version mismatch")
+    regenerated_events = replay_risk_churn_feature_input(feature_input)
+    _require_event_match(regenerated_events, walk_forward_input.events)
+
+
 def _validate_walk_forward_input_binding(
     source: WalkForwardStudyReport,
     replay_input: WalkForwardReplayInput,
@@ -515,7 +547,12 @@ def _normalize_promotion_slices(
 
 
 def _validate_manifest_version(manifest: ResearchExperimentManifest) -> None:
-    supported = {_REGISTRY_VERSION_V1, _REGISTRY_VERSION_V2, _REGISTRY_VERSION}
+    supported = {
+        _REGISTRY_VERSION_V1,
+        _REGISTRY_VERSION_V2,
+        _REGISTRY_VERSION_V3,
+        _REGISTRY_VERSION,
+    }
     if manifest.registry_version not in supported:
         raise ValueError(f"unsupported research registry version {manifest.registry_version!r}")
     if manifest.registry_version == _REGISTRY_VERSION_V1:
@@ -530,19 +567,25 @@ def _validate_manifest_version(manifest: ResearchExperimentManifest) -> None:
         raise ValueError("promotion slice memberships are not canonical")
     if _stable_digest(normalized) != manifest.slice_snapshot_id:
         raise ValueError("promotion slice snapshot mismatch")
-    input_refs = [
-        item for item in manifest.artifacts if item.kind == "walk_forward_input"
-    ]
-    if manifest.registry_version == _REGISTRY_VERSION_V2 and input_refs:
-        raise ValueError("registry v2 manifest cannot contain a walk-forward replay input")
-    if manifest.registry_version == _REGISTRY_VERSION and len(input_refs) != 1:
-        raise ValueError("registry v3 manifest requires exactly one walk-forward replay input")
+    feature_refs = [item for item in manifest.artifacts if item.kind == "feature_input"]
+    walk_refs = [item for item in manifest.artifacts if item.kind == "walk_forward_input"]
+    if manifest.registry_version == _REGISTRY_VERSION_V2:
+        if feature_refs or walk_refs:
+            raise ValueError("registry v2 manifest cannot contain replay input artifacts")
+    elif manifest.registry_version == _REGISTRY_VERSION_V3:
+        if feature_refs or len(walk_refs) != 1:
+            raise ValueError("registry v3 manifest requires only one walk-forward replay input")
+    else:
+        if len(feature_refs) != 1 or len(walk_refs) != 1:
+            raise ValueError("registry v4 manifest requires feature and walk-forward replay inputs")
 
 
 def _required_artifact_kinds(manifest: ResearchExperimentManifest) -> list[ArtifactKind]:
     required = list(_BASE_ARTIFACTS)
-    if manifest.registry_version == _REGISTRY_VERSION:
+    if manifest.registry_version == _REGISTRY_VERSION_V3:
         required.insert(0, "walk_forward_input")
+    elif manifest.registry_version == _REGISTRY_VERSION:
+        required[0:0] = ["feature_input", "walk_forward_input"]
     return required
 
 
@@ -576,12 +619,18 @@ def _replay_artifact_chain(
     source = persisted_source
     replay_mode: ReplayMode = "downstream_computational_replay"
     recomputed_artifacts = list(_RECOMPUTED_DOWNSTREAM)
-    if manifest.registry_version == _REGISTRY_VERSION:
-        replay_input = WalkForwardReplayInput.model_validate(payloads["walk_forward_input"])
-        recomputed_source = replay_walk_forward_input(replay_input)
+    if manifest.registry_version in {_REGISTRY_VERSION_V3, _REGISTRY_VERSION}:
+        walk_input = WalkForwardReplayInput.model_validate(payloads["walk_forward_input"])
+        if manifest.registry_version == _REGISTRY_VERSION:
+            feature_input = RiskChurnFeatureReplayInput.model_validate(payloads["feature_input"])
+            regenerated_events = replay_risk_churn_feature_input(feature_input)
+            _require_event_match(regenerated_events, walk_input.events)
+            replay_mode = "feature_computational_replay"
+        else:
+            replay_mode = "walk_forward_computational_replay"
+        recomputed_source = replay_walk_forward_input(walk_input)
         _require_recomputed_match("walk_forward", recomputed_source, persisted_source)
         source = recomputed_source
-        replay_mode = "walk_forward_computational_replay"
         recomputed_artifacts = ["walk_forward", *_RECOMPUTED_DOWNSTREAM]
 
     if manifest.promotion_slices is None:
@@ -632,6 +681,16 @@ def _replay_artifact_chain(
         recomputed_artifacts=recomputed_artifacts,
         final_decisions=final_decisions,
     )
+
+
+def _require_event_match(
+    regenerated: list[Any],
+    persisted: list[Any],
+) -> None:
+    regenerated_payload = [item.model_dump(mode="json") for item in regenerated]
+    persisted_payload = [item.model_dump(mode="json") for item in persisted]
+    if regenerated_payload != persisted_payload:
+        raise ValueError("computational replay mismatch for scored_events")
 
 
 def _require_recomputed_match(
