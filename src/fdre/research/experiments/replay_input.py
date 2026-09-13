@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -53,7 +54,7 @@ def build_walk_forward_replay_input(
 ) -> WalkForwardReplayInput:
     """Freeze the exact in-memory inputs consumed by a walk-forward study."""
 
-    payload = {
+    payload: dict[str, Any] = {
         "replay_input_version": _REPLAY_INPUT_VERSION,
         "signal_name": signal_name,
         "dataset_version": dataset_version,
