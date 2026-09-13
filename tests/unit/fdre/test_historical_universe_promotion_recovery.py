@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import Table, create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from apps.api.app.db import create_db_engine
@@ -74,14 +76,14 @@ def test_post_commit_report_failure_recovers_without_reapplying(
     database = tmp_path / "promotion.sqlite"
     database_url = f"sqlite+pysqlite:///{database}"
     engine = create_engine(database_url)
-    Company.__table__.create(engine)
-    OperationReceipt.__table__.create(engine)
+    cast(Table, Company.__table__).create(engine)
+    cast(Table, OperationReceipt.__table__).create(engine)
     engine.dispose()
 
     anchor = promotion.AnchorExpectation(
         anchor_id="anchor",
         universe_code="sp500",
-        effective_at=promotion.date(2026, 9, 1),
+        effective_at=date(2026, 9, 1),
         constituents=(),
     )
     boundary = promotion.BoundaryVerification(audit_id="a" * 64, verified_record_ids=frozenset())
@@ -179,7 +181,7 @@ def test_operation_id_reuse_with_different_inputs_fails_closed(
     database = tmp_path / "reuse.sqlite"
     database_url = f"sqlite+pysqlite:///{database}"
     engine = create_engine(database_url)
-    OperationReceipt.__table__.create(engine)
+    cast(Table, OperationReceipt.__table__).create(engine)
     with Session(engine) as session:
         payload: dict[str, object] = {"applied": True, "operation_id": "same-id"}
         session.add(
