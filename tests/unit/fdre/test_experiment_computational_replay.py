@@ -24,13 +24,26 @@ from fdre.research.experiments.walk_forward import (
     WalkForwardOOSObservation,
     WalkForwardStudyReport,
 )
-from fdre.research.oos.diagnostics import OOSDiagnosticsConfig, build_oos_diagnostics
+from fdre.research.oos.diagnostics import (
+    OOSDiagnosticsConfig,
+    OOSDiagnosticsReport,
+    build_oos_diagnostics,
+)
 from fdre.research.oos.implementation import (
     OOSImplementationConfig,
+    OOSImplementationReport,
     evaluate_oos_implementation,
 )
-from fdre.research.oos.promotion import OOSPromotionConfig, evaluate_oos_promotion
-from fdre.research.oos.selection import OOSSelectionConfig, evaluate_oos_selection_suite
+from fdre.research.oos.promotion import (
+    OOSPromotionConfig,
+    OOSPromotionReport,
+    evaluate_oos_promotion,
+)
+from fdre.research.oos.selection import (
+    OOSSelectionConfig,
+    OOSSelectionSuiteReport,
+    evaluate_oos_selection_suite,
+)
 
 
 def _digest(payload: object) -> str:
@@ -42,7 +55,9 @@ def _digest(payload: object) -> str:
 def _source() -> WalkForwardStudyReport:
     tickers = ["AAA", "BBB", "CCC", "DDD"]
     observations: list[WalkForwardOOSObservation] = []
-    for fold_number, event_session in enumerate((date(2024, 1, 10), date(2024, 2, 12)), start=1):
+    for fold_number, event_session in enumerate(
+        (date(2024, 1, 10), date(2024, 2, 12)), start=1
+    ):
         for rank, ticker in enumerate(tickers, start=1):
             available = datetime.combine(
                 event_session - timedelta(days=1),
@@ -89,10 +104,10 @@ def _source() -> WalkForwardStudyReport:
 
 def _chain() -> tuple[
     WalkForwardStudyReport,
-    object,
-    object,
-    object,
-    object,
+    OOSDiagnosticsReport,
+    OOSSelectionSuiteReport,
+    OOSImplementationReport,
+    OOSPromotionReport,
     dict[str, set[str]],
 ]:
     source = _source()
@@ -158,10 +173,10 @@ def _chain() -> tuple[
 def _persist_children(
     session: Session,
     source: WalkForwardStudyReport,
-    diagnostics: object,
-    selection: object,
-    implementation: object,
-    promotion: object,
+    diagnostics: OOSDiagnosticsReport,
+    selection: OOSSelectionSuiteReport,
+    implementation: OOSImplementationReport,
+    promotion: OOSPromotionReport,
 ) -> None:
     reports = [
         (source.experiment_key, "walk_forward_signal_study", source),
@@ -241,7 +256,9 @@ def test_v2_computational_replay_rejects_hash_consistent_forged_bundle() -> None
 
     payload = bundle.model_dump(mode="json")
     artifacts = cast(list[dict[str, Any]], payload["artifacts"])
-    diagnostic_artifact = next(item for item in artifacts if item["kind"] == "oos_diagnostics")
+    diagnostic_artifact = next(
+        item for item in artifacts if item["kind"] == "oos_diagnostics"
+    )
     diagnostic_payload = cast(dict[str, Any], diagnostic_artifact["payload"])
     windows = cast(list[dict[str, Any]], diagnostic_payload["windows"])
     windows[0]["ic_mean"] = float(windows[0]["ic_mean"]) - 0.25
