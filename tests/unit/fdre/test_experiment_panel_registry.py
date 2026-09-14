@@ -335,7 +335,17 @@ def test_v5_replays_panel_features_and_downstream_without_network(
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        panel_input, feature_input, walk_input, source, diagnostics, selection, implementation, promotion, slices = _chain(session)
+        (
+            panel_input,
+            feature_input,
+            walk_input,
+            source,
+            diagnostics,
+            selection,
+            implementation,
+            promotion,
+            slices,
+        ) = _chain(session)
         manifest = build_research_experiment_manifest(
             source,
             diagnostics,
@@ -387,7 +397,17 @@ def test_v5_rejects_hash_consistent_forged_source_passage() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        panel_input, feature_input, walk_input, source, diagnostics, selection, implementation, promotion, slices = _chain(session)
+        (
+            panel_input,
+            feature_input,
+            walk_input,
+            source,
+            diagnostics,
+            selection,
+            implementation,
+            promotion,
+            slices,
+        ) = _chain(session)
         manifest = build_research_experiment_manifest(
             source,
             diagnostics,
