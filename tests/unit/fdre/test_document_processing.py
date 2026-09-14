@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from scripts.ingestion.download_filings import process_documents
 from scripts.ingestion.seed_demo import seed_demo_document
@@ -24,7 +25,8 @@ from apps.api.app.models import (
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider
 from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader, sha256_bytes
-from fdre.parsing.html_filing_parser import HtmlFilingParser
+from fdre.parsing.html_filing_parser import HTML_FILING_PARSER_VERSION, HtmlFilingParser
+from fdre.parsing.sec_provenance import parse_provenance_from_metadata
 
 FIXTURE_PATH = Path(__file__).resolve().parents[3] / "data/sample/sec_filing.html"
 
@@ -78,6 +80,12 @@ def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
         assert stored_document.local_path is not None
         assert Path(stored_document.local_path).is_file()
         assert stored_document.sha256_hash is not None
+        provenance = parse_provenance_from_metadata(stored_document.metadata_json)
+        assert provenance is not None
+        assert provenance.raw_sha256 == stored_document.sha256_hash
+        assert provenance.raw_size_bytes == len(filing_html)
+        assert provenance.parser_version == HTML_FILING_PARSER_VERSION
+        assert provenance.parsed_element_count == summary.parsed_elements
         assert session.scalar(select(func.count()).select_from(DocumentElement)) == (
             summary.parsed_elements
         )
@@ -195,6 +203,57 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
 
     client.close()
     assert route.call_count == 1
+
+
+def test_force_parse_rejects_local_bytes_that_disagree_with_document_hash(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    expected_bytes = FIXTURE_PATH.read_bytes()
+    raw_path = tmp_path / "aapl.htm"
+    raw_path.write_bytes(expected_bytes + b"<!-- replaced after download -->")
+    company = Company(ticker="AAPL", cik="0000320193", name="Apple Inc.")
+    document = Document(
+        company=company,
+        source_type="sec",
+        form_type="10-K",
+        filing_date=date(2025, 10, 31),
+        accession_number="0000320193-25-000079",
+        primary_document_url="https://www.sec.gov/example/aapl.htm",
+        local_path=str(raw_path),
+        sha256_hash=sha256_bytes(expected_bytes),
+        metadata_json={"primary_document": "aapl.htm"},
+    )
+    element = DocumentElement(
+        document=document,
+        element_type="text",
+        section="Risk Factors",
+        text="Existing persisted disclosure.",
+        reading_order=0,
+    )
+
+    with Session(engine) as session:
+        session.add(company)
+        session.commit()
+        original_element_id = element.id
+
+        with pytest.raises(ValueError, match="raw SEC filing hash mismatch"):
+            process_documents(
+                session,
+                downloader=None,
+                parser=HtmlFilingParser(),
+                tickers=["AAPL"],
+                form_types=["10-K"],
+                limit=1,
+                download=False,
+                parse=True,
+                force_parse=True,
+            )
+        session.rollback()
+
+        assert session.scalar(select(DocumentElement.id)) == original_element_id
+        assert session.scalar(select(Document.sha256_hash)) == sha256_bytes(expected_bytes)
 
 
 def test_force_rechunk_rebuilds_existing_chunks() -> None:
