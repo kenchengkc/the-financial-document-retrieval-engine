@@ -20,6 +20,11 @@ from fdre.research.experiments.feature_replay import (
     replay_risk_churn_feature_input,
     write_risk_churn_feature_replay_input,
 )
+from fdre.research.experiments.panel_replay import (
+    build_risk_churn_panel_replay_input,
+    persist_risk_churn_panel_replay_input,
+    write_risk_churn_panel_replay_input,
+)
 from fdre.research.experiments.registry import (
     build_research_experiment_manifest,
     persist_research_experiment_manifest,
@@ -259,6 +264,7 @@ def main() -> int:
                 limit=10_000,
             ),
         )
+        panel_input = build_risk_churn_panel_replay_input(session, panel)
         feature_input = build_risk_churn_feature_replay_input(
             panel.rows,
             sector_by_ticker,
@@ -365,6 +371,7 @@ def main() -> int:
     # Persistence uses a fresh short-lived database transaction after all network
     # and CPU-heavy evaluation has completed.
     with Session(create_db_engine()) as session:
+        persist_risk_churn_panel_replay_input(session, panel_input)
         persist_risk_churn_feature_replay_input(session, feature_input)
         persist_walk_forward_replay_input(session, replay_input)
         persist_walk_forward_study(session, source)
@@ -381,10 +388,15 @@ def main() -> int:
             promotion_slices=slices,
             walk_forward_input=replay_input,
             feature_input=feature_input,
+            panel_input=panel_input,
         )
         persist_research_experiment_manifest(session, manifest)
         verify_research_experiment(session, manifest.experiment_id)
 
+    write_risk_churn_panel_replay_input(
+        output_dir / "panel-replay-input.json",
+        panel_input,
+    )
     write_risk_churn_feature_replay_input(
         output_dir / "feature-replay-input.json",
         feature_input,
@@ -411,6 +423,7 @@ def main() -> int:
     summary: dict[str, object] = {
         "experiment_id": manifest.experiment_id,
         "source_experiment_key": source.experiment_key,
+        "panel_replay_input_key": panel_input.input_key,
         "feature_replay_input_key": feature_input.input_key,
         "walk_forward_replay_input_key": replay_input.input_key,
         "signal_name": SIGNAL_NAME,
