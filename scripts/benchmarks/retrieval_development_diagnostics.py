@@ -121,7 +121,8 @@ def run_development_diagnostics(
         total_started = perf_counter()
         candidate_pool = hybrid.search(
             session,
-            question.question,
+            benchmark_scope.rewritten_queries[0],
+            queries=benchmark_scope.rewritten_queries,
             filters=benchmark_scope.filters,
             limit=candidate_limit,
             timings_ms=hybrid_timings,
