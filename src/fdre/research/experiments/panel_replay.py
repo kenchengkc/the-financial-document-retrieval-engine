@@ -216,13 +216,13 @@ def replay_risk_churn_panel_input(
     _validate_supported_query(replay_input.query)
 
     companies = {
-        item.id: Company(
-            id=item.id,
-            ticker=item.ticker,
-            cik=item.cik,
-            name=item.name,
+        company_input.id: Company(
+            id=company_input.id,
+            ticker=company_input.ticker,
+            cik=company_input.cik,
+            name=company_input.name,
         )
-        for item in replay_input.companies
+        for company_input in replay_input.companies
     }
     if len(companies) != len(replay_input.companies):
         raise ValueError("risk-churn panel replay contains duplicate company ids")
@@ -230,17 +230,17 @@ def replay_risk_churn_panel_input(
     documents: list[Document] = []
     seen_document_ids: set[int] = set()
     seen_accessions: set[str] = set()
-    for item in replay_input.documents:
-        if item.id in seen_document_ids:
+    for document_input in replay_input.documents:
+        if document_input.id in seen_document_ids:
             raise ValueError("risk-churn panel replay contains duplicate document ids")
-        if item.accession_number in seen_accessions:
+        if document_input.accession_number in seen_accessions:
             raise ValueError("risk-churn panel replay contains duplicate accessions")
-        company = companies.get(item.company_id)
+        company = companies.get(document_input.company_id)
         if company is None:
             raise ValueError("risk-churn panel replay document references unknown company")
-        seen_document_ids.add(item.id)
-        seen_accessions.add(item.accession_number)
-        documents.append(_thaw_document(item, company))
+        seen_document_ids.add(document_input.id)
+        seen_accessions.add(document_input.accession_number)
+        documents.append(_thaw_document(document_input, company))
 
     selected_documents, prior_by_document = _select_panel_documents(
         documents,
@@ -263,21 +263,21 @@ def replay_risk_churn_panel_input(
     source_document_ids = set(source_documents_by_id)
     elements_by_document: dict[int, list[PanelElement]] = defaultdict(list)
     seen_element_ids: set[int] = set()
-    for item in replay_input.risk_factor_elements:
-        if item.id in seen_element_ids:
+    for element_input in replay_input.risk_factor_elements:
+        if element_input.id in seen_element_ids:
             raise ValueError("risk-churn panel replay contains duplicate element ids")
-        if item.document_id not in source_document_ids:
+        if element_input.document_id not in source_document_ids:
             raise ValueError("risk-churn panel replay element references a non-source document")
-        if item.section != "Risk Factors":
+        if element_input.section != "Risk Factors":
             raise ValueError("risk-churn panel replay contains a non-Risk-Factors element")
-        seen_element_ids.add(item.id)
-        elements_by_document[item.document_id].append(
+        seen_element_ids.add(element_input.id)
+        elements_by_document[element_input.document_id].append(
             PanelElement(
-                document_id=item.document_id,
-                element_type=item.element_type,
-                section=item.section,
-                text=item.text,
-                markdown=item.markdown,
+                document_id=element_input.document_id,
+                element_type=element_input.element_type,
+                section=element_input.section,
+                text=element_input.text,
+                markdown=element_input.markdown,
             )
         )
 
