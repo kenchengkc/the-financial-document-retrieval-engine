@@ -144,6 +144,31 @@ def test_preprocess_still_resolves_explicit_controls_section_language() -> None:
     assert result.filters.sections == ["Controls and Procedures"]
 
 
+def test_preprocess_does_not_infer_business_section_from_ordinary_business_word() -> None:
+    result = preprocess_query(
+        "Which companies discuss regulation and government oversight of the business?",
+        companies=COMPANIES,
+    )
+
+    assert result.filters.sections == []
+
+
+def test_preprocess_still_resolves_explicit_business_section_language() -> None:
+    section = preprocess_query(
+        "What did Apple disclose in the Business section?",
+        companies=COMPANIES,
+    )
+    item = preprocess_query(
+        "What did Apple disclose in Item 1?",
+        companies=COMPANIES,
+    )
+
+    assert section.filters.tickers == ["AAPL"]
+    assert section.filters.sections == ["Business"]
+    assert item.filters.tickers == ["AAPL"]
+    assert item.filters.sections == ["Business"]
+
+
 def test_preprocess_leaves_cross_sectional_theme_queries_unfiltered() -> None:
     result = preprocess_query(
         "Which companies mention data center power constraints?",
