@@ -60,7 +60,7 @@ from fdre.research.oos.selection import (
     OOSSelectionSuiteReport,
     evaluate_oos_selection_suite,
 )
-from fdre.research.panel import ResearchPanelQuery, build_research_panel
+from fdre.research.panel import ResearchPanel, ResearchPanelQuery, build_research_panel
 
 
 def _digest(payload: object) -> str:
@@ -108,7 +108,7 @@ def _document(
     return document
 
 
-def _build_source_panel(session: Session):
+def _build_source_panel(session: Session) -> ResearchPanel:
     tickers = ("AAA", "BBB", "CCC", "DDD")
     current_periods = (
         date(2024, 1, 31),
