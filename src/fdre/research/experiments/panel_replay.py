@@ -25,6 +25,7 @@ from fdre.research.panel import (
     PanelElement,
     ResearchPanel,
     ResearchPanelQuery,
+    ResearchPanelRow,
     _build_row,
     _corpus_snapshot_id,
     _latest_documents_with_priors,
@@ -76,6 +77,7 @@ class RiskChurnPanelReplayInput(BaseModel):
     latest_with_priors_only: bool = False
     corpus_snapshot_id: str
     row_accessions: list[str]
+    panel_rows_sha256: str
     companies: list[PanelSourceCompany]
     documents: list[PanelSourceDocument]
     risk_factor_elements: list[PanelSourceElement]
@@ -87,11 +89,7 @@ def build_risk_churn_panel_replay_input(
     *,
     latest_with_priors_only: bool = False,
 ) -> RiskChurnPanelReplayInput:
-    """Freeze the exact persisted corpus needed to reconstruct a risk-churn panel.
-
-    The query scope must be explicit so the frozen metadata can independently
-    reconstruct row selection rather than trusting a preselected accession list.
-    """
+    """Freeze persisted corpus inputs that independently reproduce a risk-churn panel."""
 
     _validate_supported_query(panel.query)
     if panel.feature_version != FEATURE_VERSION:
@@ -160,6 +158,7 @@ def build_risk_churn_panel_replay_input(
         "latest_with_priors_only": latest_with_priors_only,
         "corpus_snapshot_id": panel.corpus_snapshot_id,
         "row_accessions": row_accessions,
+        "panel_rows_sha256": _panel_rows_digest(panel.rows),
         "companies": [
             PanelSourceCompany(
                 id=company.id,
@@ -282,18 +281,21 @@ def replay_risk_churn_panel_input(
             )
         )
 
+    elements = dict(elements_by_document)
     rows = [
         _build_row(
             document,
             query=replay_input.query,
             snapshot_id=snapshot_id,
             prior=prior_by_document[document.id],
-            elements_by_document=dict(elements_by_document),
+            elements_by_document=elements,
             facts_by_document={},
         )
         for document in selected_documents
     ]
     validate_point_in_time_rows(rows)
+    if _panel_rows_digest(rows) != replay_input.panel_rows_sha256:
+        raise ValueError("risk-churn panel replay row digest mismatch")
     return ResearchPanel(
         query=replay_input.query,
         feature_version=FEATURE_VERSION,
@@ -327,6 +329,7 @@ def persist_risk_churn_panel_replay_input(
                 "replay_input_version": replay_input.replay_input_version,
                 "corpus_snapshot_id": replay_input.corpus_snapshot_id,
                 "row_count": len(replay_input.row_accessions),
+                "panel_rows_sha256": replay_input.panel_rows_sha256,
             },
             results_json=payload,
         )
@@ -387,9 +390,9 @@ def _select_panel_documents(
         for document in documents
         if document.available_at is not None
         and document.period_end_date is not None
-        and (not tickers or (document.company.ticker or "").upper() in tickers)
+        and (not tickers or document.company.ticker in tickers)
         and (not ciks or document.company.cik in ciks)
-        and (not form_types or document.form_type.upper() in form_types)
+        and (not form_types or document.form_type in form_types)
         and (query.period_end_from is None or document.period_end_date >= query.period_end_from)
         and (query.period_end_to is None or document.period_end_date <= query.period_end_to)
         and (query.as_of is None or document.available_at <= query.as_of)
@@ -447,6 +450,10 @@ def _thaw_document(item: PanelSourceDocument, company: Company) -> Document:
         accession_number=item.accession_number,
         sha256_hash=item.sha256_hash,
     )
+
+
+def _panel_rows_digest(rows: list[ResearchPanelRow]) -> str:
+    return _stable_digest([row.model_dump(mode="json") for row in rows])
 
 
 def _panel_input_identity(replay_input: RiskChurnPanelReplayInput) -> str:
