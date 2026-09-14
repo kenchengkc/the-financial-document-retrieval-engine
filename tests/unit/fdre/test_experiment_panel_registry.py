@@ -249,7 +249,7 @@ def _chain(session: Session) -> tuple[
     )
     selection = evaluate_oos_selection_suite(
         [diagnostics],
-        OOSSelectionConfig(min_ic_folds=1),
+        OOSSelectionConfig(min_ic_folds=2),
     )
     implementation = evaluate_oos_implementation(
         source,
