@@ -156,7 +156,7 @@ def _panel_rows() -> tuple[list[ResearchPanelRow], dict[str, str]]:
                 ),
             ]
         )
-    return rows, {ticker: "Technology" for ticker in tickers}
+    return rows, dict.fromkeys(tickers, "Technology")
 
 
 def _bars() -> list[MarketBar]:
