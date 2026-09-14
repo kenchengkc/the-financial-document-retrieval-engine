@@ -113,8 +113,13 @@ def test_panel_source_replay_reconstructs_exact_rows_offline(
 
     assert replay_input.row_accessions == ["aaa-2024", "aaa-2025"]
     assert {item.ticker for item in replay_input.companies} == {"AAA"}
-    assert all(item.section == "Risk Factors" for item in replay_input.risk_factor_elements)
-    assert all("Business description" not in (item.text or "") for item in replay_input.risk_factor_elements)
+    assert all(
+        item.section == "Risk Factors" for item in replay_input.risk_factor_elements
+    )
+    assert all(
+        "Business description" not in (item.text or "")
+        for item in replay_input.risk_factor_elements
+    )
 
     def _network_disabled(*args: object, **kwargs: object) -> None:
         raise AssertionError("panel replay attempted network access")
