@@ -244,7 +244,7 @@ def _chain(session: Session) -> tuple[
             n_quantiles=2,
             min_fold_observations=3,
             min_issuer_count=2,
-            min_stability_folds=1,
+            min_stability_folds=2,
         ),
     )
     selection = evaluate_oos_selection_suite(
