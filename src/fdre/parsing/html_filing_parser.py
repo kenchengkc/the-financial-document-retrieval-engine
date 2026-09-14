@@ -8,6 +8,9 @@ from bs4 import BeautifulSoup, Tag
 
 from fdre.parsing.base import BaseDocumentParser, ElementType, ParsedElement
 
+HTML_FILING_PARSER_NAME = "html_filing_parser"
+HTML_FILING_PARSER_VERSION = "html-filing-parser-v1"
+
 BLOCK_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "li", "table")
 HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 
@@ -37,6 +40,9 @@ SECTION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 
 class HtmlFilingParser(BaseDocumentParser):
     """Extract ordered text and table elements from SEC filing HTML."""
+
+    parser_name = HTML_FILING_PARSER_NAME
+    parser_version = HTML_FILING_PARSER_VERSION
 
     def parse(self, content: str | bytes) -> list[ParsedElement]:
         soup = BeautifulSoup(content, "lxml")
