@@ -190,12 +190,18 @@ def retrieve_tables_node(
             "table_candidates": [],
             "trace": _trace(state, "retrieve_tables", {"count": 0, "skipped": True}),
         }
+    base_filters = SearchFilters.model_validate(state.get("filters", {}))
     existing_tables = [
         payload
         for payload in state.get("text_candidates", [])
         if payload.get("metadata", {}).get("element_type") == "table"
     ]
-    if existing_tables:
+    # Reuse is safe only when the first retrieval was already table-only. A general
+    # candidate pool can contain one incidental table while omitting the relevant
+    # table; treating that single hit as complete used to suppress the dedicated
+    # table search and caused candidate-generation loss on table-routed questions.
+    table_only = set(base_filters.element_types) == {"table"}
+    if existing_tables and table_only:
         return {
             "table_candidates": existing_tables,
             "trace": _trace(
@@ -204,9 +210,7 @@ def retrieve_tables_node(
                 {"count": len(existing_tables), "reused": True},
             ),
         }
-    filters = SearchFilters.model_validate(state.get("filters", {})).model_copy(
-        update={"element_types": ["table"]}
-    )
+    filters = base_filters.model_copy(update={"element_types": ["table"]})
     candidates = context.retriever.search(
         context.session,
         state["rewritten_queries"][0],
