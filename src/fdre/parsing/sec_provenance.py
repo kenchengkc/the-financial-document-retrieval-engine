@@ -16,7 +16,9 @@ from fdre.parsing.html_filing_parser import (
 )
 
 SEC_PARSE_PROVENANCE_KEY = "sec_parse_provenance"
-SEC_PARSE_PROVENANCE_VERSION = "sec-parse-provenance-v1"
+SEC_PARSE_PROVENANCE_VERSION: Literal["sec-parse-provenance-v1"] = (
+    "sec-parse-provenance-v1"
+)
 
 
 class SECParseProvenance(BaseModel):
