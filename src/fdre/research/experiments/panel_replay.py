@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -395,10 +395,15 @@ def _select_panel_documents(
         and (not form_types or document.form_type in form_types)
         and (query.period_end_from is None or document.period_end_date >= query.period_end_from)
         and (query.period_end_to is None or document.period_end_date <= query.period_end_to)
-        and (query.as_of is None or document.available_at <= query.as_of)
+        and (
+            query.as_of is None
+            or _as_utc(document.available_at) <= _as_utc(query.as_of)
+        )
         and (query.include_amendments or not document.is_amendment)
     ]
-    selected.sort(key=lambda document: (document.available_at, document.id))
+    selected.sort(
+        key=lambda document: (_as_utc(document.available_at), document.id)
+    )
     selected = selected[: query.limit]
 
     documents_by_company: dict[int, list[Document]] = defaultdict(list)
@@ -415,6 +420,14 @@ def _select_panel_documents(
     if latest_with_priors_only:
         selected = _latest_documents_with_priors(selected, prior_by_document)
     return selected, prior_by_document
+
+
+def _as_utc(value: datetime | None) -> datetime:
+    if value is None:
+        raise ValueError("risk-churn panel replay requires an available_at timestamp")
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _freeze_document(document: Document) -> PanelSourceDocument:
