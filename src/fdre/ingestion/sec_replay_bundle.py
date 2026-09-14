@@ -229,7 +229,11 @@ def _validate_manifest_identity(manifest: SECReplayBundleManifest) -> None:
     if manifest.bundle_version != SEC_REPLAY_BUNDLE_VERSION:
         raise ValueError(f"unsupported SEC replay bundle version {manifest.bundle_version!r}")
     accessions = [entry.accession_number for entry in manifest.entries]
-    if not accessions or accessions != sorted(accessions) or len(accessions) != len(set(accessions)):
+    if (
+        not accessions
+        or accessions != sorted(accessions)
+        or len(accessions) != len(set(accessions))
+    ):
         raise ValueError("SEC replay bundle accessions are not canonical")
     payload = {
         "bundle_version": manifest.bundle_version,
