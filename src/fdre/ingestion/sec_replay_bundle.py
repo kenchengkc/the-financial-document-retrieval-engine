@@ -21,7 +21,9 @@ from fdre.parsing.sec_provenance import (
     verify_sec_filing_replay,
 )
 
-SEC_REPLAY_BUNDLE_VERSION = "sec-raw-parser-replay-bundle-v1"
+SEC_REPLAY_BUNDLE_VERSION: Literal["sec-raw-parser-replay-bundle-v1"] = (
+    "sec-raw-parser-replay-bundle-v1"
+)
 _MANIFEST_MEMBER = "manifest.json"
 _ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 
@@ -148,7 +150,7 @@ def build_sec_replay_bundle(
     }
     manifest = SECReplayBundleManifest(
         bundle_id=_stable_digest(manifest_payload),
-        **manifest_payload,
+        entries=entries,
     )
     destination_path = Path(destination)
     destination_path.parent.mkdir(parents=True, exist_ok=True)
