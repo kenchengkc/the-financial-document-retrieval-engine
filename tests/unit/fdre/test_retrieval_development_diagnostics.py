@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -158,18 +159,24 @@ def test_write_diagnostics_binds_benchmark_metadata(tmp_path: Path) -> None:
 
 
 class FakeHybrid:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
     def search(
         self,
         _session: Session,
-        _query: str,
+        query: str,
         *,
         filters: SearchFilters,
         limit: int,
+        queries: Sequence[str] | None = None,
         timings_ms: dict[str, int],
     ) -> list[RetrievalCandidate]:
         assert filters.tickers == ["FICO"]
         assert filters.sections == ["Business"]
         assert limit == 3
+        assert query == "What does FICO say about export controls?"
+        self.queries = list(queries or [])
         timings_ms.update({"embedding": 2, "dense": 4, "sparse": 3, "fusion": 1})
         return [
             _candidate(1, text="The filing discusses laws regarding export controls."),
@@ -193,6 +200,7 @@ def test_development_command_collects_query_only_scope_and_stage_timings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = SimpleNamespace(rerank_top_n=3)
+    fake_hybrid = FakeHybrid()
     monkeypatch.setattr(diagnostics_cli, "get_settings", lambda: settings)
     monkeypatch.setattr(
         diagnostics_cli,
@@ -204,7 +212,7 @@ def test_development_command_collects_query_only_scope_and_stage_timings(
     monkeypatch.setattr(
         diagnostics_cli,
         "HybridRetriever",
-        lambda _dense, _sparse: FakeHybrid(),
+        lambda _dense, _sparse: fake_hybrid,
     )
     monkeypatch.setattr(
         diagnostics_cli,
@@ -214,7 +222,7 @@ def test_development_command_collects_query_only_scope_and_stage_timings(
     monkeypatch.setattr(diagnostics_cli, "load_company_references", lambda _session: [])
 
     def fake_preprocess(
-        _query: str,
+        query: str,
         *,
         companies: list[object],
         filters: SearchFilters | None = None,
@@ -225,7 +233,10 @@ def test_development_command_collects_query_only_scope_and_stage_timings(
                 tickers=["FICO", "PFG"],
                 sections=["Controls and Procedures"],
             )
-        return SimpleNamespace(filters=filters)
+        return SimpleNamespace(
+            filters=filters,
+            rewritten_queries=[query, f"{query} Fair Isaac Corporation"],
+        )
 
     monkeypatch.setattr(diagnostics_cli, "preprocess_query", fake_preprocess)
 
@@ -242,3 +253,7 @@ def test_development_command_collects_query_only_scope_and_stage_timings(
     assert result[0].final_recall == 1.0
     assert result[0].stage_timings_ms["embedding"] == 2.0
     assert result[0].reranker_candidate_count == 2
+    assert fake_hybrid.queries == [
+        "What does FICO say about export controls?",
+        "What does FICO say about export controls? Fair Isaac Corporation",
+    ]
