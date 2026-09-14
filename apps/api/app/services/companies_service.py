@@ -39,14 +39,16 @@ def get_coverage(session: Session) -> CoverageResponse:
 
     payload = read_metric_snapshot(session, _COVERAGE_SNAPSHOT_KEY)
     response = CoverageResponse.model_validate(payload) if payload is not None else None
-    if response is None or not _coverage_snapshot_is_current(response):
+    if response is None:
         response = _build_coverage(session)
-        write_metric_snapshot(
-            session,
-            metric_key=_COVERAGE_SNAPSHOT_KEY,
-            payload=response.model_dump(mode="json"),
-        )
-        session.commit()
+        _persist_coverage_snapshot(session, response)
+    elif not _coverage_snapshot_is_current(response):
+        # Ingestion owns the indexed-ticker/corpus snapshot. Static catalog files
+        # can change independently (or become visible after a packaging fix), so
+        # rebind the persisted ticker set to the current catalog without forcing
+        # a multi-million-row embedding scan inside an API request transaction.
+        response = _rebind_coverage_catalog(response)
+        _persist_coverage_snapshot(session, response)
 
     with _coverage_cache_lock:
         _coverage_cache[cache_key] = (
@@ -54,6 +56,37 @@ def get_coverage(session: Session) -> CoverageResponse:
             response.model_copy(deep=True),
         )
     return response
+
+
+def _persist_coverage_snapshot(session: Session, response: CoverageResponse) -> None:
+    write_metric_snapshot(
+        session,
+        metric_key=_COVERAGE_SNAPSHOT_KEY,
+        payload=response.model_dump(mode="json"),
+    )
+    session.commit()
+
+
+def _rebind_coverage_catalog(response: CoverageResponse) -> CoverageResponse:
+    indexed_tickers = sorted(
+        {
+            ticker.upper()
+            for ticker in response.indexed_tickers
+            if ticker.upper() not in _DEMO_TICKERS
+        }
+    )
+    sp500_catalog = {ticker.upper() for ticker in sp500_primary_tickers()}
+    return response.model_copy(
+        update={
+            "catalog_count": catalog_company_count(),
+            "sp500_catalog_count": len(sp500_catalog),
+            "indexed_count": len(indexed_tickers),
+            "sp500_indexed_count": sum(
+                ticker in sp500_catalog for ticker in indexed_tickers
+            ),
+            "indexed_tickers": indexed_tickers,
+        }
+    )
 
 
 def _coverage_snapshot_is_current(response: CoverageResponse) -> bool:
