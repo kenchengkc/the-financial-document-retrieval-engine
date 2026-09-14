@@ -60,6 +60,7 @@ def search_documents(
     candidates = retriever.search(
         session,
         preprocessed.rewritten_queries[0],
+        queries=preprocessed.rewritten_queries,
         filters=preprocessed.filters,
         limit=max(top_k, settings.rerank_top_n),
         timings_ms=hybrid_timings,
