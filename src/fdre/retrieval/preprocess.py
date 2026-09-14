@@ -24,7 +24,13 @@ FORM_PATTERNS = {
 SECTION_PATTERNS = {
     "Risk Factors": re.compile(r"\brisk factors?\b", re.I),
     "MD&A": re.compile(r"\b(?:md&a|management(?:'s|\u2019s) discussion)\b", re.I),
-    "Business": re.compile(r"\bbusiness\b", re.I),
+    # "business" is ordinary semantic content in many questions. Only treat it as
+    # an SEC section constraint when the user explicitly names the section/item.
+    "Business": re.compile(
+        r"\b(?:business\s+section|section\s+(?:on|titled)\s+business|"
+        r"item\s+1\b(?:[.:\s-]*business\b)?)",
+        re.I,
+    ),
     "Financial Statements": re.compile(r"\bfinancial statements?\b", re.I),
     "Legal Proceedings": re.compile(r"\blegal proceedings?\b", re.I),
     "Controls and Procedures": re.compile(
