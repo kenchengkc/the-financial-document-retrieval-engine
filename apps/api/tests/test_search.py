@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
+from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -11,7 +13,10 @@ from apps.api.app.config import Settings, get_settings
 from apps.api.app.db import Base, get_db_session
 from apps.api.app.main import create_app
 from apps.api.app.models import Chunk, Company, Document, DocumentElement
+from apps.api.app.services.retrieval_service import search_documents
 from fdre.indexing.embeddings import LocalHashEmbeddingProvider, rebuild_embeddings
+from fdre.retrieval.hybrid import HybridRetriever
+from fdre.retrieval.query import RetrievalCandidate, SearchFilters
 
 
 def test_search_endpoint_returns_ranked_evidence() -> None:
@@ -87,3 +92,52 @@ def test_search_endpoint_returns_ranked_evidence() -> None:
         "/aapl-20250927.htm"
     )
     assert payload["results"][0]["rerank_score"] is not None
+
+
+def test_search_service_passes_all_preprocessed_rewrites_to_hybrid_fusion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    captured: dict[str, Any] = {}
+
+    def capture_search(
+        self: HybridRetriever,
+        session: Session,
+        query: str,
+        *,
+        filters: SearchFilters,
+        limit: int,
+        queries: Sequence[str] | None = None,
+        timings_ms: dict[str, int] | None = None,
+    ) -> list[RetrievalCandidate]:
+        captured["query"] = query
+        captured["queries"] = list(queries or [])
+        captured["filters"] = filters
+        captured["limit"] = limit
+        if timings_ms is not None:
+            timings_ms.update({"embedding": 0, "dense": 0, "sparse": 0, "fusion": 0})
+        return []
+
+    monkeypatch.setattr(HybridRetriever, "search", capture_search)
+    settings = Settings(
+        EMBEDDING_PROVIDER="local_hash",
+        EMBEDDING_MODEL="local-hash-v1",
+        RERANKER_PROVIDER="fake",
+    )
+
+    with Session(engine) as session:
+        session.add(Company(ticker="AAPL", cik="0000320193", name="Apple Inc."))
+        session.commit()
+        result = search_documents(
+            session,
+            settings,
+            query="AAPL risk factors",
+            filters=SearchFilters(),
+            top_k=5,
+        )
+
+    assert len(result.preprocessed.rewritten_queries) > 1
+    assert captured["query"] == result.preprocessed.rewritten_queries[0]
+    assert captured["queries"] == result.preprocessed.rewritten_queries
+    assert captured["filters"] == result.preprocessed.filters
