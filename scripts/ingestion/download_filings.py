@@ -14,6 +14,11 @@ from fdre.ingestion.sec_client import SECClient
 from fdre.ingestion.sec_downloader import SECFilingDownloader
 from fdre.ingestion.ticker_map import DEFAULT_SAMPLE_TICKERS
 from fdre.parsing.html_filing_parser import HtmlFilingParser
+from fdre.parsing.sec_provenance import (
+    metadata_with_parse_provenance,
+    parse_provenance_from_metadata,
+    parse_sec_filing_bytes,
+)
 from scripts.ingestion.ingest_sec_sample import DEFAULT_FORMS
 
 
@@ -92,6 +97,7 @@ def process_documents(
 
     for document in documents:
         content_changed = True
+        parse_source_url = document.primary_document_url or document.source_url
         if download:
             if downloader is None:
                 raise ValueError("A downloader is required when download=True")
@@ -105,6 +111,7 @@ def process_documents(
             )
             document.local_path = str(result.local_path)
             document.sha256_hash = result.sha256_hash
+            parse_source_url = result.source_url
             content_changed = previous_sha256 != result.sha256_hash
             if result.downloaded:
                 downloaded += 1
@@ -123,7 +130,36 @@ def process_documents(
                 raise ValueError(
                     f"Document {document.accession_number} has no local file; use --download first"
                 )
-            elements = parser.parse_file(document.local_path)
+
+            # Read once and parse the exact byte string whose SHA-256 is recorded.
+            # This closes the hash-then-reopen TOCTOU gap and prevents a stale or
+            # replaced local file from silently becoming the persisted corpus.
+            raw_bytes = Path(document.local_path).read_bytes()
+            elements, provenance = parse_sec_filing_bytes(
+                raw_bytes,
+                source_url=parse_source_url,
+                expected_sha256=document.sha256_hash,
+                parser=parser,
+            )
+            existing_provenance = parse_provenance_from_metadata(document.metadata_json)
+            if (
+                existing_provenance is not None
+                and existing_provenance.raw_sha256 == provenance.raw_sha256
+                and existing_provenance.parser_name == provenance.parser_name
+                and existing_provenance.parser_version == provenance.parser_version
+                and existing_provenance.parsed_elements_sha256
+                != provenance.parsed_elements_sha256
+            ):
+                raise ValueError(
+                    "SEC parser output changed for identical bytes and parser version; "
+                    "bump the parser version before replacing persisted elements"
+                )
+
+            document.sha256_hash = provenance.raw_sha256
+            document.metadata_json = metadata_with_parse_provenance(
+                document.metadata_json,
+                provenance,
+            )
             session.execute(
                 delete(DocumentElement).where(DocumentElement.document_id == document.id)
             )
