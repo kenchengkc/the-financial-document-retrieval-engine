@@ -389,7 +389,10 @@ def test_v5_replays_panel_features_and_downstream_without_network(
         raise AssertionError("panel computational replay attempted network access")
 
     monkeypatch.setattr(socket.socket, "connect", _network_disabled)
-    offline_replay = verify_research_experiment_bundle(bundle)
+    offline_replay = verify_research_experiment_bundle(
+        bundle,
+        expected_experiment_id=manifest.experiment_id,
+    )
     assert offline_replay == database_replay
 
 
@@ -466,5 +469,8 @@ def test_v5_rejects_hash_consistent_forged_source_passage() -> None:
     )
     forged = ResearchExperimentBundle.model_validate(payload)
 
-    with pytest.raises(ValueError, match="panel replay row digest mismatch"):
-        verify_research_experiment_bundle(forged)
+    with pytest.raises(ValueError, match="does not match expected experiment id"):
+        verify_research_experiment_bundle(
+            forged,
+            expected_experiment_id=manifest.experiment_id,
+        )
