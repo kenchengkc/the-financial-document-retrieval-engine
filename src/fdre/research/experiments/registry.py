@@ -16,6 +16,10 @@ from fdre.research.experiments.feature_replay import (
     RiskChurnFeatureReplayInput,
     replay_risk_churn_feature_input,
 )
+from fdre.research.experiments.panel_replay import (
+    RiskChurnPanelReplayInput,
+    replay_risk_churn_panel_input,
+)
 from fdre.research.experiments.replay_input import (
     WalkForwardReplayInput,
     replay_walk_forward_input,
@@ -33,6 +37,7 @@ from fdre.research.oos.selection import (
 )
 
 ArtifactKind = Literal[
+    "panel_input",
     "feature_input",
     "walk_forward_input",
     "walk_forward",
@@ -46,13 +51,16 @@ ReplayMode = Literal[
     "downstream_computational_replay",
     "walk_forward_computational_replay",
     "feature_computational_replay",
+    "panel_computational_replay",
 ]
 _REGISTRY_VERSION_V1 = "research-experiment-registry-v1"
 _REGISTRY_VERSION_V2 = "research-experiment-registry-v2"
 _REGISTRY_VERSION_V3 = "research-experiment-registry-v3"
-_REGISTRY_VERSION = "research-experiment-registry-v4"
+_REGISTRY_VERSION_V4 = "research-experiment-registry-v4"
+_REGISTRY_VERSION = "research-experiment-registry-v5"
 _BUNDLE_VERSION = "research-experiment-bundle-v1"
 _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
+    "panel_input": "risk_churn_panel_replay_input",
     "feature_input": "risk_churn_feature_replay_input",
     "walk_forward_input": "walk_forward_replay_input",
     "walk_forward": "walk_forward_signal_study",
@@ -62,6 +70,7 @@ _EXPECTED_EXPERIMENT_TYPES: dict[ArtifactKind, str] = {
     "oos_promotion": "oos_signal_promotion",
 }
 _EXPECTED_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
+    "panel_input": RiskChurnPanelReplayInput,
     "feature_input": RiskChurnFeatureReplayInput,
     "walk_forward_input": WalkForwardReplayInput,
     "walk_forward": WalkForwardStudyReport,
@@ -163,6 +172,7 @@ def build_research_experiment_manifest(
     promotion_slices: dict[str, set[str]] | None = None,
     walk_forward_input: WalkForwardReplayInput | None = None,
     feature_input: RiskChurnFeatureReplayInput | None = None,
+    panel_input: RiskChurnPanelReplayInput | None = None,
 ) -> ResearchExperimentManifest:
     """Bind every research layer and source identity into one immutable manifest."""
     _validate_chain(source, diagnostics, selection, implementation, promotion)
@@ -175,8 +185,12 @@ def build_research_experiment_manifest(
         raise ValueError("walk-forward computational replay requires promotion slices")
     if feature_input is not None and walk_forward_input is None:
         raise ValueError("feature computational replay requires a walk-forward replay input")
-    if feature_input is not None:
+    if panel_input is not None and feature_input is None:
+        raise ValueError("panel computational replay requires a feature replay input")
+    if panel_input is not None:
         registry_version = _REGISTRY_VERSION
+    elif feature_input is not None:
+        registry_version = _REGISTRY_VERSION_V4
     elif walk_forward_input is not None:
         registry_version = _REGISTRY_VERSION_V3
     elif normalized_slices is not None:
@@ -195,8 +209,12 @@ def build_research_experiment_manifest(
         _validate_walk_forward_input_binding(source, walk_forward_input)
     if feature_input is not None and walk_forward_input is not None:
         _validate_feature_input_binding(feature_input, walk_forward_input)
+    if panel_input is not None and feature_input is not None:
+        _validate_panel_input_binding(panel_input, feature_input)
 
     reports: list[tuple[ArtifactKind, str, BaseModel]] = []
+    if panel_input is not None:
+        reports.append(("panel_input", panel_input.input_key, panel_input))
     if feature_input is not None:
         reports.append(("feature_input", feature_input.input_key, feature_input))
     if walk_forward_input is not None:
@@ -476,6 +494,20 @@ def _validate_chain(
         raise ValueError("promotion implementation key mismatch")
 
 
+def _validate_panel_input_binding(
+    panel_input: RiskChurnPanelReplayInput,
+    feature_input: RiskChurnFeatureReplayInput,
+) -> None:
+    if panel_input.panel_feature_version != feature_input.panel_feature_version:
+        raise ValueError("panel replay input feature version mismatch")
+    if panel_input.corpus_snapshot_id != feature_input.corpus_snapshot_id:
+        raise ValueError("panel replay input corpus snapshot mismatch")
+    if feature_input.dataset_version != f"panel:{panel_input.corpus_snapshot_id}":
+        raise ValueError("panel replay input dataset version mismatch")
+    replayed_panel = replay_risk_churn_panel_input(panel_input)
+    _require_panel_row_match(replayed_panel.rows, feature_input.rows)
+
+
 def _validate_feature_input_binding(
     feature_input: RiskChurnFeatureReplayInput,
     walk_forward_input: WalkForwardReplayInput,
@@ -551,6 +583,7 @@ def _validate_manifest_version(manifest: ResearchExperimentManifest) -> None:
         _REGISTRY_VERSION_V1,
         _REGISTRY_VERSION_V2,
         _REGISTRY_VERSION_V3,
+        _REGISTRY_VERSION_V4,
         _REGISTRY_VERSION,
     }
     if manifest.registry_version not in supported:
@@ -567,25 +600,33 @@ def _validate_manifest_version(manifest: ResearchExperimentManifest) -> None:
         raise ValueError("promotion slice memberships are not canonical")
     if _stable_digest(normalized) != manifest.slice_snapshot_id:
         raise ValueError("promotion slice snapshot mismatch")
+    panel_refs = [item for item in manifest.artifacts if item.kind == "panel_input"]
     feature_refs = [item for item in manifest.artifacts if item.kind == "feature_input"]
     walk_refs = [item for item in manifest.artifacts if item.kind == "walk_forward_input"]
     if manifest.registry_version == _REGISTRY_VERSION_V2:
-        if feature_refs or walk_refs:
+        if panel_refs or feature_refs or walk_refs:
             raise ValueError("registry v2 manifest cannot contain replay input artifacts")
     elif manifest.registry_version == _REGISTRY_VERSION_V3:
-        if feature_refs or len(walk_refs) != 1:
+        if panel_refs or feature_refs or len(walk_refs) != 1:
             raise ValueError("registry v3 manifest requires only one walk-forward replay input")
-    else:
-        if len(feature_refs) != 1 or len(walk_refs) != 1:
+    elif manifest.registry_version == _REGISTRY_VERSION_V4:
+        if panel_refs or len(feature_refs) != 1 or len(walk_refs) != 1:
             raise ValueError("registry v4 manifest requires feature and walk-forward replay inputs")
+    else:
+        if len(panel_refs) != 1 or len(feature_refs) != 1 or len(walk_refs) != 1:
+            raise ValueError(
+                "registry v5 manifest requires panel, feature, and walk-forward replay inputs"
+            )
 
 
 def _required_artifact_kinds(manifest: ResearchExperimentManifest) -> list[ArtifactKind]:
     required = list(_BASE_ARTIFACTS)
     if manifest.registry_version == _REGISTRY_VERSION_V3:
         required.insert(0, "walk_forward_input")
-    elif manifest.registry_version == _REGISTRY_VERSION:
+    elif manifest.registry_version == _REGISTRY_VERSION_V4:
         required[0:0] = ["feature_input", "walk_forward_input"]
+    elif manifest.registry_version == _REGISTRY_VERSION:
+        required[0:0] = ["panel_input", "feature_input", "walk_forward_input"]
     return required
 
 
@@ -619,13 +660,23 @@ def _replay_artifact_chain(
     source = persisted_source
     replay_mode: ReplayMode = "downstream_computational_replay"
     recomputed_artifacts = list(_RECOMPUTED_DOWNSTREAM)
-    if manifest.registry_version in {_REGISTRY_VERSION_V3, _REGISTRY_VERSION}:
+    if manifest.registry_version in {
+        _REGISTRY_VERSION_V3,
+        _REGISTRY_VERSION_V4,
+        _REGISTRY_VERSION,
+    }:
         walk_input = WalkForwardReplayInput.model_validate(payloads["walk_forward_input"])
-        if manifest.registry_version == _REGISTRY_VERSION:
+        if manifest.registry_version in {_REGISTRY_VERSION_V4, _REGISTRY_VERSION}:
             feature_input = RiskChurnFeatureReplayInput.model_validate(payloads["feature_input"])
+            if manifest.registry_version == _REGISTRY_VERSION:
+                panel_input = RiskChurnPanelReplayInput.model_validate(payloads["panel_input"])
+                replayed_panel = replay_risk_churn_panel_input(panel_input)
+                _require_panel_row_match(replayed_panel.rows, feature_input.rows)
+                replay_mode = "panel_computational_replay"
+            else:
+                replay_mode = "feature_computational_replay"
             regenerated_events = replay_risk_churn_feature_input(feature_input)
             _require_event_match(regenerated_events, walk_input.events)
-            replay_mode = "feature_computational_replay"
         else:
             replay_mode = "walk_forward_computational_replay"
         recomputed_source = replay_walk_forward_input(walk_input)
@@ -681,6 +732,16 @@ def _replay_artifact_chain(
         recomputed_artifacts=recomputed_artifacts,
         final_decisions=final_decisions,
     )
+
+
+def _require_panel_row_match(
+    regenerated: list[Any],
+    persisted: list[Any],
+) -> None:
+    regenerated_payload = [item.model_dump(mode="json") for item in regenerated]
+    persisted_payload = [item.model_dump(mode="json") for item in persisted]
+    if regenerated_payload != persisted_payload:
+        raise ValueError("computational replay mismatch for panel_rows")
 
 
 def _require_event_match(
