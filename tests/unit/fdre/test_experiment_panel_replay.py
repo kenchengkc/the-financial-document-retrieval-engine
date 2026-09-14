@@ -18,7 +18,7 @@ from fdre.research.experiments.panel_replay import (
     persist_risk_churn_panel_replay_input,
     replay_risk_churn_panel_input,
 )
-from fdre.research.panel import ResearchPanelQuery, build_research_panel
+from fdre.research.panel import ResearchPanel, ResearchPanelQuery, build_research_panel
 
 
 def _digest(payload: object) -> str:
@@ -66,7 +66,7 @@ def _add_document(
     return document
 
 
-def _source_panel(session: Session):
+def _source_panel(session: Session) -> ResearchPanel:
     company = Company(ticker="AAA", cik="0000000001", name="Alpha")
     _add_document(
         company,
