@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from apps.api.app.config import Settings
 from fdre.citations.verifier import AnswerClaim, CitationVerifier
 from fdre.indexing.embeddings import embedding_provider_from_settings
-from fdre.research.financial_facts import FinancialFactQuery, query_financial_facts
+from fdre.research.financial_facts import (
+    CanonicalMetric,
+    FinancialFactQuery,
+    query_financial_facts,
+)
 from fdre.retrieval.dense import DenseRetriever
 from fdre.retrieval.hybrid import HybridRetriever
 from fdre.retrieval.neighbors import expand_with_neighbors
@@ -50,6 +54,20 @@ REQUIRES_FINANCIAL_FACTS_PATTERN = re.compile(
     r"|\bgrowth\s+(?:in|of)\s+(?:revenue|sales|net income|earnings|eps|"
     r"assets?|liabilities?|margin|cash flow)\b",
     re.I,
+)
+REQUESTED_FINANCIAL_FACT_METRICS: tuple[tuple[CanonicalMetric, re.Pattern[str]], ...] = (
+    ("revenue", re.compile(r"\b(?:revenue|sales)\b", re.I)),
+    ("operating_income", re.compile(r"\boperating income\b", re.I)),
+    ("net_income", re.compile(r"\bnet income\b|\bearnings\b(?!\s+per\s+share)", re.I)),
+    ("eps", re.compile(r"\b(?:eps|earnings per share)\b", re.I)),
+    (
+        "operating_cash_flow",
+        re.compile(r"\b(?:operating cash flow|cash flow from operations)\b", re.I),
+    ),
+    ("capex", re.compile(r"\b(?:capex|capital expenditures?)\b", re.I)),
+    ("debt", re.compile(r"\bdebt\b", re.I)),
+    ("cash", re.compile(r"\bcash\b(?!\s+flow)", re.I)),
+    ("shares", re.compile(r"\b(?:weighted average )?shares outstanding\b", re.I)),
 )
 EARNINGS_QUERY_PATTERN = re.compile(
     r"\b(?:earnings|eps|financial results?|quarterly results?)\b",
@@ -259,6 +277,7 @@ def retrieve_financial_facts_node(
         context.session,
         FinancialFactQuery(
             tickers=filters.tickers,
+            metrics=_requested_financial_fact_metrics(state["user_query"]),
             as_of=filters.as_of,
             limit=20,
         ),
@@ -431,6 +450,14 @@ def finalize_or_abstain_node(
     return {
         "trace": _trace(state, "finalize_or_abstain", {"abstained": False})
     }
+
+
+def _requested_financial_fact_metrics(question: str) -> list[CanonicalMetric]:
+    return [
+        metric
+        for metric, pattern in REQUESTED_FINANCIAL_FACT_METRICS
+        if pattern.search(question)
+    ]
 
 
 def _candidate_score(candidate: RetrievalCandidate) -> float:
