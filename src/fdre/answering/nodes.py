@@ -246,6 +246,15 @@ def retrieve_financial_facts_node(
             ),
         }
     filters = SearchFilters.model_validate(state.get("filters", {}))
+    if not filters.tickers:
+        return {
+            "financial_facts": [],
+            "trace": _trace(
+                state,
+                "retrieve_financial_facts",
+                {"count": 0, "skipped": True, "reason": "issuer_scope_required"},
+            ),
+        }
     result = query_financial_facts(
         context.session,
         FinancialFactQuery(
