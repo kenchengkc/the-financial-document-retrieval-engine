@@ -14,7 +14,7 @@ from fdre.citations.verifier import CitationVerifier
 from fdre.retrieval.query import RetrievalCandidate
 
 
-def test_narrative_growth_does_not_require_structured_financial_facts() -> None:
+def _evaluate_without_financial_facts(question: str) -> AnswerWorkflowState:
     candidate = RetrievalCandidate(
         chunk_id=1,
         text="Management described a growth strategy built on selective acquisitions.",
@@ -22,7 +22,7 @@ def test_narrative_growth_does_not_require_structured_financial_facts() -> None:
         rerank_score=0.9,
     )
     state: AnswerWorkflowState = {
-        "user_query": "What growth strategy did Apple describe around acquisitions?",
+        "user_query": question,
         "route": ["text", "financial_facts"],
         "financial_facts": [],
         "reranked_candidates": [candidate.model_dump(mode="json")],
@@ -42,7 +42,22 @@ def test_narrative_growth_does_not_require_structured_financial_facts() -> None:
             generator=ExtractiveAnswerGenerator(),
             verifier=CitationVerifier(),
         )
-        result = evaluate_retrieval_gate_node(context, state)
+        return evaluate_retrieval_gate_node(context, state)
+
+
+def test_narrative_growth_does_not_require_structured_financial_facts() -> None:
+    result = _evaluate_without_financial_facts(
+        "What growth strategy did Apple describe around acquisitions?"
+    )
 
     assert result["should_abstain"] is False
     assert result["abstention_reason"] is None
+
+
+def test_revenue_growth_still_requires_structured_financial_facts() -> None:
+    result = _evaluate_without_financial_facts("What was Apple's revenue growth?")
+
+    assert result["should_abstain"] is True
+    assert result["abstention_reason"] == (
+        "Structured financial facts required by the question are unavailable."
+    )
