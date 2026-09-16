@@ -44,7 +44,9 @@ UNSUPPORTED_FORECAST_PATTERN = re.compile(
     re.I,
 )
 REQUIRES_FINANCIAL_FACTS_PATTERN = re.compile(
-    r"\b(?:compare|comparison|growth|versus|vs\.?|year-over-year|yoy)\b",
+    r"\b(?:compare|comparison|versus|vs\.?|year-over-year|yoy)\b"
+    r"|\b(?:revenue|sales|net income|earnings|eps|assets?|liabilities?|margin|cash flow)\s+growth\b"
+    r"|\bgrowth\s+(?:in|of)\s+(?:revenue|sales|net income|earnings|eps|assets?|liabilities?|margin|cash flow)\b",
     re.I,
 )
 EARNINGS_QUERY_PATTERN = re.compile(
@@ -238,8 +240,7 @@ def retrieve_financial_facts_node(
             "trace": _trace(
                 state,
                 "retrieve_financial_facts",
-                {"count": 0, "skipped": True},
-            ),
+                {"count": 0, "skipped": True}),
         }
     filters = SearchFilters.model_validate(state.get("filters", {}))
     result = query_financial_facts(
