@@ -9,6 +9,7 @@ from fdre.answering.nodes import (
     WorkflowContext,
     evaluate_retrieval_gate_node,
 )
+from fdre.answering.state import AnswerWorkflowState
 from fdre.citations.verifier import CitationVerifier
 from fdre.retrieval.query import RetrievalCandidate
 
@@ -20,7 +21,7 @@ def test_narrative_growth_does_not_require_structured_financial_facts() -> None:
         metadata={"ticker": "AAPL", "element_type": "text"},
         rerank_score=0.9,
     )
-    state = {
+    state: AnswerWorkflowState = {
         "user_query": "What growth strategy did Apple describe around acquisitions?",
         "route": ["text", "financial_facts"],
         "financial_facts": [],
