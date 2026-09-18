@@ -85,3 +85,38 @@ def test_answer_financial_facts_scope_explicit_revenue_query_to_revenue_metric(
     assert len(observed) == 1
     assert observed[0].tickers == ["AAPL"]
     assert observed[0].metrics == ["revenue"]
+
+
+def test_answer_financial_facts_fail_closed_for_unsupported_required_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def unexpected_query(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        raise AssertionError(
+            "unsupported required metrics must not be satisfied by unrelated facts"
+        )
+
+    monkeypatch.setattr(
+        answer_nodes,
+        "query_financial_facts",
+        cast(Callable[..., object], unexpected_query),
+    )
+    state: AnswerWorkflowState = {
+        "user_query": "What was Apple's asset growth?",
+        "route": ["text", "financial_facts"],
+        "filters": SearchFilters(tickers=["AAPL"]).model_dump(mode="json"),
+    }
+
+    result = answer_nodes.retrieve_financial_facts_node(_context(), state)
+
+    assert called is False
+    assert result["financial_facts"] == []
+    trace = result["trace"][-1]
+    assert trace["details"] == {
+        "count": 0,
+        "skipped": True,
+        "reason": "unsupported_required_metric",
+    }
