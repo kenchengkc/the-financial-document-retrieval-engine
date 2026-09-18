@@ -227,3 +227,52 @@ def test_growth_query_passes_with_two_distinct_fact_periods() -> None:
 
     assert result["should_abstain"] is False
     assert result["abstention_reason"] is None
+
+
+def test_multi_metric_growth_requires_every_requested_metric() -> None:
+    candidate = RetrievalCandidate(
+        chunk_id=1,
+        text="Apple reported revenue and net income results for the fiscal year.",
+        metadata={"ticker": "AAPL", "element_type": "text"},
+        rerank_score=0.9,
+    )
+    state: AnswerWorkflowState = {
+        "user_query": "Compare Apple's revenue and net income growth.",
+        "route": ["text", "financial_facts"],
+        "filters": SearchFilters(tickers=["AAPL"]).model_dump(mode="json"),
+        "financial_facts": [
+            {
+                "ticker": "AAPL",
+                "canonical_metric": "revenue",
+                "period_end": "2024-12-31",
+            },
+            {
+                "ticker": "AAPL",
+                "canonical_metric": "revenue",
+                "period_end": "2025-12-31",
+            },
+        ],
+        "reranked_candidates": [candidate.model_dump(mode="json")],
+    }
+
+    with Session(create_engine("sqlite+pysqlite:///:memory:")) as session:
+        context = WorkflowContext(
+            session=session,
+            settings=Settings(
+                EMBEDDING_PROVIDER="local_hash",
+                EMBEDDING_MODEL="local-hash-v1",
+                RERANKER_PROVIDER="fake",
+                MIN_EVIDENCE_CHUNKS=1,
+                MIN_RETRIEVAL_SCORE=0,
+                NEIGHBOR_EXPANSION_WINDOW=0,
+            ),
+            generator=ExtractiveAnswerGenerator(),
+            verifier=CitationVerifier(),
+        )
+        result = evaluate_retrieval_gate_node(context, state)
+
+    assert result["should_abstain"] is True
+    assert result["abstention_reason"] == (
+        "Structured financial facts required by the question are incomplete "
+        "for the requested metrics."
+    )
