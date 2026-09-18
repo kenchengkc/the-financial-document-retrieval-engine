@@ -109,7 +109,7 @@ def test_multi_issuer_comparison_passes_with_fact_coverage_for_every_ticker() ->
         rerank_score=0.9,
     )
     state: AnswerWorkflowState = {
-        "user_query": "Compare Apple and Microsoft revenue growth.",
+        "user_query": "Compare Apple and Microsoft revenue.",
         "route": ["text", "financial_facts"],
         "filters": SearchFilters(tickers=["AAPL", "MSFT"]).model_dump(mode="json"),
         "financial_facts": [
@@ -181,3 +181,49 @@ def test_growth_query_requires_two_distinct_fact_periods() -> None:
         "Structured financial facts required by the question do not cover "
         "enough periods to measure growth."
     )
+
+
+def test_growth_query_passes_with_two_distinct_fact_periods() -> None:
+    candidate = RetrievalCandidate(
+        chunk_id=1,
+        text="Apple reported revenue growth for the fiscal year.",
+        metadata={"ticker": "AAPL", "element_type": "text"},
+        rerank_score=0.9,
+    )
+    state: AnswerWorkflowState = {
+        "user_query": "What was Apple's revenue growth?",
+        "route": ["text", "financial_facts"],
+        "filters": SearchFilters(tickers=["AAPL"]).model_dump(mode="json"),
+        "financial_facts": [
+            {
+                "ticker": "AAPL",
+                "canonical_metric": "revenue",
+                "period_end": "2024-12-31",
+            },
+            {
+                "ticker": "AAPL",
+                "canonical_metric": "revenue",
+                "period_end": "2025-12-31",
+            },
+        ],
+        "reranked_candidates": [candidate.model_dump(mode="json")],
+    }
+
+    with Session(create_engine("sqlite+pysqlite:///:memory:")) as session:
+        context = WorkflowContext(
+            session=session,
+            settings=Settings(
+                EMBEDDING_PROVIDER="local_hash",
+                EMBEDDING_MODEL="local-hash-v1",
+                RERANKER_PROVIDER="fake",
+                MIN_EVIDENCE_CHUNKS=1,
+                MIN_RETRIEVAL_SCORE=0,
+                NEIGHBOR_EXPANSION_WINDOW=0,
+            ),
+            generator=ExtractiveAnswerGenerator(),
+            verifier=CitationVerifier(),
+        )
+        result = evaluate_retrieval_gate_node(context, state)
+
+    assert result["should_abstain"] is False
+    assert result["abstention_reason"] is None
