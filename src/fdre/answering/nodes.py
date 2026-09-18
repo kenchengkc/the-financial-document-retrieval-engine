@@ -55,6 +55,10 @@ REQUIRES_FINANCIAL_FACTS_PATTERN = re.compile(
     r"assets?|liabilities?|margin|cash flow)\b",
     re.I,
 )
+UNSUPPORTED_REQUIRED_FINANCIAL_FACT_METRIC_PATTERN = re.compile(
+    r"\b(?:assets?|liabilities?|margin)\b",
+    re.I,
+)
 REQUESTED_FINANCIAL_FACT_METRICS: tuple[tuple[CanonicalMetric, re.Pattern[str]], ...] = (
     ("revenue", re.compile(r"\b(?:revenue|sales)\b", re.I)),
     ("operating_income", re.compile(r"\boperating income\b", re.I)),
@@ -273,11 +277,28 @@ def retrieve_financial_facts_node(
                 {"count": 0, "skipped": True, "reason": "issuer_scope_required"},
             ),
         }
+    question = state["user_query"]
+    if (
+        REQUIRES_FINANCIAL_FACTS_PATTERN.search(question)
+        and UNSUPPORTED_REQUIRED_FINANCIAL_FACT_METRIC_PATTERN.search(question)
+    ):
+        return {
+            "financial_facts": [],
+            "trace": _trace(
+                state,
+                "retrieve_financial_facts",
+                {
+                    "count": 0,
+                    "skipped": True,
+                    "reason": "unsupported_required_metric",
+                },
+            ),
+        }
     result = query_financial_facts(
         context.session,
         FinancialFactQuery(
             tickers=filters.tickers,
-            metrics=_requested_financial_fact_metrics(state["user_query"]),
+            metrics=_requested_financial_fact_metrics(question),
             as_of=filters.as_of,
             limit=20,
         ),
