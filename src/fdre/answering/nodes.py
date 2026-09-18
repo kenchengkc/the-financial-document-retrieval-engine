@@ -379,6 +379,15 @@ def evaluate_retrieval_gate_node(
         and not state.get("financial_facts")
     ):
         reason = "Structured financial facts required by the question are unavailable."
+    elif (
+        "financial_facts" in state.get("route", [])
+        and REQUIRES_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
+        and not _financial_facts_cover_requested_tickers(state)
+    ):
+        reason = (
+            "Structured financial facts required by the question are incomplete "
+            "for the requested issuers."
+        )
     elif len(candidates) < context.settings.min_evidence_chunks:
         reason = "Insufficient retrieved evidence."
     elif maximum < context.settings.min_retrieval_score:
@@ -479,6 +488,22 @@ def _requested_financial_fact_metrics(question: str) -> list[CanonicalMetric]:
         for metric, pattern in REQUESTED_FINANCIAL_FACT_METRICS
         if pattern.search(question)
     ]
+
+
+def _financial_facts_cover_requested_tickers(state: AnswerWorkflowState) -> bool:
+    requested = {
+        ticker.upper()
+        for ticker in SearchFilters.model_validate(state.get("filters", {})).tickers
+    }
+    if not requested:
+        return False
+    covered = {
+        ticker.upper()
+        for fact in state.get("financial_facts", [])
+        if isinstance(fact, dict)
+        and isinstance((ticker := fact.get("ticker")), str)
+    }
+    return requested.issubset(covered)
 
 
 def _candidate_score(candidate: RetrievalCandidate) -> float:
