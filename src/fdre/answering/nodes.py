@@ -394,6 +394,7 @@ def evaluate_retrieval_gate_node(
         )
     elif (
         "financial_facts" in state.get("route", [])
+        and REQUIRES_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
         and GROWTH_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
         and not _financial_facts_cover_growth_periods(state)
     ):
