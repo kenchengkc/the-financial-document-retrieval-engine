@@ -99,3 +99,41 @@ def test_multi_issuer_comparison_requires_fact_coverage_for_every_ticker() -> No
         "Structured financial facts required by the question are incomplete "
         "for the requested issuers."
     )
+
+
+def test_multi_issuer_comparison_passes_with_fact_coverage_for_every_ticker() -> None:
+    candidate = RetrievalCandidate(
+        chunk_id=1,
+        text="Apple and Microsoft reported results for the period.",
+        metadata={"ticker": "AAPL", "element_type": "text"},
+        rerank_score=0.9,
+    )
+    state: AnswerWorkflowState = {
+        "user_query": "Compare Apple and Microsoft revenue growth.",
+        "route": ["text", "financial_facts"],
+        "filters": SearchFilters(tickers=["AAPL", "MSFT"]).model_dump(mode="json"),
+        "financial_facts": [
+            {"ticker": "AAPL", "canonical_metric": "revenue"},
+            {"ticker": "MSFT", "canonical_metric": "revenue"},
+        ],
+        "reranked_candidates": [candidate.model_dump(mode="json")],
+    }
+
+    with Session(create_engine("sqlite+pysqlite:///:memory:")) as session:
+        context = WorkflowContext(
+            session=session,
+            settings=Settings(
+                EMBEDDING_PROVIDER="local_hash",
+                EMBEDDING_MODEL="local-hash-v1",
+                RERANKER_PROVIDER="fake",
+                MIN_EVIDENCE_CHUNKS=1,
+                MIN_RETRIEVAL_SCORE=0,
+                NEIGHBOR_EXPANSION_WINDOW=0,
+            ),
+            generator=ExtractiveAnswerGenerator(),
+            verifier=CitationVerifier(),
+        )
+        result = evaluate_retrieval_gate_node(context, state)
+
+    assert result["should_abstain"] is False
+    assert result["abstention_reason"] is None
