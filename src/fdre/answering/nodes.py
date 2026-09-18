@@ -59,6 +59,10 @@ UNSUPPORTED_REQUIRED_FINANCIAL_FACT_METRIC_PATTERN = re.compile(
     r"\b(?:assets?|liabilities?|margin)\b",
     re.I,
 )
+GROWTH_FINANCIAL_FACTS_PATTERN = re.compile(
+    r"\b(?:growth|year-over-year|yoy)\b",
+    re.I,
+)
 REQUESTED_FINANCIAL_FACT_METRICS: tuple[tuple[CanonicalMetric, re.Pattern[str]], ...] = (
     ("revenue", re.compile(r"\b(?:revenue|sales)\b", re.I)),
     ("operating_income", re.compile(r"\boperating income\b", re.I)),
@@ -388,6 +392,15 @@ def evaluate_retrieval_gate_node(
             "Structured financial facts required by the question are incomplete "
             "for the requested issuers."
         )
+    elif (
+        "financial_facts" in state.get("route", [])
+        and GROWTH_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
+        and not _financial_facts_cover_growth_periods(state)
+    ):
+        reason = (
+            "Structured financial facts required by the question do not cover "
+            "enough periods to measure growth."
+        )
     elif len(candidates) < context.settings.min_evidence_chunks:
         reason = "Insufficient retrieved evidence."
     elif maximum < context.settings.min_retrieval_score:
@@ -504,6 +517,27 @@ def _financial_facts_cover_requested_tickers(state: AnswerWorkflowState) -> bool
         and isinstance((ticker := fact.get("ticker")), str)
     }
     return requested.issubset(covered)
+
+
+def _financial_facts_cover_growth_periods(state: AnswerWorkflowState) -> bool:
+    requested = {
+        ticker.upper()
+        for ticker in SearchFilters.model_validate(state.get("filters", {})).tickers
+    }
+    if not requested:
+        return False
+    periods_by_ticker: dict[str, set[object]] = {ticker: set() for ticker in requested}
+    for fact in state.get("financial_facts", []):
+        if not isinstance(fact, dict):
+            continue
+        ticker = fact.get("ticker")
+        period_end = fact.get("period_end")
+        if not isinstance(ticker, str) or period_end is None:
+            continue
+        normalized_ticker = ticker.upper()
+        if normalized_ticker in periods_by_ticker:
+            periods_by_ticker[normalized_ticker].add(period_end)
+    return all(len(periods) >= 2 for periods in periods_by_ticker.values())
 
 
 def _candidate_score(candidate: RetrievalCandidate) -> float:
