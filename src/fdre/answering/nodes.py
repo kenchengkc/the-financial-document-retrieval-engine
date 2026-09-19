@@ -543,24 +543,46 @@ def _financial_facts_cover_requested_metrics(state: AnswerWorkflowState) -> bool
 
 
 def _financial_facts_cover_growth_periods(state: AnswerWorkflowState) -> bool:
-    requested = {
+    requested_tickers = {
         ticker.upper()
         for ticker in SearchFilters.model_validate(state.get("filters", {})).tickers
     }
-    if not requested:
+    if not requested_tickers:
         return False
-    periods_by_ticker: dict[str, set[object]] = {ticker: set() for ticker in requested}
+    requested_metrics = set(_requested_financial_fact_metrics(state["user_query"]))
+    if not requested_metrics:
+        periods_by_ticker: dict[str, set[object]] = {
+            ticker: set() for ticker in requested_tickers
+        }
+        for fact in state.get("financial_facts", []):
+            if not isinstance(fact, dict):
+                continue
+            ticker = fact.get("ticker")
+            period_end = fact.get("period_end")
+            if not isinstance(ticker, str) or period_end is None:
+                continue
+            normalized_ticker = ticker.upper()
+            if normalized_ticker in periods_by_ticker:
+                periods_by_ticker[normalized_ticker].add(period_end)
+        return all(len(periods) >= 2 for periods in periods_by_ticker.values())
+
+    periods_by_ticker_metric: dict[tuple[str, CanonicalMetric], set[object]] = {
+        (ticker, metric): set()
+        for ticker in requested_tickers
+        for metric in requested_metrics
+    }
     for fact in state.get("financial_facts", []):
         if not isinstance(fact, dict):
             continue
         ticker = fact.get("ticker")
+        metric = fact.get("canonical_metric")
         period_end = fact.get("period_end")
-        if not isinstance(ticker, str) or period_end is None:
+        if not isinstance(ticker, str) or not isinstance(metric, str) or period_end is None:
             continue
-        normalized_ticker = ticker.upper()
-        if normalized_ticker in periods_by_ticker:
-            periods_by_ticker[normalized_ticker].add(period_end)
-    return all(len(periods) >= 2 for periods in periods_by_ticker.values())
+        key = (ticker.upper(), metric)
+        if key in periods_by_ticker_metric:
+            periods_by_ticker_metric[key].add(period_end)
+    return all(len(periods) >= 2 for periods in periods_by_ticker_metric.values())
 
 
 def _candidate_score(candidate: RetrievalCandidate) -> float:
