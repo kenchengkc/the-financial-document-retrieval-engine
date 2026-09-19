@@ -404,6 +404,15 @@ def evaluate_retrieval_gate_node(
     elif (
         "financial_facts" in state.get("route", [])
         and REQUIRES_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
+        and not _financial_facts_cover_requested_ticker_metrics(state)
+    ):
+        reason = (
+            "Structured financial facts required by the question are incomplete "
+            "for the requested issuer and metric combinations."
+        )
+    elif (
+        "financial_facts" in state.get("route", [])
+        and REQUIRES_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
         and GROWTH_FINANCIAL_FACTS_PATTERN.search(state["user_query"])
         and not _financial_facts_cover_growth_periods(state)
     ):
@@ -540,6 +549,33 @@ def _financial_facts_cover_requested_metrics(state: AnswerWorkflowState) -> bool
         and isinstance((metric := fact.get("canonical_metric")), str)
     }
     return requested.issubset(covered)
+
+
+def _financial_facts_cover_requested_ticker_metrics(
+    state: AnswerWorkflowState,
+) -> bool:
+    requested_tickers = {
+        ticker.upper()
+        for ticker in SearchFilters.model_validate(state.get("filters", {})).tickers
+    }
+    if not requested_tickers:
+        return False
+    requested_metrics = set(_requested_financial_fact_metrics(state["user_query"]))
+    if not requested_metrics:
+        return True
+    requested_pairs = {
+        (ticker, metric)
+        for ticker in requested_tickers
+        for metric in requested_metrics
+    }
+    covered_pairs = {
+        (ticker.upper(), metric)
+        for fact in state.get("financial_facts", [])
+        if isinstance(fact, dict)
+        and isinstance((ticker := fact.get("ticker")), str)
+        and isinstance((metric := fact.get("canonical_metric")), str)
+    }
+    return requested_pairs.issubset(covered_pairs)
 
 
 def _financial_facts_cover_growth_periods(state: AnswerWorkflowState) -> bool:
