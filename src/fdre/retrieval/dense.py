@@ -14,9 +14,10 @@ from fdre.retrieval.query import RetrievalCandidate, SearchFilters, chunk_matche
 from fdre.retrieval.scope import retrieval_indexable_document_clause
 
 # Higher ef_search improves ANN recall on large issuer corpora (e.g. JPM).
-# Lower values keep unfiltered thematic scans closer to the latency gate.
+# Unfiltered scans need a broader ANN search to retain exact-search recall across
+# the full corpus; candidate hydration stays bounded separately below.
 FILTERED_HNSW_EF_SEARCH = 400
-UNFILTERED_HNSW_EF_SEARCH = 40
+UNFILTERED_HNSW_EF_SEARCH = 1000
 
 VectorScalar = str | SupportsFloat | SupportsIndex
 
@@ -182,7 +183,10 @@ class DenseRetriever:
                     Embedding.model == self.provider.model,
                     Embedding.dimensions == self.provider.dimensions,
                 )
-                .order_by(distance, Embedding.chunk_id)
+                # A second sort key prevents the HNSW index from serving this
+                # query. Apply the deterministic ID tie-break only when sorting
+                # the bounded, hydrated candidate pool below.
+                .order_by(distance)
                 .limit(oversample)
             ).all()
         ]

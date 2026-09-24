@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from apps.api.app.config import Settings, get_settings
@@ -333,13 +334,24 @@ def thematic_scan(
         if cached is not None:
             response.headers["X-Cache"] = "HIT"
             return cached.model_copy(update={"latency_ms": 0})
-    result = search_documents(
-        session,
-        settings,
-        query=request.query,
-        filters=request.filters,
-        top_k=min(100, request.issuers * request.results_per_issuer * 2),
-    )
+    try:
+        result = search_documents(
+            session,
+            settings,
+            query=request.query,
+            filters=request.filters,
+            top_k=min(100, request.issuers * request.results_per_issuer * 2),
+        )
+    except DBAPIError as error:
+        if getattr(error.orig, "sqlstate", None) != "57014":
+            raise
+        session.rollback()
+        # A handled response passes through CORS, allowing the browser to show
+        # the timeout instead of misreporting it as an unreachable data service.
+        raise HTTPException(
+            status_code=503,
+            detail="The scan exceeded the database time limit. Please try again in a moment.",
+        ) from error
     issuers = diversify_candidates_by_issuer(
         result.candidates,
         issuer_limit=request.issuers,
