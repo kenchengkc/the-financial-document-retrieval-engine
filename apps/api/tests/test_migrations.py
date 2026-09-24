@@ -1,14 +1,19 @@
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.orm import Session
 
 from apps.api.app import models  # noqa: F401
 from apps.api.app.db import Base
+from fdre.indexing.embeddings import VoyageEmbeddingProvider
+from fdre.retrieval.dense import DenseRetriever
+from fdre.retrieval.query import SearchFilters
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXPECTED_TABLES = set(Base.metadata.tables)
@@ -476,6 +481,9 @@ def test_postgres_retrieval_indexes_support_indexed_plans() -> None:
         )
 
         connection.execute(text("SET LOCAL enable_seqscan = off"))
+        # Tiny fixtures can favor sorting a B-tree scan even with an eligible
+        # ANN index. Discourage that plan to verify the actual query can use HNSW.
+        connection.execute(text("SET LOCAL enable_sort = off"))
         lexical_plan = "\n".join(
             row[0]
             for row in connection.execute(
@@ -489,25 +497,61 @@ def test_postgres_retrieval_indexes_support_indexed_plans() -> None:
                 )
             )
         )
-        dense_plan = "\n".join(
-            row[0]
-            for row in connection.execute(
-                text(
-                    """
-                    EXPLAIN
-                    SELECT id
-                    FROM embeddings
-                    WHERE provider = 'voyage'
-                      AND model = 'voyage-4-large'
-                      AND dimensions = 512
-                    ORDER BY (vector::halfvec(512))
-                        <=> (CAST(:vector AS vector)::halfvec(512))
-                    LIMIT 10
-                    """
-                ),
-                {"vector": vector},
-            )
+        # More candidates than the default HNSW ef_search (40) catches accidental
+        # truncation of the pool when the real query starts using the ANN index.
+        connection.execute(
+            text("""
+                INSERT INTO chunks (id, document_id, element_id, chunk_text, chunk_type, created_at)
+                SELECT n, 1001, 1001, 'Data center construction.', 'text', CURRENT_TIMESTAMP
+                FROM generate_series(1002, 1200) AS n
+                ON CONFLICT (id) DO NOTHING
+            """)
         )
+        connection.execute(
+            text("""
+                INSERT INTO embeddings
+                    (id, chunk_id, provider, model, dimensions, vector, created_at)
+                SELECT n, n, 'voyage', 'voyage-4-large', 512,
+                    CAST('[' || (n / 10000.0)::text || ','
+                         || repeat('0.01,', 510) || '0.01]' AS vector),
+                    CURRENT_TIMESTAMP
+                FROM generate_series(1002, 1200) AS n
+                ON CONFLICT (id) DO NOTHING
+            """),
+        )
+
+        statements: list[tuple[str, Any]] = []
+
+        def capture_query(
+            _conn: Any,
+            _cursor: Any,
+            statement: str,
+            parameters: Any,
+            _context: Any,
+            _executemany: bool,
+        ) -> None:
+            if statement.startswith("SELECT embeddings.chunk_id"):
+                statements.append((statement, parameters))
+
+        event.listen(connection, "before_cursor_execute", capture_query)
+        try:
+            with Session(connection) as session:
+                candidates = DenseRetriever(
+                    VoyageEmbeddingProvider(api_key="unused")
+                ).search_with_vector(session, [0.01] * 512, filters=SearchFilters(), limit=50)
+        finally:
+            event.remove(connection, "before_cursor_execute", capture_query)
+        assert len(statements) == 1
+        statement, parameters = statements[0]
+        dense_plan = "\n".join(
+            row[0] for row in connection.exec_driver_sql("EXPLAIN " + statement, parameters)
+        )
+        # The migration is persistent, but synthetic search fixtures are not.
+        connection.rollback()
 
     assert "ix_chunks_search_vector_gin" in lexical_plan
     assert "ix_embeddings_voyage_512_hnsw" in dense_plan
+    assert len(candidates) == 50
+    assert [candidate.chunk_id for candidate in candidates] == sorted(
+        candidate.chunk_id for candidate in candidates
+    )
