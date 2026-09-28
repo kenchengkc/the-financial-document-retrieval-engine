@@ -93,18 +93,27 @@ def ingest_sec_metadata(
                 primary_document,
             )
             document.source_url = company_submissions_url(seed.cik)
-            document.metadata_json = {
+            excluded_metadata_fields = {
+                "accession_number",
+                "filing_date",
+                "form_type",
+                "report_date",
+            }
+            filing_metadata_fields = set(filing) - excluded_metadata_fields
+            preserved_metadata = {
                 key: value
-                for key, value in filing.items()
-                if key
-                not in {
-                    "accession_number",
-                    "filing_date",
-                    "form_type",
-                    "report_date",
-                }
-                and value is not None
-                and value != ""
+                for key, value in (document.metadata_json or {}).items()
+                if key not in filing_metadata_fields
+            }
+            document.metadata_json = {
+                **preserved_metadata,
+                **{
+                    key: value
+                    for key, value in filing.items()
+                    if key not in excluded_metadata_fields
+                    and value is not None
+                    and value != ""
+                },
             }
             counters["documents_created" if created else "documents_updated"] += 1
 

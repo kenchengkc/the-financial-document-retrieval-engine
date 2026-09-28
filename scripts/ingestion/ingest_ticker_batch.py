@@ -173,6 +173,7 @@ def _run_ingestion(
                 str(args.filing_limit),
                 "--download",
                 "--parse",
+                "--skip-processed",
             ]
             if args.annual_limit is not None:
                 download_cmd.extend(["--annual-limit", str(args.annual_limit)])

@@ -217,3 +217,80 @@ def test_sec_client_retries_transient_forbidden_response(tmp_path: Path) -> None
     assert payload["name"] == "Apple Inc."
     assert route.call_count == 2
     assert sleeps == [0.25]
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        httpx.ReadTimeout,
+        httpx.ConnectTimeout,
+        httpx.ConnectError,
+        httpx.RemoteProtocolError,
+    ],
+)
+def test_sec_client_recovers_from_transport_failure_and_caches_success(
+    tmp_path: Path,
+    error_type: type[httpx.TransportError],
+) -> None:
+    sleeps: list[float] = []
+    url = company_submissions_url("320193")
+    route = respx.get(url).mock(
+        side_effect=[
+            error_type("SEC connection interrupted"),
+            httpx.Response(200, content=b"ok"),
+        ]
+    )
+    with SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path,
+        retry_backoff_seconds=0.25,
+        retry_sleep=sleeps.append,
+    ) as client:
+        assert client.get_bytes(url) == b"ok"
+        assert client.get_bytes(url) == b"ok"
+
+    assert route.call_count == 2
+    assert sleeps == [0.25]
+    assert [path.read_bytes() for path in tmp_path.iterdir()] == [b"ok"]
+
+
+@respx.mock
+def test_sec_client_bounds_mixed_http_and_timeout_retries(tmp_path: Path) -> None:
+    sleeps: list[float] = []
+    url = company_submissions_url("320193")
+    route = respx.get(url).mock(
+        side_effect=[
+            httpx.Response(503, headers={"Retry-After": "90"}),
+            httpx.ReadTimeout("first timeout"),
+            httpx.ReadTimeout("final timeout"),
+        ]
+    )
+    with SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path,
+        retry_backoff_seconds=0.25,
+        retry_sleep=sleeps.append,
+    ) as client, pytest.raises(httpx.ReadTimeout, match="final timeout"):
+        client.get_bytes(url)
+
+    assert route.call_count == 3
+    assert sleeps == [60.0, 0.5]
+    assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+def test_sec_client_does_not_retry_permanent_http_failure(tmp_path: Path) -> None:
+    sleeps: list[float] = []
+    url = company_submissions_url("320193")
+    route = respx.get(url).mock(return_value=httpx.Response(404))
+    with SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path,
+        retry_sleep=sleeps.append,
+    ) as client, pytest.raises(httpx.HTTPStatusError):
+        client.get_bytes(url)
+
+    assert route.call_count == 1
+    assert sleeps == []
+    assert list(tmp_path.iterdir()) == []

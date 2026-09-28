@@ -83,6 +83,7 @@ def process_documents(
     download: bool,
     parse: bool,
     force_parse: bool = False,
+    skip_processed: bool = False,
 ) -> ProcessingSummary:
     documents = select_documents(
         session,
@@ -96,6 +97,21 @@ def process_documents(
     parsed_elements = 0
 
     for document in documents:
+        has_elements = session.scalar(
+            select(DocumentElement.id)
+            .where(DocumentElement.document_id == document.id)
+            .limit(1)
+        ) is not None
+        if (
+            skip_processed
+            and not force_parse
+            and document.sha256_hash is not None
+            and has_elements
+        ):
+            if download:
+                skipped_downloads += 1
+            continue
+
         content_changed = True
         parse_source_url = document.primary_document_url or document.source_url
         if download:
@@ -119,11 +135,6 @@ def process_documents(
                 skipped_downloads += 1
 
         if parse:
-            has_elements = session.scalar(
-                select(DocumentElement.id)
-                .where(DocumentElement.document_id == document.id)
-                .limit(1)
-            ) is not None
             if has_elements and not content_changed and not force_parse:
                 continue
             if not document.local_path:
@@ -220,6 +231,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reparse selected filings even when their downloaded content is unchanged",
     )
+    parser.add_argument(
+        "--skip-processed",
+        action="store_true",
+        help="Skip filings that already have a stored content hash and parsed elements",
+    )
     return parser.parse_args()
 
 
@@ -250,6 +266,7 @@ def main() -> None:
                     download=True,
                     parse=args.parse,
                     force_parse=args.force_parse,
+                    skip_processed=args.skip_processed,
                 )
         else:
             summary = process_documents(
@@ -262,6 +279,7 @@ def main() -> None:
                 download=False,
                 parse=args.parse,
                 force_parse=args.force_parse,
+                skip_processed=args.skip_processed,
             )
     print(summary)
 
