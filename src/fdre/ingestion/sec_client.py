@@ -172,7 +172,15 @@ class SECClient:
         response: httpx.Response | None = None
         for attempt in range(self._retry_attempts):
             self._rate_limiter.wait()
-            response = self._http_client.get(url, headers=self._request_headers)
+            try:
+                response = self._http_client.get(url, headers=self._request_headers)
+            except httpx.TransportError:
+                if attempt + 1 >= self._retry_attempts:
+                    raise
+                delay = self._retry_backoff_seconds * (2**attempt)
+                self._retry_sleep(min(delay, 60.0))
+                continue
+
             if response.status_code not in {403, 429, 500, 502, 503, 504}:
                 break
             if attempt + 1 < self._retry_attempts:
