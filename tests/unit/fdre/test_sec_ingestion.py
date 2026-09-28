@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session
 from apps.api.app.db import Base
 from apps.api.app.models import Company, Document
 from fdre.ingestion.sec_client import SECClient, company_submissions_url
+from fdre.parsing.sec_provenance import (
+    metadata_with_parse_provenance,
+    parse_sec_filing_bytes,
+)
 
 
 @respx.mock
@@ -60,6 +64,20 @@ def test_ingestion_inserts_and_updates_companies_and_documents(tmp_path: Path) -
             form_types=["10-K", "10-Q"],
             limit=1,
         )
+        document = session.scalar(select(Document).where(Document.form_type == "10-K"))
+        assert document is not None
+        _, provenance = parse_sec_filing_bytes(
+            b"<html><body><p>Filing text</p></body></html>"
+        )
+        document.sha256_hash = provenance.raw_sha256
+        document.local_path = "/previous-runner/filing.htm"
+        document.metadata_json = {
+            **metadata_with_parse_provenance(document.metadata_json, provenance),
+            "research_archive": {"purpose": "retained lineage"},
+            "size": 1,
+        }
+        session.commit()
+
         updated = ingest_sec_metadata(
             session,
             client=client,
@@ -74,10 +92,18 @@ def test_ingestion_inserts_and_updates_companies_and_documents(tmp_path: Path) -
         assert updated.documents_updated == 2
         assert session.scalar(select(func.count()).select_from(Company)) == 1
         assert session.scalar(select(func.count()).select_from(Document)) == 2
-        document = session.scalar(select(Document).where(Document.form_type == "10-K"))
-        assert document is not None
         assert document.primary_document_url is not None
         assert document.primary_document_url.endswith("/aapl-20250927.htm")
+        assert document.sha256_hash == provenance.raw_sha256
+        assert document.local_path == "/previous-runner/filing.htm"
+        assert document.metadata_json is not None
+        assert document.metadata_json["sec_parse_provenance"] == provenance.model_dump(
+            mode="json"
+        )
+        assert document.metadata_json["research_archive"] == {
+            "purpose": "retained lineage"
+        }
+        assert document.metadata_json["size"] == 100
 
     client.close()
     assert route.call_count == 1
