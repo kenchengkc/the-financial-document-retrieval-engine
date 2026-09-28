@@ -32,7 +32,11 @@ FIXTURE_PATH = Path(__file__).resolve().parents[3] / "data/sample/sec_filing.htm
 
 
 @respx.mock
-def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
+@pytest.mark.parametrize("skip_processed", [False, True])
+def test_download_and_parse_updates_document_rows(
+    tmp_path: Path,
+    skip_processed: bool,
+) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     company = Company(ticker="AAPL", cik="0000320193", name="Apple Inc.")
@@ -70,6 +74,7 @@ def test_download_and_parse_updates_document_rows(tmp_path: Path) -> None:
             limit=1,
             download=True,
             parse=True,
+            skip_processed=skip_processed,
         )
         stored_document = session.scalar(select(Document))
 
@@ -124,7 +129,11 @@ def test_seed_demo_document_is_idempotent() -> None:
 
 
 @respx.mock
-def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Path) -> None:
+@pytest.mark.parametrize("skip_processed", [False, True])
+def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(
+    tmp_path: Path,
+    skip_processed: bool,
+) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     filing_html = FIXTURE_PATH.read_bytes()
@@ -163,7 +172,11 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
         citation_text=chunk.chunk_text,
         section=chunk.section,
     )
-    route = respx.get(document_url).mock(return_value=httpx.Response(200, content=filing_html))
+    route = (
+        respx.get(document_url).mock(return_value=httpx.Response(200, content=filing_html))
+        if not skip_processed
+        else None
+    )
     client = SECClient(
         user_agent="FDRE tests test@example.com",
         cache_dir=tmp_path / "cache",
@@ -185,6 +198,7 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
             limit=1,
             download=True,
             parse=True,
+            skip_processed=skip_processed,
         )
         selected, created_chunks = chunk_selected_documents(
             session,
@@ -192,7 +206,8 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
             max_tokens=220,
         )
 
-        assert summary.downloaded == 1
+        assert summary.downloaded == (0 if skip_processed else 1)
+        assert summary.skipped_downloads == (1 if skip_processed else 0)
         assert summary.parsed_documents == 0
         assert summary.parsed_elements == 0
         assert selected == 1
@@ -202,6 +217,77 @@ def test_unchanged_cited_filing_keeps_existing_elements_and_chunks(tmp_path: Pat
         assert session.scalar(select(Citation.chunk_id)) == original_chunk_id
 
     client.close()
+    if route is not None:
+        assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("force_parse", "has_hash", "has_elements"),
+    [
+        (True, True, True),
+        (False, False, True),
+        (False, True, False),
+    ],
+)
+def test_resume_processes_forced_or_incomplete_filings(
+    tmp_path: Path,
+    force_parse: bool,
+    has_hash: bool,
+    has_elements: bool,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    content = FIXTURE_PATH.read_bytes()
+    document_url = (
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019325000079/aapl-20250927.htm"
+    )
+    company = Company(ticker="AAPL", cik="0000320193", name="Apple Inc.")
+    document = Document(
+        company=company,
+        source_type="sec",
+        form_type="10-K",
+        filing_date=date(2025, 10, 31),
+        accession_number="0000320193-25-000079",
+        primary_document_url=document_url,
+        sha256_hash=sha256_bytes(content) if has_hash else None,
+        metadata_json={"primary_document": "aapl-20250927.htm"},
+    )
+    if has_elements:
+        document.elements.append(
+            DocumentElement(
+                element_type="text",
+                text="Existing parsed text.",
+                reading_order=0,
+            )
+        )
+
+    route = respx.get(document_url).mock(return_value=httpx.Response(200, content=content))
+    with Session(engine) as session, SECClient(
+        user_agent="FDRE tests test@example.com",
+        cache_dir=tmp_path / "cache",
+    ) as client:
+        session.add(company)
+        session.commit()
+
+        summary = process_documents(
+            session,
+            downloader=SECFilingDownloader(client, raw_data_dir=tmp_path / "fresh-runner"),
+            parser=HtmlFilingParser(),
+            tickers=["AAPL"],
+            form_types=["10-K"],
+            limit=1,
+            download=True,
+            parse=True,
+            force_parse=force_parse,
+            skip_processed=True,
+        )
+
+        assert summary.downloaded == 1
+        assert summary.parsed_documents == 1
+        assert parse_provenance_from_metadata(document.metadata_json) is not None
+
     assert route.call_count == 1
 
 
