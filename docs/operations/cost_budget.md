@@ -13,6 +13,26 @@ This budget is an engineering constraint. A feature that requires additional rec
 5. **Storage growth must preserve research value.** Prefer compact representations such as `halfvec` and Parquet when they preserve correctness and reproducibility.
 6. **Cost changes are reviewed like correctness changes.** Pull requests that can change recurring spend must state the expected direction and the resource that drives it.
 
+## Paid indexing approval
+
+Paid document indexing is disabled by default. Enable it only for a run the owner explicitly
+requests. Both ingestion workflows require the manual `allow_paid_indexing` checkbox; a scheduled
+run has no approval, and approval does not carry over to chained S&P batches. Keep the scheduled
+SEC ingestion workflow disabled while its provider is paid unless the operating policy changes.
+Existing search remains available; query embeddings can still incur small provider charges.
+
+The Python providers also block document embedding unless
+`PAID_EMBEDDING_INDEXING_ENABLED=true`. The ticker pipeline checks this before database changes.
+For an approved local run, set that variable only on the command and set
+`EMBEDDING_COST_PER_MILLION_TOKENS` to the verified current provider price. Do not put an enabled
+flag in a shared production environment. Paid indexing rejects a zero price so receipts cannot
+silently label paid work as free. GitHub workflows read the price from the repository variable
+with the same name. Their existing incremental selection continues to skip matching embeddings.
+
+These controls prevent unattended paid indexing; they are not an account-wide dollar cap.
+Voyage's invoice is authoritative: stored token counts are word-based estimates, and credits,
+provider tokenization, query usage, retries, and taxes can differ from those estimates.
+
 ## Budget guardrails
 
 | Level | Monthly recurring spend | Action |

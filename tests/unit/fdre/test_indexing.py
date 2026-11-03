@@ -143,6 +143,7 @@ def test_voyage_provider_retries_after_rate_limit() -> None:
         dimensions=2,
         requests_per_minute=None,
         tokens_per_minute=None,
+        allow_document_embedding=True,
     )
 
     assert provider.embed_texts(["hello"]) == [[1.0, 0.0]]
@@ -167,6 +168,7 @@ def test_voyage_provider_retries_after_transport_error(
         dimensions=2,
         requests_per_minute=None,
         tokens_per_minute=None,
+        allow_document_embedding=True,
     )
 
     assert provider.embed_texts(["hello"]) == [[1.0, 0.0]]

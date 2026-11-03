@@ -189,10 +189,18 @@ class FakeEmbeddingProvider:
 class OpenAIEmbeddingProvider:
     name = "openai"
 
-    def __init__(self, *, api_key: str, model: str, dimensions: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        dimensions: int | None = None,
+        allow_document_embedding: bool = False,
+    ) -> None:
         from openai import OpenAI
 
         self.model = model
+        self._allow_document_embedding = allow_document_embedding
         self._client = OpenAI(api_key=api_key)
         default_dimensions = {
             "text-embedding-3-small": 1536,
@@ -208,6 +216,7 @@ class OpenAIEmbeddingProvider:
         *,
         input_type: EmbeddingInputType = "document",
     ) -> list[list[float]]:
+        _require_paid_document_opt_in(input_type, self._allow_document_embedding)
         response = self._client.embeddings.create(
             model=self.model,
             input=list(texts),
@@ -230,6 +239,7 @@ class VoyageEmbeddingProvider:
         requests_per_minute: int | None = VOYAGE_DEFAULT_REQUESTS_PER_MINUTE,
         tokens_per_minute: int | None = VOYAGE_DEFAULT_TOKENS_PER_MINUTE,
         max_attempts: int = 8,
+        allow_document_embedding: bool = False,
     ) -> None:
         self.model = model
         self.dimensions = dimensions
@@ -244,6 +254,7 @@ class VoyageEmbeddingProvider:
             else None
         )
         self._max_attempts = max_attempts
+        self._allow_document_embedding = allow_document_embedding
 
     def embed_texts(
         self,
@@ -256,6 +267,7 @@ class VoyageEmbeddingProvider:
                 f"Voyage supports at most {VOYAGE_MAX_BATCH_SIZE} texts per request; "
                 f"received {len(texts)}"
             )
+        _require_paid_document_opt_in(input_type, self._allow_document_embedding)
         response = _post_json_with_retries(
             url=self._api_url,
             headers={
@@ -278,6 +290,25 @@ class VoyageEmbeddingProvider:
         return [item["embedding"] for item in sorted(data, key=lambda item: item["index"])]
 
 
+def _require_paid_document_opt_in(input_type: EmbeddingInputType, enabled: bool) -> None:
+    if input_type == "document" and not enabled:
+        raise RuntimeError(
+            "Paid document embedding is disabled. Set PAID_EMBEDDING_INDEXING_ENABLED=true "
+            "only for an explicitly approved indexing run."
+        )
+
+
+def require_paid_indexing_opt_in(settings: Settings) -> None:
+    if settings.embedding_provider not in {"voyage", "openai"}:
+        return
+    _require_paid_document_opt_in("document", settings.paid_embedding_indexing_enabled)
+    if settings.embedding_cost_per_million_tokens <= 0:
+        raise ValueError(
+            "Set EMBEDDING_COST_PER_MILLION_TOKENS to the current provider price "
+            "before enabling paid indexing; zero would hide its estimated cost."
+        )
+
+
 @lru_cache(maxsize=16)
 def _embedding_provider_from_config(
     provider_name: str,
@@ -287,6 +318,7 @@ def _embedding_provider_from_config(
     voyage_api_key: str | None,
     requests_per_minute: int | None,
     tokens_per_minute: int | None,
+    paid_indexing_enabled: bool,
 ) -> EmbeddingProvider:
     if provider_name == "fake":
         return FakeEmbeddingProvider(
@@ -305,6 +337,7 @@ def _embedding_provider_from_config(
             api_key=openai_api_key,
             model=model,
             dimensions=dimensions,
+            allow_document_embedding=paid_indexing_enabled,
         )
     if provider_name == "voyage":
         if not voyage_api_key:
@@ -313,6 +346,7 @@ def _embedding_provider_from_config(
             api_key=voyage_api_key,
             model=model,
             dimensions=dimensions or 512,
+            allow_document_embedding=paid_indexing_enabled,
             requests_per_minute=(
                 requests_per_minute
                 if requests_per_minute is not None
@@ -328,6 +362,8 @@ def _embedding_provider_from_config(
 
 
 def embedding_provider_from_settings(settings: Settings) -> EmbeddingProvider:
+    if settings.paid_embedding_indexing_enabled:
+        require_paid_indexing_opt_in(settings)
     return _embedding_provider_from_config(
         settings.embedding_provider,
         settings.embedding_model,
@@ -336,6 +372,7 @@ def embedding_provider_from_settings(settings: Settings) -> EmbeddingProvider:
         settings.voyage_api_key,
         settings.embedding_requests_per_minute,
         settings.embedding_tokens_per_minute,
+        settings.paid_embedding_indexing_enabled,
     )
 
 
