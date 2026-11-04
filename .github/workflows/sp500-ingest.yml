@@ -27,6 +27,10 @@ on:
         description: "Reparse unchanged filings after parser updates"
         type: boolean
         default: false
+      allow_paid_indexing:
+        description: "Allow paid embeddings for this batch only; chained batches need separate approval"
+        type: boolean
+        default: false
       chain:
         description: "On success, automatically queue the next offset+limit batch"
         type: boolean
@@ -64,6 +68,7 @@ jobs:
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      PAID_EMBEDDING_INDEXING_ENABLED: ${{ github.event.inputs.allow_paid_indexing || 'false' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       ARCHIVE_SPEC: ${{ github.event.inputs.archive_spec || '' }}
@@ -71,6 +76,13 @@ jobs:
       - name: Check required secrets
         id: check
         run: |
+          if [ -z "${ARCHIVE_SPEC}" ] \
+            && { [ "${EMBEDDING_PROVIDER}" = "voyage" ] || [ "${EMBEDDING_PROVIDER}" = "openai" ]; } \
+            && [ "${PAID_EMBEDDING_INDEXING_ENABLED}" != "true" ]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Skipping paid indexing. Each paid batch requires allow_paid_indexing in a separate manual run."
+            exit 0
+          fi
           provider_ready=true
           if [ -z "${ARCHIVE_SPEC}" ] && [ "${EMBEDDING_PROVIDER}" = "voyage" ] && [ -z "${VOYAGE_API_KEY}" ]; then
             provider_ready=false
@@ -100,6 +112,8 @@ jobs:
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'local_hash' }}
+      PAID_EMBEDDING_INDEXING_ENABLED: ${{ github.event.inputs.allow_paid_indexing || 'false' }}
+      EMBEDDING_COST_PER_MILLION_TOKENS: ${{ vars.EMBEDDING_COST_PER_MILLION_TOKENS || '0' }}
       EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'local-hash-v1' }}
       EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '' }}
       EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE || '128' }}
@@ -265,6 +279,8 @@ jobs:
           next_offset=$((OFFSET + LIMIT))
           if [ "${next_offset}" -lt "${RANGE_END}" ]; then
             echo "::notice::Queueing lane ${LANE} next batch at offset ${next_offset}"
+            # Do not carry paid approval into another run. Each paid batch needs
+            # a separate manual dispatch with allow_paid_indexing enabled.
             gh workflow run "S&P 500 batch ingestion" \
               -f offset="${next_offset}" \
               -f limit="${LIMIT}" \

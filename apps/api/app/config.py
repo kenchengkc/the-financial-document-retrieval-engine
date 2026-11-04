@@ -112,6 +112,10 @@ class Settings(BaseSettings):
         alias="EMBEDDING_TOKENS_PER_MINUTE",
     )
     embedding_concurrency: int = Field(default=8, ge=1, le=64, alias="EMBEDDING_CONCURRENCY")
+    paid_embedding_indexing_enabled: bool = Field(
+        default=False,
+        alias="PAID_EMBEDDING_INDEXING_ENABLED",
+    )
     embedding_cost_per_million_tokens: float = Field(
         default=0.0,
         ge=0.0,

@@ -20,6 +20,7 @@ from apps.api.app.services.operations_service import (
     finish_ingestion_run,
     start_ingestion_run,
 )
+from fdre.indexing.embeddings import require_paid_indexing_opt_in
 from fdre.ingestion.ticker_map import (
     DEFAULT_SAMPLE_TICKERS,
     RESEARCH_UNIVERSE_TICKERS,
@@ -99,6 +100,7 @@ def main() -> None:
         return
 
     settings = get_settings()
+    require_paid_indexing_opt_in(settings)
     engine = create_db_engine()
     with serialized_ingestion(
         engine, skip_if_locked=args.skip_if_locked, lock_id=lane_lock_id(args.lane)
