@@ -51,9 +51,19 @@ grew.” You can try the same search with `POST /search` in the
 
 ## Architecture
 
-FDRE downloads filings and reported figures from the SEC and stores them in PostgreSQL.
-Search matches keywords and uses pgvector to find passages with similar meanings. FastAPI sends
-results and citations to the Next.js web app. [Architecture guide](docs/architecture/system.md)
+FDRE downloads filings and reported figures from the SEC and stores them in PostgreSQL. It
+splits the filing text into passages and keeps each passage with its section and source link.
+Tables keep their rows and column headings, so you can tell which year a figure belongs to.
+When you update the index, the importer skips filings it has already processed.
+
+Search applies your company and date filters before ranking the passages. It looks for the
+words you typed and uses pgvector to match passages by meaning. A search for
+`equipment spending` can turn up a passage about buying machinery.
+
+Before Ask returns an answer, it checks that each claim cites evidence the search found and
+compares the quoted words with the source text. If a citation fails either check, Ask reports
+that it couldn't verify the answer. FastAPI sends the result to the Next.js web app.
+[Architecture guide](docs/architecture/system.md)
 
 Before downloading SEC filings, put your name and contact email in `SEC_USER_AGENT` in `.env`.
 Each paid indexing run needs your approval. If you use a paid search provider, it may also
