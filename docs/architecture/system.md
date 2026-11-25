@@ -2,7 +2,7 @@
 
 FDRE uses a deliberately small production stack: FastAPI, Next.js, PostgreSQL/pgvector, Voyage embeddings, and GitHub Actions. PostgreSQL remains the authoritative production data plane for retrieval, metadata, structured facts, point-in-time research state, traces, operations, and experiment manifests.
 
-Current benchmark measurements live in [`eval_results.md`](eval_results.md). This document describes architecture and invariants rather than duplicating dated performance numbers.
+The [evaluation results](../evaluations/eval_results.md) give measurements for specific benchmark runs.
 
 ## System boundaries
 
@@ -29,9 +29,9 @@ Current benchmark measurements live in [`eval_results.md`](eval_results.md). Thi
 
 - Exact ticker boundaries and normalized company aliases avoid substring inference.
 - Broad thematic questions do not infer accidental ticker filters.
-- Dense/sparse filters are applied in SQL before ranking.
-- Hybrid retrieval uses reciprocal-rank fusion with optional reranking.
-- The bounded LangGraph workflow routes text, table, and typed-financial-fact retrieval.
+- With a ticker, search filters passages in SQL and combines normalized keyword and vector scores by default.
+- Without a ticker, search uses vector scores alone. The broad Voyage search gets candidate IDs from the HNSW index first, then joins them to filings, applies filters, and ranks the remaining passages.
+- The Python answer workflow selects text, tables, or financial facts, ranks the evidence, and checks citations before returning an answer.
 - Evidence gates abstain for weak support, private information, unsupported forecasts, missing facts, or invalid citations.
 - Point-in-time-aware answer caching never caches abstentions.
 
@@ -71,7 +71,7 @@ The separation between issuer and listed security is intentional: a CIK is not a
 
 All historical identity and membership intervals use half-open `[effective_from, effective_to)` semantics. Strict snapshots fail closed on overlapping intervals, missing active identity, rejected evidence, or unresolved provisional membership.
 
-The canonical HU design and milestone status live in [`historical_universe_v1.md`](historical_universe_v1.md).
+See the [historical membership guide](../research/historical_universe.md) for the full design.
 
 ## Point-in-Time model
 
@@ -136,4 +136,4 @@ Normal infrastructure target is **$10–15/month** with a **$20/month hard ceili
 - 8-K ingestion remains gated on explicit PIT research/evaluation value.
 - Semantic provider output is not deterministic research lineage.
 
-For current measured quality, latency, corpus size, and flagship-study status, use [`eval_results.md`](eval_results.md).
+See the [evaluation results](../evaluations/eval_results.md) for search quality, latency, corpus size, and study results.

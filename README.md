@@ -1,7 +1,7 @@
 # Financial Document Retrieval Engine
 
 FDRE lets you search and compare the annual and quarterly reports companies file with the SEC
-(10-Ks and 10-Qs). [Open the research panel](https://thefdre.com)
+(10-Ks and 10-Qs). [Open the research panel](https://thefdre.com) · [How it works](#architecture)
 
 ## Using the research panel
 
@@ -51,19 +51,66 @@ grew.” You can try the same search with `POST /search` in the
 
 ## Architecture
 
-FDRE downloads filings and reported figures from the SEC and stores them in PostgreSQL. It
-splits the filing text into passages and keeps each passage with its section and source link.
-Tables keep their rows and column headings, so you can tell which year a figure belongs to.
-When you update the index, the importer skips filings it has already processed.
+The importer and the API share one PostgreSQL database on Neon. A filing import runs as a
+separate job on GitHub Actions. Searches read the filings already in the database.
 
-Search applies your company and date filters before ranking the passages. It looks for the
-words you typed and uses pgvector to match passages by meaning. A search for
-`equipment spending` can turn up a passage about buying machinery.
+```mermaid
+flowchart LR
+    sec["SEC filings and Company Facts"] --> jobs["Python importer on GitHub Actions"]
+    jobs -->|writes| db[("PostgreSQL with pgvector on Neon")]
+    jobs -->|new passages| voyage["Voyage"]
+    web["Next.js on Vercel"] -->|sends requests| api["FastAPI on Railway"]
+    api -->|reads filings and records results| db
+    api -->|search terms| voyage
+```
 
-Before Ask returns an answer, it checks that each claim cites evidence the search found and
-compares the quoted words with the source text. If a citation fails either check, Ask reports
-that it couldn't verify the answer. FastAPI sends the result to the Next.js web app.
-[Architecture guide](docs/architecture/system.md)
+### How filings are stored
+
+The `documents` table records the company, SEC filing ID, and time the SEC accepted the
+filing. The importer breaks the HTML into headings, paragraphs, and tables in
+`document_elements`. It splits long paragraphs into shorter passages in `chunks` and keeps
+table rows and column headings together. Each chunk points back to its source element and
+filing. Reported figures from SEC Company Facts go into `financial_facts` with their unit,
+reporting period, and filing ID. [Database models](apps/api/app/models/)
+
+### How the vector index works
+
+The production importer uses Voyage's `voyage-4-large` model to turn each searchable passage
+into a list of 512 numbers called an *embedding*. PostgreSQL stores it in `embeddings` with
+the chunk ID and model name. Each number uses two bytes (`halfvec`), so the 512 values take
+about 1 KiB per passage before database and index overhead. Routine imports reuse existing
+embeddings. The local demo uses a built-in provider.
+
+Keeping vectors beside the filings lets one SQL query follow a vector match back to the
+passage, check the filing date, and return the source link.
+
+PostgreSQL has two search indexes. A **GIN** index maps words to passages for keyword
+search. An **HNSW** index links nearby vectors from the same Voyage model. To find passages
+about `equipment spending`, pgvector compares the direction of the query vector with nearby
+passage vectors (cosine distance). That can find a passage about buying machinery even when
+the wording differs. Following the links makes broad searches faster, though it can miss a
+match that a comparison against every vector would find. [Index definitions](apps/api/alembic/versions/c2d4e6f8a101_add_retrieval_indexes.py)
+
+### What happens on a request
+
+- **Search.** For a query with a ticker, `POST /search` combines keyword and vector scores.
+  Without a ticker, it searches by vector alone. In production, a broad search first gets a
+  shortlist of passage IDs from the vector index, then loads their text and applies any
+  filing filters. The API records which passages it returned and how they ranked.
+  [Search code](apps/api/app/services/retrieval_service.py)
+- **Answers.** Depending on the question, `POST /answer` reads filing text, tables, or reported
+  figures. It ranks the evidence, checks that each claim cites a result, and compares the quoted
+  words with that source. If the evidence is too weak or a citation fails, Ask says so. Only
+  verified answers can be cached for repeat questions. [Answer workflow](src/fdre/answering/workflow.py)
+- **Keeping the API responsive.** Each API process reuses a pool of database connections
+  managed by SQLAlchemy. It caps the number of expensive requests that can run at once and
+  gives each interactive SQL query a time limit. The importer skips filings already processed
+  and records which stages finished.
+  [API limits](docs/operations/runtime_limits.md) · [Architecture guide](docs/architecture/system.md)
+
+On deployment, Railway runs Alembic to update the database schema before it starts the API.
+Railway checks `/ready`, which runs a database query, before sending traffic to the new version.
+[Deployment settings](railway.toml)
 
 Before downloading SEC filings, put your name and contact email in `SEC_USER_AGENT` in `.env`.
 Each paid indexing run needs your approval. If you use a paid search provider, it may also
